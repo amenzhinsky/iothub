@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/credentials"
+	"github.com/amenzhinsky/iothub/iotutil"
 	"github.com/amenzhinsky/iothub/transport"
 )
 
@@ -250,7 +251,10 @@ Loop:
 				panic("c2d channel is closed unexpectedly")
 			}
 			if c.debug {
-				c.logf("cloud-to-device %s\n---- body ----\n%s\n--------------", fmtprops(ev.Properties), ev.Payload)
+				c.logf("cloud-to-device %s\n---- body ----\n%s\n--------------",
+					fmtprops(ev.Properties),
+					iotutil.FormatPayload(ev.Payload),
+				)
 			} else {
 				c.logf("cloud-to-device %s", fmtprops(ev.Properties))
 			}
@@ -479,7 +483,10 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 		return err
 	}
 	if c.debug {
-		c.logf("device-to-cloud %s\n---- body ----\n%s\n--------------", fmtprops(event.Properties), event.Payload)
+		c.logf("device-to-cloud %s\n---- body ----\n%s\n--------------",
+			fmtprops(event.Properties),
+			iotutil.FormatPayload(event.Payload),
+		)
 	} else {
 		c.logf("device-to-cloud %s", fmtprops(event.Properties))
 	}

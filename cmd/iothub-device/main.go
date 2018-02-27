@@ -10,13 +10,14 @@ import (
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
 	"github.com/amenzhinsky/iothub/iotdevice"
+	"github.com/amenzhinsky/iothub/iotutil"
 	"github.com/amenzhinsky/iothub/transport"
 	"github.com/amenzhinsky/iothub/transport/amqp"
 	"github.com/amenzhinsky/iothub/transport/mqtt"
 )
 
 var transports = map[string]func() (transport.Transport, error){
-	"mqtt": func() (transport.Transport, error) { return mqtt.New() },
+	"mqtt": func() (transport.Transport, error) { return mqtt.New(mqtt.WithLogger(nil)) },
 	"amqp": func() (transport.Transport, error) { return amqp.New() },
 	"http": func() (transport.Transport, error) { return nil, errors.New("not implemented") },
 }
@@ -100,7 +101,7 @@ func send(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
 	})
 }
 
-const eventFormat = `---- PAYLOAD --------------
+const eventFormat = `---- PROPERTIES -----------
 %s
 ---------------------------
 %v
@@ -112,7 +113,10 @@ func watchEvents(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) err
 		return internal.ErrInvalidUsage
 	}
 	return c.SubscribeEvents(ctx, func(ev *iotdevice.Event) {
-		fmt.Printf(eventFormat, ev.Payload, ev.Properties)
+		fmt.Printf(eventFormat,
+			iotutil.FormatProperties(ev.Properties),
+			iotutil.FormatPayload(ev.Payload),
+		)
 	})
 }
 

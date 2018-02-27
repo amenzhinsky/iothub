@@ -1,17 +1,16 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
 	"github.com/amenzhinsky/iothub/iotservice"
+	"github.com/amenzhinsky/iothub/iotutil"
 )
 
 // globally accessible by command handlers, is it a good idea?
@@ -129,9 +128,9 @@ func send(c *iotservice.Client) internal.HandlerFunc {
 
 const eventFormat = `----- DEVICE -----------------
 %s
------ PAYLOAD ----------------
-%s
 ----- PROPERTIES -------------
+%s
+----- PAYLOAD ----------------
 %s
 ----- METADATA----------------
 %s
@@ -143,9 +142,9 @@ func watchEvents(c *iotservice.Client) internal.HandlerFunc {
 		return c.Subscribe(ctx, func(ev *iotservice.Event) {
 			fmt.Printf(eventFormat,
 				ev.DeviceID,
-				ev.Payload,
-				formatMap(sm2im(ev.Properties)),
-				formatMap(ev.Metadata),
+				iotutil.FormatProperties(ev.Properties),
+				iotutil.FormatPayload(ev.Payload),
+				iotutil.FormatProperties(mi2ms(ev.Metadata)),
 			)
 		})
 	}
@@ -166,31 +165,10 @@ func watchFeedback(c *iotservice.Client) internal.HandlerFunc {
 	}
 }
 
-func sm2im(m map[string]string) map[interface{}]interface{} {
-	x := make(map[interface{}]interface{}, len(m))
+func mi2ms(m map[interface{}]interface{}) map[string]string {
+	r := make(map[string]string, len(m))
 	for k, v := range m {
-		x[k] = v
+		r[fmt.Sprint(k)] = fmt.Sprint(v)
 	}
-	return x
-}
-
-func formatMap(m map[interface{}]interface{}) string {
-	b := &bytes.Buffer{}
-	p := 0
-	o := make([]string, 0, len(m))
-	for k := range m {
-		s := fmt.Sprint(k)
-		if p < len(s) {
-			p = len(s)
-		}
-		o = append(o, s)
-	}
-	sort.Strings(o)
-	for i, k := range o {
-		if i != 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(fmt.Sprintf("%-"+fmt.Sprint(p)+"s : %v", k, m[k]))
-	}
-	return b.String()
+	return r
 }

@@ -250,6 +250,6 @@ func CheckMessageResponse(msg *amqp.Message) error {
 	if rc == 200 {
 		return nil
 	}
-	rd, _ := msg.ApplicationProperties["status-description"]
+	rd, _ := msg.ApplicationProperties["status-description"].(string)
 	return fmt.Errorf("code = %d, description = %q", rc, rd)
 }

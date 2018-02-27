@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,9 +72,8 @@ func testDeviceToCloud(t *testing.T, tr transport.Transport) {
 			select {
 			case <-ctx.Done():
 				break
-			default:
+			case <-time.After(250 * time.Millisecond):
 			}
-			time.Sleep(250 * time.Millisecond)
 		}
 	}()
 
@@ -94,11 +94,31 @@ func testCloudToDevice(t *testing.T, tr transport.Transport) {
 	dc, sc := mkDeviceAndService(t, ctx, tr)
 	defer closeDeviceService(t, dc, sc)
 
-	evch := make(chan *iotdevice.Event, 1)
-	errc := make(chan error, 2)
+	evsc := make(chan *iotdevice.Event, 1)
+	fbsc := make(chan *iotservice.Feedback, 1)
+	errc := make(chan error, 3)
 	go func() {
 		if err := dc.SubscribeEvents(ctx, func(ev *iotdevice.Event) {
-			evch <- ev
+			evsc <- ev
+		}); err != nil {
+			errc <- err
+		}
+	}()
+
+	// list of sent event ids
+	mu := sync.Mutex{}
+	ids := make([]string, 10)
+
+	// subscribe to feedback and report first registered message id
+	go func() {
+		if err := sc.SubscribeFeedback(ctx, func(fb *iotservice.Feedback) {
+			mu.Lock()
+			for _, id := range ids {
+				if fb.OriginalMessageID == id {
+					fbsc <- fb
+				}
+			}
+			mu.Unlock()
 		}); err != nil {
 			errc <- err
 		}
@@ -110,26 +130,38 @@ func testCloudToDevice(t *testing.T, tr transport.Transport) {
 		Properties: map[string]string{
 			"foo": "bar",
 		},
+		Ack: "full",
 	}
 
 	// send events until one of them received.
 	go func() {
 		for {
-			if _, err := sc.Publish(ctx, w); err != nil {
+			id, err := sc.Publish(ctx, w)
+			if err != nil {
 				errc <- err
 				break
 			}
+
+			mu.Lock()
+			ids = append(ids, id)
+			mu.Unlock()
+
 			select {
 			case <-ctx.Done():
 				break
-			default:
+			case <-time.After(500 * time.Millisecond):
 			}
-			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 
 	select {
-	case g := <-evch:
+	case g := <-evsc:
+		select {
+		case <-fbsc:
+			// feedback has successfully arrived
+		case <-time.After(15 * time.Second):
+			t.Fatal("feedback timed out")
+		}
 		testEventsAreEqual(t, g, w)
 	case err := <-errc:
 		t.Fatal(err)

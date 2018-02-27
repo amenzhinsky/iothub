@@ -59,6 +59,14 @@ func WithLogger(l *log.Logger) ClientOption {
 	}
 }
 
+// WithDebug enables or disables debug mode.
+func WithDebug(d bool) ClientOption {
+	return func(c *Client) error {
+		c.debug = d
+		return nil
+	}
+}
+
 // New creates new iothub service client.
 func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
@@ -94,6 +102,7 @@ type Client struct {
 	done   chan struct{}
 	creds  *credentials.Credentials
 	logger *log.Logger
+	debug  bool
 	http   *http.Client // REST client
 }
 
@@ -420,6 +429,12 @@ func (c *Client) InvokeMethod(
 func (c *Client) logf(format string, v ...interface{}) {
 	if c.logger != nil {
 		c.logger.Printf(format, v...)
+	}
+}
+
+func (c *Client) debugf(format string, v ...interface{}) {
+	if c.debug {
+		c.logf(format, v...)
 	}
 }
 
