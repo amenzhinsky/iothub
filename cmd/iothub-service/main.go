@@ -71,7 +71,7 @@ func run() error {
 			directMethod(c),
 			nil,
 		},
-	}, os.Args)
+	}, os.Args, nil)
 }
 
 func directMethod(c *iotservice.Client) internal.HandlerFunc {

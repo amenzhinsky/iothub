@@ -49,17 +49,19 @@ type Credentials struct {
 	now time.Time
 }
 
-// SAS generates an access token, returns an error when
-// HostName or SharedAccessKey is missing.
-func (c *Credentials) SAS(duration time.Duration) (string, error) {
-	if c.HostName == "" {
-		return "", errors.New("HostName is blank")
+// SAS generates an access token for the given uri and duration.
+func (c *Credentials) SAS(uri string, duration time.Duration) (string, error) {
+	if uri == "" {
+		return "", errors.New("uri is blank")
+	}
+	if duration == 0 {
+		return "", errors.New("duration is zero")
 	}
 	if c.SharedAccessKey == "" {
 		return "", errors.New("SharedAccessKey is blank")
 	}
 
-	sr := url.QueryEscape(c.HostName)
+	sr := url.QueryEscape(uri)
 	ts := time.Now()
 	if !c.now.IsZero() {
 		ts = c.now

@@ -41,12 +41,12 @@ func TestCredentials_SAS(t *testing.T) {
 	}
 	c.now = time.Date(2017, 1, 1, 1, 1, 1, 0, time.UTC)
 
-	g, err := c.SAS(time.Hour)
+	g, err := c.SAS(c.HostName+"/devices/test", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	w := "SharedAccessSignature sr=test.azure-devices.net&sig=xGY7AIxWEei5%2BSlVMsNQqTIcp5F79ukCam0K9HXxGxo%3D&se=1483236061&skn="
+	w := "SharedAccessSignature sr=test.azure-devices.net%2Fdevices%2Ftest&sig=IMr3Y5GKbdixQSt96QgIEymAURnu3qzLvEHhGHPLxrU%3D&se=1483236061&skn="
 	if g != w {
 		t.Errorf("SAS(time.Hour) = %q, want %q", g, w)
 	}

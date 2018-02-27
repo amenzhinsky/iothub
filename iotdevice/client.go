@@ -76,12 +76,12 @@ func WithCredentials(creds *credentials.Credentials) ClientOption {
 }
 
 func mkCredsAuthFunc(creds *credentials.Credentials) transport.AuthFunc {
-	return func(context.Context) (string, string, error) {
-		sas, err := creds.SAS(time.Hour)
+	return func(_ context.Context, path string) (string, string, error) {
+		token, err := creds.SAS(creds.HostName+path, time.Hour)
 		if err != nil {
 			return "", "", err
 		}
-		return creds.HostName, sas, nil
+		return creds.HostName, token, nil
 	}
 }
 
@@ -103,7 +103,7 @@ func New(opts ...ClientOption) (*Client, error) {
 		changes: make([]DesiredStateChangeFunc, 0),
 		methods: make(map[string]DirectMethodFunc, 0),
 		close:   make(chan struct{}),
-		logger:  log.New(os.Stdout, "[iothub] ", 0),
+		logger:  log.New(os.Stdout, "[iotdev] ", 0),
 		debug:   os.Getenv("DEBUG") != "",
 		connErr: errNotConnected,
 	}
@@ -221,6 +221,12 @@ func (c *Client) ConnectionError(ctx context.Context) error {
 	c.connMu.RLock()
 	w := c.connCh
 	c.connMu.RUnlock()
+
+	// non-background connection
+	if w == nil {
+		return c.connErr
+	}
+
 	select {
 	case <-w:
 		return c.connErr
@@ -503,8 +509,8 @@ func (c *Client) Close() error {
 		return nil
 	default:
 		close(c.close)
-		return c.tr.Close()
 	}
+	return c.tr.Close()
 }
 
 // ptreq reports whether two functions are equal or not,

@@ -10,6 +10,20 @@ import (
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
 	"github.com/amenzhinsky/iothub/iotdevice"
+	"github.com/amenzhinsky/iothub/transport"
+	"github.com/amenzhinsky/iothub/transport/amqp"
+	"github.com/amenzhinsky/iothub/transport/mqtt"
+)
+
+var transports = map[string]func() (transport.Transport, error){
+	"mqtt": func() (transport.Transport, error) { return mqtt.New() },
+	"amqp": func() (transport.Transport, error) { return amqp.New() },
+	"http": func() (transport.Transport, error) { return nil, errors.New("not implemented") },
+}
+
+var (
+	debugFlag     = false
+	transportFlag = "mqtt"
 )
 
 func main() {
@@ -22,57 +36,68 @@ func main() {
 }
 
 func run() error {
-	cs := os.Getenv("DEVICE_CONNECTION_STRING")
-	if cs == "" {
-		return errors.New("DEVICE_CONNECTION_STRING is blank")
-	}
-
-	c, err := iotdevice.New(
-		iotdevice.WithLogger(nil), // disable logging
-		iotdevice.WithConnectionString(cs),
-	)
-	if err != nil {
-		return err
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	return internal.Run(ctx, map[string]*internal.Command{
-		"send":         {"PAYLOAD [KEY VALUE]...", "send a message to the cloud (D2C)", send(c), nil},
-		"watch-events": {"", "subscribe to events sent from the cloud (C2D)", watchEvents(c), nil},
-		"watch-twin":   {"", "subscribe to twin device updates", watchTwin(c), nil},
+		"send":         {"PAYLOAD [KEY VALUE]...", "send a message to the cloud (D2C)", conn(send), nil},
+		"watch-events": {"", "subscribe to events sent from the cloud (C2D)", conn(watchEvents), nil},
+		"watch-twin":   {"", "subscribe to twin device updates", conn(watchTwin), nil},
 
 		// TODO: other methods
-	}, os.Args)
+	}, os.Args, func(fs *flag.FlagSet) {
+		fs.BoolVar(&debugFlag, "d", debugFlag, "enable debug mode")
+		fs.StringVar(&transportFlag, "t", transportFlag, "transport to use (mqtt, amqp, http)")
+	})
 }
 
-func send(c *iotdevice.Client) internal.HandlerFunc {
+func conn(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) internal.HandlerFunc {
 	return func(ctx context.Context, fs *flag.FlagSet) error {
-		if fs.NArg() < 1 {
-			return internal.ErrInvalidUsage
+		s := os.Getenv("DEVICE_CONNECTION_STRING")
+		if s == "" {
+			return errors.New("DEVICE_CONNECTION_STRING is blank")
 		}
-
-		p := map[string]string{}
-		if fs.NArg() > 1 {
-			if fs.NArg()%2 != 1 {
-				return errors.New("number of key-value arguments must be even")
-			}
-			for i := 1; i < fs.NArg(); i += 2 {
-				p[fs.Arg(i)] = fs.Arg(i + 1)
-			}
+		f, ok := transports[transportFlag]
+		if !ok {
+			return fmt.Errorf("unknown transport %q", transportFlag)
 		}
-
-		if err := c.Connect(ctx, false); err != nil {
+		t, err := f()
+		if err != nil {
 			return err
 		}
-		defer c.Close()
-
-		return c.Publish(ctx, &iotdevice.Event{
-			Payload:    []byte(fs.Arg(0)),
-			Properties: p,
-		})
+		c, err := iotdevice.New(
+			iotdevice.WithLogger(nil), // disable logging
+			iotdevice.WithDebug(debugFlag),
+			iotdevice.WithConnectionString(s),
+			iotdevice.WithTransport(t),
+		)
+		if err != nil {
+			return err
+		}
+		if err := c.ConnectInBackground(ctx, false); err != nil {
+			return err
+		}
+		return fn(ctx, fs, c)
 	}
+}
+
+func send(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
+	if fs.NArg() < 1 {
+		return internal.ErrInvalidUsage
+	}
+	p := map[string]string{}
+	if fs.NArg() > 1 {
+		if fs.NArg()%2 != 1 {
+			return errors.New("number of key-value arguments must be even")
+		}
+		for i := 1; i < fs.NArg(); i += 2 {
+			p[fs.Arg(i)] = fs.Arg(i + 1)
+		}
+	}
+	return c.Publish(ctx, &iotdevice.Event{
+		Payload:    []byte(fs.Arg(0)),
+		Properties: p,
+	})
 }
 
 const eventFormat = `---- PAYLOAD --------------
@@ -82,40 +107,24 @@ const eventFormat = `---- PAYLOAD --------------
 ===========================
 `
 
-func watchEvents(c *iotdevice.Client) internal.HandlerFunc {
-	return func(ctx context.Context, fs *flag.FlagSet) error {
-		if fs.NArg() != 0 {
-			return internal.ErrInvalidUsage
-		}
-
-		if err := c.Connect(ctx, false); err != nil {
-			return err
-		}
-		defer c.Close()
-
-		return c.SubscribeEvents(ctx, func(ev *iotdevice.Event) {
-			fmt.Printf(eventFormat, ev.Payload, ev.Properties)
-		})
+func watchEvents(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
+	if fs.NArg() != 0 {
+		return internal.ErrInvalidUsage
 	}
+	return c.SubscribeEvents(ctx, func(ev *iotdevice.Event) {
+		fmt.Printf(eventFormat, ev.Payload, ev.Properties)
+	})
 }
 
-func watchTwin(c *iotdevice.Client) internal.HandlerFunc {
-	return func(ctx context.Context, fs *flag.FlagSet) error {
-		if fs.NArg() != 0 {
-			return internal.ErrInvalidUsage
-		}
-
-		if err := c.Connect(ctx, false); err != nil {
-			return err
-		}
-		defer c.Close()
-
-		return c.SubscribeTwinChanges(ctx, func(s iotdevice.State) {
-			b, err := json.MarshalIndent(s, "", "  ")
-			if err != nil {
-				panic(err)
-			}
-			fmt.Println(string(b))
-		})
+func watchTwin(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
+	if fs.NArg() != 0 {
+		return internal.ErrInvalidUsage
 	}
+	return c.SubscribeTwinChanges(ctx, func(s iotdevice.State) {
+		b, err := json.MarshalIndent(s, "", "  ")
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(string(b))
+	})
 }

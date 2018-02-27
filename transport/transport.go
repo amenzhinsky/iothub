@@ -33,4 +33,4 @@ type Call struct {
 }
 
 // AuthFunc is used to obtain hostname and sas token before authenticating.
-type AuthFunc func(ctx context.Context) (hostname string, sas string, err error)
+type AuthFunc func(ctx context.Context, path string) (hostname string, sas string, err error)

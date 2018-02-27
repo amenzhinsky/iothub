@@ -16,14 +16,9 @@ import (
 )
 
 func TestEnd2End(t *testing.T) {
-	for name, tr := range map[string]func(*testing.T) transport.Transport{
-		"mqtt": func(t *testing.T) transport.Transport {
-			tr, err := mqtt.New() // mqtt.WithLogger(nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return tr
-		},
+	for name, mk := range map[string]func() (transport.Transport, error){
+		"mqtt": func() (transport.Transport, error) { return mqtt.New(mqtt.WithLogger(nil)) },
+		//"amqp": func() (transport.Transport, error) { return amqp.New() },
 	} {
 		t.Run(name, func(t *testing.T) {
 			for name, test := range map[string]func(*testing.T, transport.Transport){
@@ -33,7 +28,11 @@ func TestEnd2End(t *testing.T) {
 				"TwinDevice":    testTwinDevice,
 			} {
 				t.Run(name, func(t *testing.T) {
-					test(t, tr(t))
+					tr, err := mk()
+					if err != nil {
+						t.Fatal(err)
+					}
+					test(t, tr)
 				})
 			}
 		})
@@ -62,7 +61,7 @@ func testDeviceToCloud(t *testing.T, tr transport.Transport) {
 		Properties: map[string]string{"foo": "bar"},
 	}
 
-	// send events until one of them received/
+	// send events until one of them is received
 	go func() {
 		for {
 			if err := dc.Publish(ctx, w); err != nil {
@@ -240,14 +239,14 @@ func mkDeviceAndService(
 	}
 
 	dc, err := iotdevice.New(
-		//iotdevice.WithLogger(nil),
+		iotdevice.WithLogger(nil),
 		iotdevice.WithTransport(tr),
 		iotdevice.WithConnectionString(dcs),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = dc.ConnectInBackground(ctx, true); err != nil {
+	if err = dc.ConnectInBackground(ctx, false); err != nil {
 		t.Fatal(err)
 	}
 

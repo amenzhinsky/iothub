@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/amenzhinsky/iothub/credentials"
+	"github.com/amenzhinsky/iothub/iotutil"
 	"github.com/amenzhinsky/iothub/transport"
 	"github.com/eclipse/paho.mqtt.golang"
 )
@@ -41,6 +43,8 @@ func New(opts ...MQTTOption) (transport.Transport, error) {
 		dmis: make(chan *transport.Call, 10),
 		dscs: make(chan []byte, 10),
 		resp: make(map[string]chan *resp),
+
+		logger: log.New(os.Stdout, "[mqtt] ", 0),
 	}
 	for _, opt := range opts {
 		if err := opt(tr); err != nil {
@@ -53,6 +57,7 @@ func New(opts ...MQTTOption) (transport.Transport, error) {
 type MQTT struct {
 	mu   sync.RWMutex
 	conn mqtt.Client
+	ridg iotutil.RIDGenerator
 
 	done chan struct{}         // closed when Close() invoked
 	c2ds chan *transport.Event // cloud-to-device messages
@@ -63,10 +68,6 @@ type MQTT struct {
 	logger *log.Logger
 }
 
-func (tr *MQTT) Name() string {
-	return "mqtt"
-}
-
 func (tr *MQTT) logf(format string, v ...interface{}) {
 	if tr.logger != nil {
 		tr.logger.Printf(format, v...)
@@ -74,7 +75,13 @@ func (tr *MQTT) logf(format string, v ...interface{}) {
 }
 
 func (tr *MQTT) Connect(ctx context.Context, deviceID string, sasFunc transport.AuthFunc) error {
-	host, sas, err := sasFunc(ctx)
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.conn != nil {
+		return errors.New("already connected")
+	}
+
+	host, sas, err := sasFunc(ctx, "")
 	if err != nil {
 		return err
 	}
@@ -112,9 +119,7 @@ func (tr *MQTT) Connect(ctx context.Context, deviceID string, sasFunc transport.
 		}
 	}
 
-	tr.mu.Lock()
 	tr.conn = c
-	tr.mu.Unlock()
 	return nil
 }
 
@@ -258,7 +263,7 @@ func (tr *MQTT) UpdateTwinProperties(ctx context.Context, b []byte) (int, error)
 }
 
 func (tr *MQTT) request(ctx context.Context, topic string, b []byte) (*resp, error) {
-	rid := GenRID()
+	rid := tr.ridg.Next()
 	dst := fmt.Sprintf(topic, rid)
 	rch := make(chan *resp, 1)
 	tr.mu.Lock()
@@ -338,14 +343,16 @@ func (tr *MQTT) send(ctx context.Context, topic string, b []byte) error {
 func (tr *MQTT) Close() error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if tr.conn == nil {
+	select {
+	case <-tr.done:
 		return nil
+	default:
+		close(tr.done)
 	}
 	if tr.conn.IsConnected() {
 		tr.conn.Disconnect(250)
 		tr.logf("disconnected")
 	}
-	close(tr.done)
 	tr.conn = nil
 	return nil
 }

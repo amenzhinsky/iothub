@@ -1,13 +1,14 @@
-package mqtt
+package iotutil
 
 import (
 	"sync"
 	"testing"
 )
 
-func TestRID(t *testing.T) {
+func TestRIDGenerator_Next(t *testing.T) {
 	t.Parallel()
 
+	r := NewRIDGenerator()
 	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
 	wg.Add(10)
@@ -15,9 +16,8 @@ func TestRID(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func() {
 			for j := 0; j < 1000; j++ {
-				rid := GenRID()
 				mu.Lock()
-				rids = append(rids, rid)
+				rids = append(rids, r.Next())
 				mu.Unlock()
 			}
 			wg.Done()
@@ -28,7 +28,7 @@ func TestRID(t *testing.T) {
 	m := make(map[string]bool, 10000)
 	for _, r := range rids {
 		if _, ok := m[r]; ok {
-			t.Fatal("genRID sequence collision")
+			t.Fatal("sequence collision")
 			m[r] = true
 		}
 	}

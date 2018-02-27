@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/credentials"
+	"github.com/amenzhinsky/iothub/eventhub"
 	"gopkg.in/satori/go.uuid.v1"
 	"pack.ag/amqp"
 )
@@ -45,7 +46,7 @@ func WithCredentials(creds *credentials.Credentials) ClientOption {
 // WithHTTPClient changes default http rest client.
 func WithHTTPClient(client *http.Client) ClientOption {
 	return func(c *Client) error {
-		c.httpClient = client
+		c.http = client
 		return nil
 	}
 }
@@ -61,7 +62,8 @@ func WithLogger(l *log.Logger) ClientOption {
 // New creates new iothub service client.
 func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		logger: log.New(os.Stdout, "[iothub] ", 0),
+		done:   make(chan struct{}),
+		logger: log.New(os.Stdout, "[iotsvc] ", 0),
 	}
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
@@ -76,8 +78,8 @@ func New(opts ...ClientOption) (*Client, error) {
 	// set the default rest client, it uses only bundled ca-certificates
 	// it's useful when the ca-certificates package is not present on
 	// very slim host systems like alpine and busybox.
-	if c.httpClient == nil {
-		c.httpClient = &http.Client{
+	if c.http == nil {
+		c.http = &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: credentials.TLSConfig(c.creds.HostName),
 			},
@@ -87,82 +89,37 @@ func New(opts ...ClientOption) (*Client, error) {
 }
 
 type Client struct {
-	mu         sync.Mutex
-	conn       *amqp.Client
-	sess       *amqp.Session
-	creds      *credentials.Credentials
-	logger     *log.Logger
-	httpClient *http.Client
+	mu     sync.Mutex
+	conn   *eventhub.Client
+	done   chan struct{}
+	creds  *credentials.Credentials
+	logger *log.Logger
+	http   *http.Client // REST client
 }
 
 // Connect connects to AMQP broker, has to be done before publishing events.
 func (c *Client) Connect(ctx context.Context) error {
-	conn, err := amqp.Dial("amqps://" + c.creds.HostName)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	eh, err := eventhub.Dial(c.creds.HostName)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err != nil {
+			eh.Close()
+		}
+	}()
 
-	sess, err := conn.NewSession()
-	if err != nil {
-		conn.Close()
-		return err
-	}
-
-	if err = c.updateToken(ctx, sess); err != nil {
-		sess.Close()
-		conn.Close()
-		return err
-	}
-
-	c.conn = conn
-	c.sess = sess
-	return nil
-}
-
-// TODO: update it continuously
-func (c *Client) updateToken(ctx context.Context, sess *amqp.Session) error {
-	send, err := sess.NewSender(
-		amqp.LinkTargetAddress("$cbs"),
-	)
+	sas, err := c.creds.SAS(c.creds.HostName, time.Hour)
 	if err != nil {
 		return err
 	}
-	defer send.Close()
-
-	recv, err := sess.NewReceiver(amqp.LinkSourceAddress("$cbs"))
-	if err != nil {
+	if err = eh.PutTokenContinuously(ctx, c.creds.HostName, sas, c.done); err != nil {
 		return err
 	}
-	defer recv.Close()
-
-	sas, err := c.creds.SAS(time.Hour)
-	if err != nil {
-		return err
-	}
-	if err = send.Send(ctx, &amqp.Message{
-		Value: sas,
-		Properties: &amqp.MessageProperties{
-			MessageID: uuid.NewV4().String(),
-			To:        "$cbs",
-			ReplyTo:   "cbs",
-		},
-		ApplicationProperties: map[string]interface{}{
-			"operation": "put-token",
-			"type":      "servicebus.windows.net:sastoken",
-			"name":      c.creds.HostName,
-		},
-	}); err != nil {
-		return err
-	}
-
-	msg, err := recv.Receive(ctx)
-	if err != nil {
-		return err
-	}
-	if err = checkResponseMessage(msg); err != nil {
-		return err
-	}
-	msg.Accept()
+	c.conn = eh
 	return nil
 }
 
@@ -173,7 +130,7 @@ func (c *Client) updateToken(ctx context.Context, sess *amqp.Session) error {
 func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, error) {
 	user := c.creds.SharedAccessKeyName + "@sas.root." + c.creds.HostName
 	user = user[:len(user)-18] // sub .azure-devices.net"
-	pass, err := c.creds.SAS(time.Hour)
+	pass, err := c.creds.SAS(c.creds.HostName, time.Hour)
 	if err != nil {
 		return nil, "", err
 	}
@@ -258,20 +215,20 @@ func (c *Client) Subscribe(ctx context.Context, f SubscribeFunc) error {
 	}
 	defer conn.Close()
 
-	s, err := conn.NewSession()
+	sess, err := conn.NewSession()
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer sess.Close()
 
-	return EHSubscribe(ctx, s, group, "$Default", func(msg *amqp.Message) {
+	return eventhub.SubscribePartitions(ctx, sess, group, "$Default", func(msg *amqp.Message) {
 		props := make(map[string]string, len(msg.ApplicationProperties))
 		for k, v := range msg.ApplicationProperties {
-			props[k] = fmt.Sprintf("%s", v)
+			props[k] = fmt.Sprint(v)
 		}
 		devid, ok := msg.Annotations["iothub-connection-device-id"].(string)
 		if !ok {
-			c.logf("error: unable to parse iothub-connection-device-id")
+			c.logf("error: unable to typecast iothub-connection-device-id")
 			return
 		}
 
@@ -296,30 +253,29 @@ func (c *Client) Publish(ctx context.Context, event *Event) (string, error) {
 	if event.Payload == nil {
 		return "", errors.New("payload is nil")
 	}
-	if event.Ack != "" {
-		return "", errors.New("ack is not supported yet")
-	}
 
 	if !c.isConnected() {
 		return "", errNotConnected
 	}
-	send, err := c.sess.NewSender(
+	send, err := c.conn.Sess().NewSender(
 		amqp.LinkTargetAddress("/messages/devicebound"),
 	)
 	if err != nil {
 		return "", err
 	}
+	defer send.Close()
 
 	// convert Properties to ApplicationProperties
 	ap := make(map[string]interface{}, len(event.Properties))
 	for k, v := range event.Properties {
 		ap[k] = v
 	}
+	if event.Ack != "" {
+		ap["iothub-ack"] = event.Ack
+	}
 
 	msgID := uuid.NewV4().String()
 	if err = send.Send(ctx, &amqp.Message{
-		// TODO: find a way to send ack
-		// Ack: ack
 		Data: [][]byte{event.Payload},
 		Properties: &amqp.MessageProperties{
 			MessageID: msgID,
@@ -340,7 +296,7 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackFunc) error {
 	if !c.isConnected() {
 		return errNotConnected
 	}
-	recv, err := c.sess.NewReceiver(
+	recv, err := c.conn.Sess().NewReceiver(
 		amqp.LinkSourceAddress("/messages/servicebound/feedback"),
 	)
 	if err != nil {
@@ -430,7 +386,7 @@ func (c *Client) InvokeMethod(
 		return nil, err
 	}
 
-	auth, err := c.creds.SAS(time.Hour)
+	auth, err := c.creds.SAS(c.creds.HostName, time.Hour)
 	if err != nil {
 		return nil, err
 	}
@@ -440,14 +396,7 @@ func (c *Client) InvokeMethod(
 	r.Header.Set("Request-Id", uuid.NewV4().String())
 	r.WithContext(ctx)
 
-	// TODO: configurable client
-	dc := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: credentials.TLSConfig(c.creds.HostName),
-		},
-	}
-
-	res, err := dc.Do(r)
+	res, err := c.http.Do(r)
 	if err != nil {
 		return nil, err
 	}
@@ -474,17 +423,18 @@ func (c *Client) logf(format string, v ...interface{}) {
 	}
 }
 
-// Close closes MQTT connection.
+// Close closes transport.
 func (c *Client) Close() error {
 	c.mu.Lock()
-	if c.sess != nil {
-		c.sess.Close()
+	defer c.mu.Unlock()
+	select {
+	case <-c.done:
+		return nil
+	default:
+		close(c.done)
 	}
-	c.sess = nil
-	if c.conn != nil {
-		c.conn.Close()
+	if c.conn == nil {
+		return nil
 	}
-	c.conn = nil
-	c.mu.Unlock()
-	return nil
+	return c.conn.Close()
 }

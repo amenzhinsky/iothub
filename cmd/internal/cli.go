@@ -25,7 +25,7 @@ type HandlerFunc func(context.Context, *flag.FlagSet) error
 
 // Run runs one or the given commands based on argv.
 // If ErrInvalidUsage is returned there's no need to print it, usage message is already sent to STDERR.
-func Run(ctx context.Context, commands map[string]*Command, argv []string) error {
+func Run(ctx context.Context, commands map[string]*Command, argv []string, fn func(*flag.FlagSet)) error {
 	if len(argv) < 1 {
 		panic("len(argv) < 1")
 	}
@@ -38,13 +38,22 @@ func Run(ctx context.Context, commands map[string]*Command, argv []string) error
 	sort.Strings(names)
 
 	sm := flag.NewFlagSet(argv[0], flag.ContinueOnError)
+	if fn != nil {
+		fn(sm)
+	}
 	sm.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: %s COMMAND [ARGS]...\n\ncommands:\n", argv[0])
 		for _, name := range names {
 			fmt.Fprintf(os.Stderr, "  %-15s %s\n", name, commands[name].Desc)
 		}
+		fmt.Println()
+		fmt.Println("common flags: ")
+		sm.PrintDefaults()
 	}
 	if err := sm.Parse(argv[1:]); err != nil {
+		if err == flag.ErrHelp {
+			return ErrInvalidUsage
+		}
 		return err
 	}
 
@@ -67,11 +76,17 @@ func Run(ctx context.Context, commands map[string]*Command, argv []string) error
 	sc.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: %s %s %s\n\nflags:\n", argv[0], sm.Arg(0), cmd.Help)
 		sc.PrintDefaults()
+		fmt.Println()
+		fmt.Println("common flags: ")
+		sm.PrintDefaults()
 	}
 	if cmd.ParseFunc != nil {
 		cmd.ParseFunc(sc)
 	}
 	if err := sc.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return ErrInvalidUsage
+		}
 		return err
 	}
 	if err := cmd.Handler(ctx, sc); err != nil {
