@@ -17,34 +17,60 @@ import (
 )
 
 func TestEnd2End(t *testing.T) {
-	for name, mk := range map[string]func() (transport.Transport, error){
-		"mqtt": func() (transport.Transport, error) { return mqtt.New(mqtt.WithLogger(nil)) },
-		//"amqp": func() (transport.Transport, error) { return amqp.New() },
+	dcs := os.Getenv("TEST_DEVICE_CONNECTION_STRING")
+	if dcs == "" {
+		t.Fatal("TEST_DEVICE_CONNECTION_STRING is empty")
+	}
+	device := os.Getenv("TEST_X509_DEVICE")
+	if device == "" {
+		t.Fatal("TEST_X509_DEVICE is empty")
+	}
+	hostname := os.Getenv("TEST_X509_HOSTNAME")
+	if hostname == "" {
+		t.Fatal("TEST_X509_HOSTNAME is empty")
+	}
+
+	for name, opts := range map[string][]iotdevice.ClientOption{
+		"x509": {
+			iotdevice.WithDeviceID(device),
+			iotdevice.WithHostname(hostname),
+			iotdevice.WithX509FromFile("./testdata/dev.crt", "./testdata/dev.key"),
+		},
+		"symmetric-key": {
+			iotdevice.WithConnectionString(dcs),
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			for name, test := range map[string]func(*testing.T, transport.Transport){
-				"DeviceToCloud": testDeviceToCloud,
-				"CloudToDevice": testCloudToDevice,
-				"DirectMethod":  testDirectMethod,
-				"TwinDevice":    testTwinDevice,
+			for name, mk := range map[string]func() (transport.Transport, error){
+				"mqtt": func() (transport.Transport, error) { return mqtt.New(mqtt.WithLogger(nil)) },
+				//"amqp": func() (transport.Transport, error) { return amqp.New() },
 			} {
 				t.Run(name, func(t *testing.T) {
-					tr, err := mk()
-					if err != nil {
-						t.Fatal(err)
+					for name, test := range map[string]func(*testing.T, ...iotdevice.ClientOption){
+						"DeviceToCloud": testDeviceToCloud,
+						"CloudToDevice": testCloudToDevice,
+						"DirectMethod":  testDirectMethod,
+						"TwinDevice":    testTwinDevice,
+					} {
+						t.Run(name, func(t *testing.T) {
+							tr, err := mk()
+							if err != nil {
+								t.Fatal(err)
+							}
+							test(t, append(opts, iotdevice.WithLogger(nil), iotdevice.WithTransport(tr))...)
+						})
 					}
-					test(t, tr)
 				})
 			}
 		})
 	}
 }
 
-func testDeviceToCloud(t *testing.T, tr transport.Transport) {
+func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dc, sc := mkDeviceAndService(t, ctx, tr)
+	dc, sc := mkDeviceAndService(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
 	evch := make(chan *iotservice.Event, 1)
@@ -87,11 +113,11 @@ func testDeviceToCloud(t *testing.T, tr transport.Transport) {
 	}
 }
 
-func testCloudToDevice(t *testing.T, tr transport.Transport) {
+func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dc, sc := mkDeviceAndService(t, ctx, tr)
+	dc, sc := mkDeviceAndService(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
 	evsc := make(chan *iotdevice.Event, 1)
@@ -185,11 +211,11 @@ Error:
 	t.Errorf("events are not equal, got %v, want %v", d, c)
 }
 
-func testTwinDevice(t *testing.T, tr transport.Transport) {
+func testTwinDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dc, sc := mkDeviceAndService(t, ctx, tr)
+	dc, sc := mkDeviceAndService(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
 	// update state and keep track of version
@@ -213,11 +239,11 @@ func testTwinDevice(t *testing.T, tr transport.Transport) {
 	}
 }
 
-func testDirectMethod(t *testing.T, tr transport.Transport) {
+func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dc, sc := mkDeviceAndService(t, ctx, tr)
+	dc, sc := mkDeviceAndService(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
 	errc := make(chan error, 2)
@@ -265,22 +291,14 @@ func testDirectMethod(t *testing.T, tr transport.Transport) {
 func mkDeviceAndService(
 	t *testing.T,
 	ctx context.Context,
-	tr transport.Transport,
+	opts ...iotdevice.ClientOption,
 ) (*iotdevice.Client, *iotservice.Client) {
-	dcs := os.Getenv("TEST_DEV_CONN")
-	if dcs == "" {
-		t.Fatal("TEST_DEV_CONN is not set")
-	}
-	ccs := os.Getenv("TEST_SVC_CONN")
+	ccs := os.Getenv("TEST_SERVICE_CONNECTION_STRING")
 	if ccs == "" {
-		t.Fatal("TEST_SVC_CONN is not set")
+		t.Fatal("TEST_SERVICE_CONNECTION_STRING is empty")
 	}
 
-	dc, err := iotdevice.New(
-		iotdevice.WithLogger(nil),
-		iotdevice.WithTransport(tr),
-		iotdevice.WithConnectionString(dcs),
-	)
+	dc, err := iotdevice.New(opts...)
 	if err != nil {
 		t.Fatal(err)
 	}

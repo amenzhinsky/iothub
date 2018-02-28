@@ -1,7 +1,6 @@
-package credentials
+package common
 
 import (
-	"crypto/tls"
 	"crypto/x509"
 )
 
@@ -107,14 +106,11 @@ ee5Ehr7XHuQe+w==
 -----END CERTIFICATE-----
 `)
 
-// TLSConfig returns tls config for connecting to the cloud.
-func TLSConfig(hostname string) *tls.Config {
+// RootCAs root CA certificates pool for connecting to the cloud.
+func RootCAs() *x509.CertPool {
 	p := x509.NewCertPool()
 	if ok := p.AppendCertsFromPEM(caCerts); !ok {
 		panic("tls: unable to append certificates")
 	}
-	return &tls.Config{
-		ServerName: hostname,
-		RootCAs:    p,
-	}
+	return p
 }

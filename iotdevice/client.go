@@ -2,6 +2,7 @@ package iotdevice
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/iotutil"
 	"github.com/amenzhinsky/iothub/transport"
@@ -93,12 +95,41 @@ func WithAuthFunc(fn transport.AuthFunc) ClientOption {
 	}
 }
 
+// WithHostname changes hostname required when using x509 authentication.
+func WithHostname(hostname string) ClientOption {
+	return func(c *Client) error {
+		c.tls.ServerName = hostname
+		return nil
+	}
+}
+
+// WithX509FromCert uses the given TLS certificate for x509 authentication.
+func WithX509FromCert(crt *tls.Certificate) ClientOption {
+	return func(c *Client) error {
+		c.tls.Certificates = []tls.Certificate{*crt}
+		return nil
+	}
+}
+
+// WithX509FromFile is same as `WithX509FromCert` but parses the given files first.
+func WithX509FromFile(certFile, keyFile string) ClientOption {
+	return func(c *Client) error {
+		crt, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return err
+		}
+		c.tls.Certificates = []tls.Certificate{crt}
+		return nil
+	}
+}
+
 // errNotConnected is the initial connection state.
 var errNotConnected = errors.New("not connected")
 
 // New returns new iothub client parsing the given connection string.
 func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
+		tls:     &tls.Config{RootCAs: common.RootCAs()},
 		subs:    make([]CloudToDeviceFunc, 0),
 		changes: make([]DesiredStateChangeFunc, 0),
 		methods: make(map[string]DirectMethodFunc, 0),
@@ -119,9 +150,6 @@ func New(opts ...ClientOption) (*Client, error) {
 	if c.tr == nil {
 		return nil, errors.New("transport is nil, consider using `WithTransport` option")
 	}
-	if c.authFunc == nil {
-		return nil, errors.New("authentication func is nil, consider using `WithAuthFunc` option")
-	}
 	return c, nil
 }
 
@@ -129,6 +157,7 @@ func New(opts ...ClientOption) (*Client, error) {
 type Client struct {
 	deviceID string
 	authFunc transport.AuthFunc
+	tls      *tls.Config
 
 	logger *log.Logger
 	debug  bool
@@ -169,7 +198,7 @@ func (c *Client) Connect(ctx context.Context, ignoreNetErrors bool) error {
 	defer c.connMu.Unlock()
 
 Retry:
-	c.connErr = c.tr.Connect(ctx, c.deviceID, transport.AuthFunc(c.authFunc))
+	c.connErr = c.tr.Connect(ctx, c.tls.Clone(), c.deviceID, transport.AuthFunc(c.authFunc))
 	if ignoreNetErrors && c.tr.IsNetworkError(c.connErr) {
 		c.logf("couldn't connect, reconnecting")
 		goto Retry

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"crypto/tls"
+
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/eventhub"
@@ -90,7 +92,9 @@ func New(opts ...ClientOption) (*Client, error) {
 	if c.http == nil {
 		c.http = &http.Client{
 			Transport: &http.Transport{
-				TLSClientConfig: credentials.TLSConfig(c.creds.HostName),
+				TLSClientConfig: &tls.Config{
+					RootCAs: common.RootCAs(),
+				},
 			},
 		}
 	}
@@ -112,7 +116,10 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	eh, err := eventhub.Dial(c.creds.HostName)
+	eh, err := eventhub.Dial(c.creds.HostName, &tls.Config{
+		ServerName: c.creds.HostName,
+		RootCAs:    common.RootCAs(),
+	})
 	if err != nil {
 		return err
 	}

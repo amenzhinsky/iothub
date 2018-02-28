@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -13,7 +14,6 @@ import (
 	"sync"
 
 	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/iotutil"
 	"github.com/amenzhinsky/iothub/transport"
 	"github.com/eclipse/paho.mqtt.golang"
@@ -24,19 +24,19 @@ const (
 	defaultQoS = 1
 )
 
-type MQTTOption func(tr *MQTT) error
+type TransportOption func(tr *Transport) error
 
-func WithLogger(l *log.Logger) MQTTOption {
-	return func(tr *MQTT) error {
+func WithLogger(l *log.Logger) TransportOption {
+	return func(tr *Transport) error {
 		tr.logger = l
 		return nil
 	}
 }
 
-// New returns new MQTT transport.
+// New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
-func New(opts ...MQTTOption) (transport.Transport, error) {
-	tr := &MQTT{
+func New(opts ...TransportOption) (transport.Transport, error) {
+	tr := &Transport{
 		done: make(chan struct{}),
 		c2ds: make(chan *transport.Event, 10),
 		dmis: make(chan *transport.Call, 10),
@@ -53,7 +53,7 @@ func New(opts ...MQTTOption) (transport.Transport, error) {
 	return tr, nil
 }
 
-type MQTT struct {
+type Transport struct {
 	mu   sync.RWMutex
 	conn mqtt.Client
 	ridg iotutil.RIDGenerator
@@ -67,32 +67,41 @@ type MQTT struct {
 	logger *log.Logger
 }
 
-func (tr *MQTT) logf(format string, v ...interface{}) {
+func (tr *Transport) logf(format string, v ...interface{}) {
 	if tr.logger != nil {
 		tr.logger.Printf(format, v...)
 	}
 }
 
-func (tr *MQTT) Connect(ctx context.Context, deviceID string, sasFunc transport.AuthFunc) error {
+func (tr *Transport) Connect(
+	ctx context.Context,
+	tlsConfig *tls.Config,
+	deviceID string,
+	auth transport.AuthFunc,
+) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
 		return errors.New("already connected")
 	}
 
-	host, sas, err := sasFunc(ctx, "")
-	if err != nil {
-		return err
+	host := tlsConfig.ServerName
+	pass := ""
+	if auth != nil {
+		var err error
+		host, pass, err = auth(ctx, "")
+		if err != nil {
+			return err
+		}
 	}
 
 	o := mqtt.NewClientOptions()
 	o.AddBroker("tls://" + host + ":8883")
 	o.SetClientID(deviceID)
 	o.SetUsername(host + "/" + deviceID + "/api-version=" + common.APIVersion)
-	o.SetPassword(sas)
-	o.SetTLSConfig(credentials.TLSConfig(host))
+	o.SetPassword(pass)
+	o.SetTLSConfig(tlsConfig)
 	o.SetAutoReconnect(true)
-	o.SetCleanSession(false) // TODO: investigate ability to enable it
 	o.SetOnConnectHandler(func(_ mqtt.Client) {
 		tr.logf("connection established")
 	})
@@ -123,14 +132,14 @@ func (tr *MQTT) Connect(ctx context.Context, deviceID string, sasFunc transport.
 }
 
 // mqtt library wraps errors with fmt.Errorf.
-func (tr *MQTT) IsNetworkError(err error) bool {
+func (tr *Transport) IsNetworkError(err error) bool {
 	if err == nil {
 		return false
 	}
 	return strings.Contains(err.Error(), "Network Error")
 }
 
-func (tr *MQTT) cloudToDeviceHandler(_ mqtt.Client, m mqtt.Message) {
+func (tr *Transport) cloudToDeviceHandler(_ mqtt.Client, m mqtt.Message) {
 	p, err := parseCloudToDeviceTopic(m.Topic())
 	if err != nil {
 		tr.logf("cloud-to-device error: %s", err)
@@ -145,7 +154,7 @@ func (tr *MQTT) cloudToDeviceHandler(_ mqtt.Client, m mqtt.Message) {
 	}
 }
 
-func (tr *MQTT) C2D() chan *transport.Event {
+func (tr *Transport) C2D() chan *transport.Event {
 	return tr.c2ds
 }
 
@@ -177,7 +186,7 @@ func parseCloudToDeviceTopic(s string) (map[string]string, error) {
 	return p, nil
 }
 
-func (tr *MQTT) directMethodHandler(_ mqtt.Client, m mqtt.Message) {
+func (tr *Transport) directMethodHandler(_ mqtt.Client, m mqtt.Message) {
 	method, rid, err := parseDirectMethodTopic(m.Topic())
 	if err != nil {
 		tr.logf("direct-method error: %s", err)
@@ -193,11 +202,11 @@ func (tr *MQTT) directMethodHandler(_ mqtt.Client, m mqtt.Message) {
 	}
 }
 
-func (tr *MQTT) DMI() chan *transport.Call {
+func (tr *Transport) DMI() chan *transport.Call {
 	return tr.dmis
 }
 
-func (tr *MQTT) RespondDirectMethod(ctx context.Context, rid string, code int, b []byte) error {
+func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, code int, b []byte) error {
 	return tr.send(ctx, fmt.Sprintf("$iothub/methods/res/%d/?$rid=%s", code, rid), b)
 }
 
@@ -214,7 +223,7 @@ func parseDirectMethodTopic(s string) (string, string, error) {
 	return ss[3], ss[4][6:], nil
 }
 
-func (tr *MQTT) twinResponseHandler(_ mqtt.Client, m mqtt.Message) {
+func (tr *Transport) twinResponseHandler(_ mqtt.Client, m mqtt.Message) {
 	rc, rid, ver, err := parseTwinPropsTopic(m.Topic())
 	if err != nil {
 		tr.logf("error parsing twin response topic: %s", err)
@@ -245,7 +254,7 @@ type resp struct {
 	body []byte
 }
 
-func (tr *MQTT) RetrieveTwinProperties(ctx context.Context) ([]byte, error) {
+func (tr *Transport) RetrieveTwinProperties(ctx context.Context) ([]byte, error) {
 	r, err := tr.request(ctx, "$iothub/twin/GET/?$rid=%s", nil)
 	if err != nil {
 		return nil, err
@@ -253,7 +262,7 @@ func (tr *MQTT) RetrieveTwinProperties(ctx context.Context) ([]byte, error) {
 	return r.body, nil
 }
 
-func (tr *MQTT) UpdateTwinProperties(ctx context.Context, b []byte) (int, error) {
+func (tr *Transport) UpdateTwinProperties(ctx context.Context, b []byte) (int, error) {
 	r, err := tr.request(ctx, "$iothub/twin/PATCH/properties/reported/?$rid=%s", b)
 	if err != nil {
 		return 0, err
@@ -261,7 +270,7 @@ func (tr *MQTT) UpdateTwinProperties(ctx context.Context, b []byte) (int, error)
 	return r.ver, nil
 }
 
-func (tr *MQTT) request(ctx context.Context, topic string, b []byte) (*resp, error) {
+func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp, error) {
 	rid := tr.ridg.Next()
 	dst := fmt.Sprintf(topic, rid)
 	rch := make(chan *resp, 1)
@@ -308,18 +317,18 @@ func parseTwinPropsTopic(s string) (int, string, int, error) {
 	return rc, ss[2], ver, nil
 }
 
-func (tr *MQTT) desiredStateChangesHandler(_ mqtt.Client, m mqtt.Message) {
+func (tr *Transport) desiredStateChangesHandler(_ mqtt.Client, m mqtt.Message) {
 	select {
 	case tr.dscs <- m.Payload():
 	case <-tr.done:
 	}
 }
 
-func (tr *MQTT) DSC() chan []byte {
+func (tr *Transport) DSC() chan []byte {
 	return tr.dscs
 }
 
-func (tr *MQTT) PublishEvent(ctx context.Context, ev *transport.Event) error {
+func (tr *Transport) PublishEvent(ctx context.Context, ev *transport.Event) error {
 	u := make(url.Values, len(ev.Properties))
 	for k, v := range ev.Properties {
 		u[k] = []string{v}
@@ -327,7 +336,7 @@ func (tr *MQTT) PublishEvent(ctx context.Context, ev *transport.Event) error {
 	return tr.send(ctx, "devices/"+ev.DeviceID+"/messages/events/"+u.Encode(), ev.Payload)
 }
 
-func (tr *MQTT) send(ctx context.Context, topic string, b []byte) error {
+func (tr *Transport) send(ctx context.Context, topic string, b []byte) error {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	if tr.conn == nil {
@@ -339,7 +348,7 @@ func (tr *MQTT) send(ctx context.Context, topic string, b []byte) error {
 	return t.Error()
 }
 
-func (tr *MQTT) Close() error {
+func (tr *Transport) Close() error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	select {
@@ -347,6 +356,9 @@ func (tr *MQTT) Close() error {
 		return nil
 	default:
 		close(tr.done)
+	}
+	if tr.conn == nil {
+		return errors.New("not connected")
 	}
 	if tr.conn.IsConnected() {
 		tr.conn.Disconnect(250)

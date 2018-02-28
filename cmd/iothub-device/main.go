@@ -35,6 +35,12 @@ var (
 	quiteFlag     = false
 	transportFlag = "mqtt"
 	formatFlag    = internal.NewChoiceFlag("simple", "json")
+
+	// x509 flags
+	tlsCertFlag  = ""
+	tlsKeyFlag   = ""
+	deviceIDFlag = ""
+	hostnameFlag = ""
 )
 
 func main() {
@@ -62,7 +68,7 @@ func run() error {
 			"subscribe to events sent from the cloud (C2D)",
 			conn(watchEvents),
 			func(fs *flag.FlagSet) {
-				fs.Var(formatFlag, "format", "output format <simple|json>")
+				fs.Var(formatFlag, "f", "output format <simple|json>")
 			},
 		},
 		"watch-twin": {
@@ -76,7 +82,7 @@ func run() error {
 			"handle the named direct method, reads responses from STDIN",
 			conn(directMethod),
 			func(fs *flag.FlagSet) {
-				fs.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
+				fs.BoolVar(&quiteFlag, "q", quiteFlag, "disable additional hints")
 			},
 		},
 
@@ -84,15 +90,40 @@ func run() error {
 	}, os.Args, func(fs *flag.FlagSet) {
 		fs.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
 		fs.StringVar(&transportFlag, "transport", transportFlag, "transport to use <mqtt|amqp|http>")
+		fs.StringVar(&tlsCertFlag, "tls-cert", tlsCertFlag, "path to x509 cert file")
+		fs.StringVar(&tlsKeyFlag, "tls-key", tlsKeyFlag, "path to x509 key file")
+		fs.StringVar(&deviceIDFlag, "device-id", deviceIDFlag, "device id")
+		fs.StringVar(&hostnameFlag, "hostname", hostnameFlag, "hostname to connect to")
 	})
 }
 
 func conn(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) internal.HandlerFunc {
 	return func(ctx context.Context, fs *flag.FlagSet) error {
-		s := os.Getenv("DEVICE_CONNECTION_STRING")
-		if s == "" {
-			return errors.New("DEVICE_CONNECTION_STRING is blank")
+		var opts []iotdevice.ClientOption
+		if tlsCertFlag != "" {
+			if tlsKeyFlag == "" {
+				return errors.New("tlsKeyFlag is empty")
+			}
+			if hostnameFlag == "" {
+				return errors.New("hostname must be set when using x509 authentication")
+			}
+			if deviceIDFlag == "" {
+				return errors.New("device id must be set when using 509 authentication")
+			}
+
+			opts = append(opts,
+				iotdevice.WithX509FromFile(tlsCertFlag, tlsKeyFlag),
+				iotdevice.WithHostname(hostnameFlag),
+				iotdevice.WithDeviceID(deviceIDFlag),
+			)
+		} else {
+			cs := os.Getenv("DEVICE_CONNECTION_STRING")
+			if cs == "" {
+				return errors.New("DEVICE_CONNECTION_STRING is blank")
+			}
+			opts = append(opts, iotdevice.WithConnectionString(cs))
 		}
+
 		f, ok := transports[transportFlag]
 		if !ok {
 			return fmt.Errorf("unknown transport %q", transportFlag)
@@ -101,11 +132,10 @@ func conn(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		if err != nil {
 			return err
 		}
-		c, err := iotdevice.New(
+		c, err := iotdevice.New(append(opts,
 			iotdevice.WithLogger(mklog("[iothub] ")),
-			iotdevice.WithConnectionString(s),
 			iotdevice.WithTransport(t),
-		)
+		)...)
 		if err != nil {
 			return err
 		}

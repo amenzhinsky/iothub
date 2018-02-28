@@ -2,6 +2,7 @@ package amqp
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -14,20 +15,20 @@ import (
 	"pack.ag/amqp"
 )
 
-// AMQPOption is transport configuration option.
-type AMQPOption func(tr *AMQP) error
+// TransportOption is transport configuration option.
+type TransportOption func(tr *Transport) error
 
 // WithLogger overrides transport logger.
-func WithLogger(l *log.Logger) AMQPOption {
-	return func(c *AMQP) error {
+func WithLogger(l *log.Logger) TransportOption {
+	return func(c *Transport) error {
 		c.logger = l
 		return nil
 	}
 }
 
 // New creates new amqp iothub transport.
-func New(opts ...AMQPOption) (transport.Transport, error) {
-	tr := &AMQP{
+func New(opts ...TransportOption) (transport.Transport, error) {
+	tr := &Transport{
 		c2ds:   make(chan *transport.Event, 10),
 		done:   make(chan struct{}),
 		logger: log.New(os.Stdout, "[amqp] ", 0),
@@ -40,7 +41,7 @@ func New(opts ...AMQPOption) (transport.Transport, error) {
 	return tr, nil
 }
 
-type AMQP struct {
+type Transport struct {
 	mu     sync.RWMutex
 	conn   *eventhub.Client
 	logger *log.Logger
@@ -49,7 +50,12 @@ type AMQP struct {
 	done chan struct{}
 }
 
-func (tr *AMQP) Connect(ctx context.Context, deviceID string, sasFunc transport.AuthFunc) error {
+func (tr *Transport) Connect(
+	ctx context.Context,
+	tlsConfig *tls.Config,
+	deviceID string,
+	sasFunc transport.AuthFunc,
+) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
@@ -61,7 +67,7 @@ func (tr *AMQP) Connect(ctx context.Context, deviceID string, sasFunc transport.
 	if err != nil {
 		return err
 	}
-	c, err := eventhub.Dial(hostname)
+	c, err := eventhub.Dial(hostname, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -97,6 +103,8 @@ func (tr *AMQP) Connect(ctx context.Context, deviceID string, sasFunc transport.
 					return
 				default:
 				}
+
+				// TODO: disconnect errors can occur here
 				panic(err)
 			}
 
@@ -120,11 +128,11 @@ func (tr *AMQP) Connect(ctx context.Context, deviceID string, sasFunc transport.
 	return nil
 }
 
-func (tr *AMQP) IsNetworkError(err error) bool {
+func (tr *Transport) IsNetworkError(err error) bool {
 	return false
 }
 
-func (tr *AMQP) PublishEvent(ctx context.Context, event *transport.Event) error {
+func (tr *Transport) PublishEvent(ctx context.Context, event *transport.Event) error {
 	if err := tr.checkConnection(); err != nil {
 		return err
 	}
@@ -153,31 +161,31 @@ func (tr *AMQP) PublishEvent(ctx context.Context, event *transport.Event) error 
 	})
 }
 
-func (tr *AMQP) C2D() chan *transport.Event {
+func (tr *Transport) C2D() chan *transport.Event {
 	return tr.c2ds
 }
 
-func (tr *AMQP) DMI() chan *transport.Call {
+func (tr *Transport) DMI() chan *transport.Call {
 	return nil
 }
 
-func (tr *AMQP) DSC() chan []byte {
+func (tr *Transport) DSC() chan []byte {
 	return nil
 }
 
-func (tr *AMQP) RespondDirectMethod(ctx context.Context, rid string, code int, payload []byte) error {
+func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, code int, payload []byte) error {
 	return nil
 }
 
-func (tr *AMQP) RetrieveTwinProperties(ctx context.Context) (payload []byte, err error) {
+func (tr *Transport) RetrieveTwinProperties(ctx context.Context) (payload []byte, err error) {
 	return nil, nil
 }
 
-func (tr *AMQP) UpdateTwinProperties(ctx context.Context, payload []byte) (version int, err error) {
+func (tr *Transport) UpdateTwinProperties(ctx context.Context, payload []byte) (version int, err error) {
 	return 0, nil
 }
 
-func (tr *AMQP) checkConnection() error {
+func (tr *Transport) checkConnection() error {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	if tr.conn == nil {
@@ -186,7 +194,7 @@ func (tr *AMQP) checkConnection() error {
 	return nil
 }
 
-func (tr *AMQP) Close() error {
+func (tr *Transport) Close() error {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	select {

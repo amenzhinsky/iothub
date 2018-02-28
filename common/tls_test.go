@@ -1,6 +1,7 @@
-package credentials
+package common
 
 import (
+	"crypto/tls"
 	"net/http"
 	"testing"
 )
@@ -14,7 +15,9 @@ func TestTLSConfig(t *testing.T) {
 	}
 
 	c := &http.Client{Transport: &http.Transport{
-		TLSClientConfig: TLSConfig("portal.azure.com"),
+		TLSClientConfig: &tls.Config{
+			RootCAs: RootCAs(),
+		},
 	}}
 	if _, err := c.Do(r); err != nil {
 		t.Fatal(err)

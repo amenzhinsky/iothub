@@ -2,11 +2,12 @@ package transport
 
 import (
 	"context"
+	"crypto/tls"
 )
 
 // Transport interface.
 type Transport interface {
-	Connect(ctx context.Context, deviceID string, sasFunc AuthFunc) error
+	Connect(ctx context.Context, tlsConfig *tls.Config, deviceID string, auth AuthFunc) error
 	IsNetworkError(err error) bool
 	PublishEvent(ctx context.Context, event *Event) error
 	C2D() chan *Event
@@ -33,4 +34,4 @@ type Call struct {
 }
 
 // AuthFunc is used to obtain hostname and sas token before authenticating.
-type AuthFunc func(ctx context.Context, path string) (hostname string, sas string, err error)
+type AuthFunc func(ctx context.Context, path string) (hostname string, token string, err error)

@@ -2,6 +2,7 @@ package eventhub
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -13,8 +14,10 @@ import (
 )
 
 // Dial connects to the named amqp broker and returns a eventhub client.
-func Dial(hostname string) (*Client, error) {
-	conn, err := amqp.Dial("amqps://" + hostname)
+func Dial(hostname string, tlsConfig *tls.Config) (*Client, error) {
+	conn, err := amqp.Dial("amqps://"+hostname,
+		amqp.ConnTLSConfig(tlsConfig),
+	)
 	if err != nil {
 		return nil, err
 	}

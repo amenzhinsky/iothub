@@ -52,7 +52,7 @@ func run() error {
 			"send a message to the named device (C2D)",
 			send(c),
 			func(fs *flag.FlagSet) {
-				fs.Var(ackFlag, "ack", "type of ack feedback")
+				fs.Var(ackFlag, "a", "type of ack feedback")
 			},
 		},
 		"watch-events": {
@@ -60,7 +60,7 @@ func run() error {
 			"subscribe to device messages (D2C)",
 			watchEvents(c),
 			func(fs *flag.FlagSet) {
-				fs.Var(formatFlag, "format", "output format <simple|json>")
+				fs.Var(formatFlag, "f", "output format <simple|json>")
 			},
 		},
 		"watch-feedback": {
