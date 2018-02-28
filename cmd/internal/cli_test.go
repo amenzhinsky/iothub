@@ -5,7 +5,7 @@ import "testing"
 func TestNewChoiceFlag(t *testing.T) {
 	t.Parallel()
 
-	f := NewChoiceFlag("type", "foo", "bar", "baz")
+	f := NewChoiceFlag("foo", "bar", "baz")
 	if f.String() != "foo" {
 		t.Errorf("default value is invalid")
 	}

@@ -233,10 +233,16 @@ func testDirectMethod(t *testing.T, tr transport.Transport) {
 
 	resc := make(chan map[string]interface{}, 1)
 	go func() {
-		v, err := sc.InvokeMethod(ctx, dc.DeviceID(), "sum", map[string]interface{}{
-			"a": 1.5,
-			"b": 3,
-		}, iotservice.WithInvokeResponseTimeout(5))
+		v, err := sc.InvokeMethod(ctx, &iotservice.Invocation{
+			DeviceID:        dc.DeviceID(),
+			MethodName:      "sum",
+			ConnectTimeout:  0,
+			ResponseTimeout: 5,
+			Payload: map[string]interface{}{
+				"a": 1.5,
+				"b": 3,
+			},
+		})
 		if err != nil {
 			errc <- err
 		}

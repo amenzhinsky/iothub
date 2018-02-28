@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/eventhub"
 	"gopkg.in/satori/go.uuid.v1"
@@ -348,47 +349,40 @@ type Feedback struct {
 	StatusCode         string    `json:"statusCode"`
 }
 
-// invocation is direct method invocation object.
-type invocation struct {
-	MethodName      string                 `json:"methodName"`
-	ResponseTimeout int                    `json:"responseTimeoutInSeconds,omitempty"`
-	Payload         map[string]interface{} `json:"payload,omitempty"`
+// Invocation is direct method invocation object.
+type Invocation struct {
+	// DeviceID is device identifier on azure.
+	DeviceID string `json:"-"`
+
+	// MethodName is a direct method name.
+	MethodName string `json:"methodName"`
+
+	// ConnectTimeout is connection timeout in seconds.
+	ConnectTimeout int `json:"connectTimeoutInSeconds,omitempty"`
+
+	// ResponseTimeout is response timeout in seconds.
+	ResponseTimeout int `json:"responseTimeoutInSeconds,omitempty"`
+
+	// Payload is method's input data.
+	Payload map[string]interface{} `json:"payload"`
 }
 
-const restAPIVersion = "2017-06-30"
-
-// InvokeOption direct-method invocation option.
-type InvokeOption func(i *invocation) error
-
-// WithInvokeResponseTimeout sets response timeout in seconds,
-// 30 seconds is the default value.
-func WithInvokeResponseTimeout(seconds int) InvokeOption {
-	return func(i *invocation) error {
-		i.ResponseTimeout = seconds
-		return nil
+// InvokeMethod calls the named direct method on with the given parameters.
+func (c *Client) InvokeMethod(ctx context.Context, invocation *Invocation) (map[string]interface{}, error) {
+	if invocation == nil {
+		return nil, errors.New("invocation is nil")
 	}
-}
-
-// InvokeMethod calls the given device direct method.
-func (c *Client) InvokeMethod(
-	ctx context.Context,
-	deviceID, methodName string,
-	payload map[string]interface{},
-	opts ...InvokeOption) (map[string]interface{}, error) {
-	if deviceID == "" {
-		return nil, errors.New("deviceID cannot be empty")
+	if invocation.DeviceID == "" {
+		return nil, errors.New("deviceID is empty")
 	}
-	if methodName == "" {
-		return nil, errors.New("methodName cannot be empty")
+	if invocation.MethodName == "" {
+		return nil, errors.New("methodName is empty")
+	}
+	if len(invocation.Payload) == 0 {
+		return nil, errors.New("payload is empty")
 	}
 
-	m := &invocation{MethodName: methodName, Payload: payload, ResponseTimeout: 30}
-	for _, o := range opts {
-		if err := o(m); err != nil {
-			return nil, err
-		}
-	}
-	b, err := json.Marshal(m)
+	b, err := json.Marshal(invocation)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +390,7 @@ func (c *Client) InvokeMethod(
 	r, err := http.NewRequest(
 		http.MethodPost,
 		fmt.Sprintf("https://%s/twins/%s/methods?api-version=%s",
-			c.creds.HostName, deviceID, restAPIVersion),
+			c.creds.HostName, invocation.DeviceID, common.APIVersion),
 		bytes.NewReader(b),
 	)
 	if err != nil {

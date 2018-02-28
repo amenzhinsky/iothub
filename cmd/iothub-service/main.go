@@ -15,8 +15,10 @@ import (
 
 // globally accessible by command handlers, is it a good idea?
 var (
-	ackFlag    = internal.NewChoiceFlag("none", "positive", "negative", "full")
-	formatFlag = internal.NewChoiceFlag("simple", "json")
+	ackFlag             = internal.NewChoiceFlag("none", "positive", "negative", "full")
+	formatFlag          = internal.NewChoiceFlag("simple", "json")
+	connectTimeoutFlag  = 0
+	responseTimeoutFlag = 30
 )
 
 func main() {
@@ -67,11 +69,14 @@ func run() error {
 			watchFeedback(c),
 			nil,
 		},
-		"call": {
+		"invoke": {
 			"DEVICE METHOD PAYLOAD",
 			"call a direct method on the named device (DM)",
 			directMethod(c),
-			nil,
+			func(fs *flag.FlagSet) {
+				fs.IntVar(&connectTimeoutFlag, "c", connectTimeoutFlag, "connect timeout in seconds")
+				fs.IntVar(&responseTimeoutFlag, "r", responseTimeoutFlag, "response timeout in seconds")
+			},
 		},
 	}, os.Args, nil)
 }
@@ -85,7 +90,13 @@ func directMethod(c *iotservice.Client) internal.HandlerFunc {
 		if err := json.Unmarshal([]byte(fs.Arg(2)), &v); err != nil {
 			return err
 		}
-		v, err := c.InvokeMethod(ctx, fs.Arg(0), fs.Arg(1), v)
+		v, err := c.InvokeMethod(ctx, &iotservice.Invocation{
+			DeviceID:        fs.Arg(0),
+			MethodName:      fs.Arg(1),
+			ConnectTimeout:  connectTimeoutFlag,
+			ResponseTimeout: responseTimeoutFlag,
+			Payload:         v,
+		})
 		if err != nil {
 			return err
 		}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/iotutil"
 	"github.com/amenzhinsky/iothub/transport"
@@ -19,8 +20,6 @@ import (
 )
 
 const (
-	apiVersion = "2016-11-14"
-
 	// existing SDKs use QoS 1
 	defaultQoS = 1
 )
@@ -89,7 +88,7 @@ func (tr *MQTT) Connect(ctx context.Context, deviceID string, sasFunc transport.
 	o := mqtt.NewClientOptions()
 	o.AddBroker("tls://" + host + ":8883")
 	o.SetClientID(deviceID)
-	o.SetUsername(host + "/" + deviceID + "/api-version=" + apiVersion)
+	o.SetUsername(host + "/" + deviceID + "/api-version=" + common.APIVersion)
 	o.SetPassword(sas)
 	o.SetTLSConfig(credentials.TLSConfig(host))
 	o.SetAutoReconnect(true)
