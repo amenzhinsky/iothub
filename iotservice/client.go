@@ -208,10 +208,10 @@ type Event struct {
 	Properties map[string]string
 
 	// Metadata is event annotations available only for incoming events.
-	Metadata map[interface{}]interface{}
+	Metadata map[string]string
 
 	// Ack is type of the message feedback, available only for outgoing events.
-	Ack string
+	Ack string `json:",omitempty"`
 }
 
 // SubscribeEvents subscribes to device events.
@@ -245,9 +245,17 @@ func (c *Client) Subscribe(ctx context.Context, f SubscribeFunc) error {
 			DeviceID:   devid,
 			Payload:    msg.Data[0],
 			Properties: props,
-			Metadata:   msg.Annotations,
+			Metadata:   mi2ms(msg.Annotations),
 		})
 	})
+}
+
+func mi2ms(m map[interface{}]interface{}) map[string]string {
+	r := make(map[string]string, len(m))
+	for k, v := range m {
+		r[fmt.Sprint(k)] = fmt.Sprint(v)
+	}
+	return r
 }
 
 // Publish sends the given cloud-to-device message and returns its id.

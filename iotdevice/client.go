@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -238,6 +237,13 @@ func (c *Client) ConnectionError(ctx context.Context) error {
 	}
 }
 
+const eventFormat = `
+---- PROPERTIES ----
+%s
+------ PAYLOAD -----
+%s
+====================`
+
 func (c *Client) recv() {
 	c2d := c.tr.C2D()
 	dmi := c.tr.DMI()
@@ -251,12 +257,12 @@ Loop:
 				panic("c2d channel is closed unexpectedly")
 			}
 			if c.debug {
-				c.logf("cloud-to-device %s\n---- body ----\n%s\n--------------",
-					fmtprops(ev.Properties),
+				c.logf("cloud-to-device"+eventFormat,
+					iotutil.FormatProperties(ev.Properties),
 					iotutil.FormatPayload(ev.Payload),
 				)
 			} else {
-				c.logf("cloud-to-device %s", fmtprops(ev.Properties))
+				c.logf("cloud-to-device %s", iotutil.FormatPropertiesShort(ev.Properties))
 			}
 			c.mu.RLock()
 			if len(c.subs) == 0 {
@@ -483,22 +489,14 @@ func (c *Client) Publish(ctx context.Context, event *Event) error {
 		return err
 	}
 	if c.debug {
-		c.logf("device-to-cloud %s\n---- body ----\n%s\n--------------",
-			fmtprops(event.Properties),
+		c.logf("device-to-cloud"+eventFormat,
+			iotutil.FormatProperties(event.Properties),
 			iotutil.FormatPayload(event.Payload),
 		)
 	} else {
-		c.logf("device-to-cloud %s", fmtprops(event.Properties))
+		c.logf("device-to-cloud %s", iotutil.FormatPropertiesShort(event.Properties))
 	}
 	return nil
-}
-
-func fmtprops(p map[string]string) string {
-	u := url.Values{}
-	for k, v := range p {
-		u.Add(k, v)
-	}
-	return u.Encode()
 }
 
 func (c *Client) logf(format string, v ...interface{}) {

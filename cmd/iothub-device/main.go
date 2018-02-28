@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
@@ -17,14 +18,21 @@ import (
 )
 
 var transports = map[string]func() (transport.Transport, error){
-	"mqtt": func() (transport.Transport, error) { return mqtt.New(mqtt.WithLogger(nil)) },
-	"amqp": func() (transport.Transport, error) { return amqp.New() },
-	"http": func() (transport.Transport, error) { return nil, errors.New("not implemented") },
+	"mqtt": func() (transport.Transport, error) {
+		return mqtt.New(mqtt.WithLogger(mklog("[mqtt]   ")))
+	},
+	"amqp": func() (transport.Transport, error) {
+		return amqp.New(amqp.WithLogger(mklog("[amqp]   ")))
+	},
+	"http": func() (transport.Transport, error) {
+		return nil, errors.New("not implemented")
+	},
 }
 
 var (
 	debugFlag     = false
 	transportFlag = "mqtt"
+	formatFlag    = internal.NewChoiceFlag("simple", "json")
 )
 
 func main() {
@@ -41,14 +49,29 @@ func run() error {
 	defer cancel()
 
 	return internal.Run(ctx, map[string]*internal.Command{
-		"send":         {"PAYLOAD [KEY VALUE]...", "send a message to the cloud (D2C)", conn(send), nil},
-		"watch-events": {"", "subscribe to events sent from the cloud (C2D)", conn(watchEvents), nil},
-		"watch-twin":   {"", "subscribe to twin device updates", conn(watchTwin), nil},
+		"send": {
+			"PAYLOAD [KEY VALUE]...",
+			"send a message to the cloud (D2C)",
+			conn(send),
+			nil,
+		},
+		"watch-events": {
+			"",
+			"subscribe to events sent from the cloud (C2D)",
+			conn(watchEvents), func(fs *flag.FlagSet) {
+				fs.Var(formatFlag, "f", "output format <json|simple>")
+			}},
+		"watch-twin": {
+			"",
+			"subscribe to twin device updates",
+			conn(watchTwin),
+			nil,
+		},
 
 		// TODO: other methods
 	}, os.Args, func(fs *flag.FlagSet) {
 		fs.BoolVar(&debugFlag, "d", debugFlag, "enable debug mode")
-		fs.StringVar(&transportFlag, "t", transportFlag, "transport to use (mqtt, amqp, http)")
+		fs.StringVar(&transportFlag, "t", transportFlag, "transport to use <mqtt|amqp|http>")
 	})
 }
 
@@ -67,8 +90,8 @@ func conn(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 			return err
 		}
 		c, err := iotdevice.New(
-			iotdevice.WithLogger(nil), // disable logging
-			iotdevice.WithDebug(debugFlag),
+			iotdevice.WithLogger(mklog("[iothub] ")),
+			//iotdevice.WithDebug(debugFlag),
 			iotdevice.WithConnectionString(s),
 			iotdevice.WithTransport(t),
 		)
@@ -80,6 +103,14 @@ func conn(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		}
 		return fn(ctx, fs, c)
 	}
+}
+
+// mklog enables logging only when debug mode is on
+func mklog(prefix string) *log.Logger {
+	if !debugFlag {
+		return nil
+	}
+	return log.New(os.Stderr, prefix, 0)
 }
 
 func send(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
@@ -103,7 +134,7 @@ func send(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
 
 const eventFormat = `---- PROPERTIES -----------
 %s
----------------------------
+---- PAYLOAD --------------
 %v
 ===========================
 `
@@ -113,10 +144,21 @@ func watchEvents(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) err
 		return internal.ErrInvalidUsage
 	}
 	return c.SubscribeEvents(ctx, func(ev *iotdevice.Event) {
-		fmt.Printf(eventFormat,
-			iotutil.FormatProperties(ev.Properties),
-			iotutil.FormatPayload(ev.Payload),
-		)
+		switch formatFlag.String() {
+		case "json":
+			b, err := json.Marshal(ev)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println(string(b))
+		case "simple":
+			fmt.Printf(eventFormat,
+				iotutil.FormatProperties(ev.Properties),
+				iotutil.FormatPayload(ev.Payload),
+			)
+		default:
+			panic("unknown output format")
+		}
 	})
 }
 

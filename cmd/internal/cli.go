@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 )
 
 // ErrInvalidUsage when returned by a Handler the usage message is displayed.
@@ -42,7 +43,7 @@ func Run(ctx context.Context, commands map[string]*Command, argv []string, fn fu
 		fn(sm)
 	}
 	sm.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s COMMAND [ARGS]...\n\ncommands:\n", argv[0])
+		fmt.Fprintf(os.Stderr, "usage: %s [FLAGS...] {COMMAND} [FLAGS...] [ARGS]...\n\ncommands:\n", argv[0])
 		for _, name := range names {
 			fmt.Fprintf(os.Stderr, "  %-15s %s\n", name, commands[name].Desc)
 		}
@@ -74,7 +75,8 @@ func Run(ctx context.Context, commands map[string]*Command, argv []string, fn fu
 	}
 	sc := flag.NewFlagSet(sm.Arg(0), flag.ContinueOnError)
 	sc.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s %s %s\n\nflags:\n", argv[0], sm.Arg(0), cmd.Help)
+		fmt.Fprintf(os.Stderr, "usage: %s [FLAGS...] %s [FLAGS....] %s\n\nflags:\n",
+			argv[0], sm.Arg(0), cmd.Help)
 		sc.PrintDefaults()
 		fmt.Println()
 		fmt.Println("common flags: ")
@@ -96,4 +98,35 @@ func Run(ctx context.Context, commands map[string]*Command, argv []string, fn fu
 		return err
 	}
 	return nil
+}
+
+// NewChoiceFlag creates new flag.Value instance that's
+// value is limited to the given options list.
+// Default value is first in the list.
+//
+// Panics if opts are blank.
+func NewChoiceFlag(opts ...string) flag.Value {
+	if len(opts) == 0 {
+		panic("values are empty")
+	}
+	return &choiceFlag{opts: opts, curr: opts[0]}
+}
+
+type choiceFlag struct {
+	opts []string
+	curr string
+}
+
+func (f *choiceFlag) Set(s string) error {
+	for _, o := range f.opts {
+		if s == o {
+			f.curr = s
+			return nil
+		}
+	}
+	return fmt.Errorf("valid values: %s", strings.Join(f.opts, ", "))
+}
+
+func (f *choiceFlag) String() string {
+	return f.curr
 }

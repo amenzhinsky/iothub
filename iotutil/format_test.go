@@ -10,7 +10,7 @@ func TestFormatPayload(t *testing.T) {
 		w string
 	}{
 		{[]byte(`{"a": "бла", "b": 1}`), `{"a": "бла", "b": 1}`},
-		{[]byte{0x0, 0xa, 0xab}, "00 0a ab"},
+		{[]byte{0x0, 0xa, 0xab}, "[00 0a ab]"},
 	} {
 		if g := FormatPayload(s.b); g != s.w {
 			t.Errorf("FormatPayload(%v) = %q, want %q", s.b, g, s.w)

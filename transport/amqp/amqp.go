@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"sync"
 
 	"github.com/amenzhinsky/iothub/eventhub"
@@ -15,11 +17,20 @@ import (
 // AMQPOption is transport configuration option.
 type AMQPOption func(tr *AMQP) error
 
+// WithLogger overrides transport logger.
+func WithLogger(l *log.Logger) AMQPOption {
+	return func(c *AMQP) error {
+		c.logger = l
+		return nil
+	}
+}
+
 // New creates new amqp iothub transport.
 func New(opts ...AMQPOption) (transport.Transport, error) {
 	tr := &AMQP{
-		c2ds: make(chan *transport.Event, 10),
-		done: make(chan struct{}),
+		c2ds:   make(chan *transport.Event, 10),
+		done:   make(chan struct{}),
+		logger: log.New(os.Stdout, "[amqp] ", 0),
 	}
 	for _, opt := range opts {
 		if err := opt(tr); err != nil {
@@ -30,8 +41,9 @@ func New(opts ...AMQPOption) (transport.Transport, error) {
 }
 
 type AMQP struct {
-	mu   sync.RWMutex
-	conn *eventhub.Client
+	mu     sync.RWMutex
+	conn   *eventhub.Client
+	logger *log.Logger
 
 	c2ds chan *transport.Event
 	done chan struct{}

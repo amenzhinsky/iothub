@@ -18,18 +18,32 @@ func IsPrintable(b []byte) bool {
 	return true
 }
 
-// FormatPayload converts b into string of hex bytes if it's not printable.
+// FormatPayload converts b into sequence of hex words if it's not printable.
 func FormatPayload(b []byte) string {
 	if IsPrintable(b) {
 		return string(b)
 	}
-	return fmt.Sprintf("% x", string(b))
+	return fmt.Sprintf("[% x]", string(b))
 }
 
-// FormatProperties formats the given map of properties.
+// FormatProperties formats the given map of properties to a one-line string.
+func FormatPropertiesShort(m map[string]string) string {
+	f := false
+	b := bytes.Buffer{} // TODO: strings.Builder
+	for k, v := range m {
+		if f {
+			b.WriteByte(' ')
+		}
+		f = true
+		b.WriteString(k + ":" + FormatPayload([]byte(v)))
+	}
+	return b.String()
+}
+
+// FormatProperties formats the given map of properties to a per key line string.
 func FormatProperties(m map[string]string) string {
 	p := 0
-	b := &bytes.Buffer{}
+	b := &bytes.Buffer{} // TODO: strings.Builder
 	o := make([]string, 0, len(m))
 	for k := range m {
 		if p < len(k) {
@@ -42,7 +56,7 @@ func FormatProperties(m map[string]string) string {
 		if i != 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(fmt.Sprintf("%-"+fmt.Sprint(p)+"s : %s", k, m[k]))
+		b.WriteString(fmt.Sprintf("%-"+fmt.Sprint(p)+"s : %s", k, FormatPayload([]byte(m[k]))))
 	}
 	return b.String()
 }

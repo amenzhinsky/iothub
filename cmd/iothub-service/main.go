@@ -15,7 +15,8 @@ import (
 
 // globally accessible by command handlers, is it a good idea?
 var (
-	ackFlag string
+	ackFlag    = ""
+	formatFlag = internal.NewChoiceFlag("simple", "json")
 )
 
 func main() {
@@ -49,14 +50,16 @@ func run() error {
 			"send a message to the named device (C2D)",
 			send(c),
 			func(fs *flag.FlagSet) {
-				fs.StringVar(&ackFlag, "ack", "", "type of ack feedback <positive|negative|full>")
+				fs.StringVar(&ackFlag, "ack", ackFlag, "type of ack feedback <positive|negative|full>")
 			},
 		},
 		"watch-events": {
 			"",
 			"subscribe to device messages (D2C)",
 			watchEvents(c),
-			nil,
+			func(fs *flag.FlagSet) {
+				fs.Var(formatFlag, "f", "output format <json|simple>")
+			},
 		},
 		"watch-feedback": {
 			"",
@@ -140,16 +143,28 @@ const eventFormat = `----- DEVICE -----------------
 func watchEvents(c *iotservice.Client) internal.HandlerFunc {
 	return func(ctx context.Context, fs *flag.FlagSet) error {
 		return c.Subscribe(ctx, func(ev *iotservice.Event) {
-			fmt.Printf(eventFormat,
-				ev.DeviceID,
-				iotutil.FormatProperties(ev.Properties),
-				iotutil.FormatPayload(ev.Payload),
-				iotutil.FormatProperties(mi2ms(ev.Metadata)),
-			)
+			switch formatFlag.String() {
+			case "json":
+				b, err := json.Marshal(ev)
+				if err != nil {
+					panic(err)
+				}
+				fmt.Println(string(b))
+			case "simple":
+				fmt.Printf(eventFormat,
+					ev.DeviceID,
+					iotutil.FormatProperties(ev.Properties),
+					iotutil.FormatPayload(ev.Payload),
+					iotutil.FormatProperties(ev.Metadata),
+				)
+			default:
+				panic("unknown output format")
+			}
 		})
 	}
 }
 
+// TODO: format
 func watchFeedback(c *iotservice.Client) internal.HandlerFunc {
 	return func(ctx context.Context, fs *flag.FlagSet) error {
 		if err := c.Connect(context.Background()); err != nil {
@@ -163,12 +178,4 @@ func watchFeedback(c *iotservice.Client) internal.HandlerFunc {
 			fmt.Println(string(b))
 		})
 	}
-}
-
-func mi2ms(m map[interface{}]interface{}) map[string]string {
-	r := make(map[string]string, len(m))
-	for k, v := range m {
-		r[fmt.Sprint(k)] = fmt.Sprint(v)
-	}
-	return r
 }
