@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,6 +32,7 @@ var transports = map[string]func() (transport.Transport, error){
 
 var (
 	debugFlag     = false
+	quiteFlag     = false
 	transportFlag = "mqtt"
 	formatFlag    = internal.NewChoiceFlag("simple", "json")
 )
@@ -58,20 +60,30 @@ func run() error {
 		"watch-events": {
 			"",
 			"subscribe to events sent from the cloud (C2D)",
-			conn(watchEvents), func(fs *flag.FlagSet) {
-				fs.Var(formatFlag, "f", "output format <json|simple>")
-			}},
+			conn(watchEvents),
+			func(fs *flag.FlagSet) {
+				fs.Var(formatFlag, "format", "output format <simple|json>")
+			},
+		},
 		"watch-twin": {
 			"",
 			"subscribe to twin device updates",
 			conn(watchTwin),
 			nil,
 		},
+		"direct-method": {
+			"NAME",
+			"handle the named direct method, reads responses from STDIN",
+			conn(directMethod),
+			func(fs *flag.FlagSet) {
+				fs.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
+			},
+		},
 
 		// TODO: other methods
 	}, os.Args, func(fs *flag.FlagSet) {
-		fs.BoolVar(&debugFlag, "d", debugFlag, "enable debug mode")
-		fs.StringVar(&transportFlag, "t", transportFlag, "transport to use <mqtt|amqp|http>")
+		fs.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
+		fs.StringVar(&transportFlag, "transport", transportFlag, "transport to use <mqtt|amqp|http>")
 	})
 }
 
@@ -91,7 +103,6 @@ func conn(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		}
 		c, err := iotdevice.New(
 			iotdevice.WithLogger(mklog("[iothub] ")),
-			//iotdevice.WithDebug(debugFlag),
 			iotdevice.WithConnectionString(s),
 			iotdevice.WithTransport(t),
 		)
@@ -173,4 +184,45 @@ func watchTwin(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error
 		}
 		fmt.Println(string(b))
 	})
+}
+
+func directMethod(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
+	if fs.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+
+	// if an error occurs during a method invocation,
+	// immediately return and display the error
+	errc := make(chan error, 1)
+
+	go func() {
+		read := bufio.NewReader(os.Stdin)
+		errc <- c.HandleMethod(ctx, fs.Arg(0),
+			func(p map[string]interface{}) (map[string]interface{}, error) {
+				b, err := json.Marshal(p)
+				if err != nil {
+					errc <- err
+					return nil, err
+				}
+				if quiteFlag {
+					fmt.Println(string(b))
+				} else {
+					fmt.Printf("Payload: %s\n", string(b))
+					fmt.Printf("Enter json response: ")
+				}
+				b, _, err = read.ReadLine()
+				if err != nil {
+					errc <- err
+					return nil, err
+				}
+				var v map[string]interface{}
+				if err = json.Unmarshal(b, &v); err != nil {
+					errc <- errors.New("unable to parse json input")
+					return nil, err
+				}
+				return v, nil
+			})
+	}()
+
+	return <-errc
 }

@@ -15,7 +15,7 @@ import (
 
 // globally accessible by command handlers, is it a good idea?
 var (
-	ackFlag    = ""
+	ackFlag    = internal.NewChoiceFlag("none", "positive", "negative", "full")
 	formatFlag = internal.NewChoiceFlag("simple", "json")
 )
 
@@ -50,7 +50,7 @@ func run() error {
 			"send a message to the named device (C2D)",
 			send(c),
 			func(fs *flag.FlagSet) {
-				fs.StringVar(&ackFlag, "ack", ackFlag, "type of ack feedback <positive|negative|full>")
+				fs.Var(ackFlag, "ack", "type of ack feedback")
 			},
 		},
 		"watch-events": {
@@ -58,7 +58,7 @@ func run() error {
 			"subscribe to device messages (D2C)",
 			watchEvents(c),
 			func(fs *flag.FlagSet) {
-				fs.Var(formatFlag, "f", "output format <json|simple>")
+				fs.Var(formatFlag, "format", "output format <simple|json>")
 			},
 		},
 		"watch-feedback": {
@@ -67,7 +67,7 @@ func run() error {
 			watchFeedback(c),
 			nil,
 		},
-		"direct-method": {
+		"call": {
 			"DEVICE METHOD PAYLOAD",
 			"call a direct method on the named device (DM)",
 			directMethod(c),
@@ -89,7 +89,11 @@ func directMethod(c *iotservice.Client) internal.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%#v\n", v) // TODO
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(b))
 		return nil
 	}
 }
@@ -119,7 +123,7 @@ func send(c *iotservice.Client) internal.HandlerFunc {
 			DeviceID:   fs.Arg(0),
 			Payload:    []byte(fs.Arg(1)),
 			Properties: p,
-			Ack:        ackFlag,
+			Ack:        ackFlag.String(),
 		})
 		if err != nil {
 			return err
