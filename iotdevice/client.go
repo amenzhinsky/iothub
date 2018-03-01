@@ -12,9 +12,8 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/credentials"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	"github.com/amenzhinsky/iothub/iotutil"
-	"github.com/amenzhinsky/iothub/transport"
 )
 
 // ClientOption is a client configuration option.
@@ -57,7 +56,7 @@ func WithDeviceID(s string) ClientOption {
 // but it parses the given connection string first.
 func WithConnectionString(cs string) ClientOption {
 	return func(c *Client) error {
-		creds, err := credentials.ParseConnectionString(cs)
+		creds, err := common.ParseConnectionString(cs)
 		if err != nil {
 			return err
 		}
@@ -69,7 +68,7 @@ func WithConnectionString(cs string) ClientOption {
 
 // WithCredentials uses the given credentials to obtain
 // connection credentials by the authFunc and to set DeviceID.
-func WithCredentials(creds *credentials.Credentials) ClientOption {
+func WithCredentials(creds *common.Credentials) ClientOption {
 	return func(c *Client) error {
 		c.deviceID = creds.DeviceID
 		c.authFunc = mkCredsAuthFunc(creds)
@@ -77,7 +76,7 @@ func WithCredentials(creds *credentials.Credentials) ClientOption {
 	}
 }
 
-func mkCredsAuthFunc(creds *credentials.Credentials) transport.AuthFunc {
+func mkCredsAuthFunc(creds *common.Credentials) transport.AuthFunc {
 	return func(_ context.Context, path string) (string, string, error) {
 		token, err := creds.SAS(creds.HostName+path, time.Hour)
 		if err != nil {
@@ -130,9 +129,9 @@ var errNotConnected = errors.New("not connected")
 func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		tls:     &tls.Config{RootCAs: common.RootCAs()},
-		subs:    make([]CloudToDeviceFunc, 0),
-		changes: make([]DesiredStateChangeFunc, 0),
-		methods: make(map[string]DirectMethodFunc, 0),
+		subs:    make([]chan *transport.Event, 0, 10),
+		changes: make([]chan *transport.TwinState, 0, 10),
+		methods: make(map[string]DirectMethodFunc, 10),
 		close:   make(chan struct{}),
 		logger:  log.New(os.Stdout, "[iotdev] ", 0),
 		debug:   os.Getenv("DEBUG") != "",
@@ -163,8 +162,8 @@ type Client struct {
 	debug  bool
 
 	mu      sync.RWMutex
-	subs    []CloudToDeviceFunc
-	changes []DesiredStateChangeFunc
+	subs    []chan *transport.Event
+	changes []chan *transport.TwinState
 	methods map[string]DirectMethodFunc
 	close   chan struct{}
 
@@ -182,7 +181,7 @@ type CloudToDeviceFunc func(event *Event)
 type DirectMethodFunc func(p map[string]interface{}) (map[string]interface{}, error)
 
 // DesiredStateChangeFunc handler desired state changes.
-type DesiredStateChangeFunc func(State)
+type DesiredStateChangeFunc func(TwinState)
 
 // DeviceID returns iothub device id.
 func (c *Client) DeviceID() string {
@@ -285,23 +284,23 @@ Loop:
 			if !ok {
 				panic("c2d channel is closed unexpectedly")
 			}
-			if c.debug {
-				c.logf("cloud-to-device"+eventFormat,
-					iotutil.FormatProperties(ev.Properties),
-					iotutil.FormatPayload(ev.Payload),
-				)
+
+			if ev.Err == nil {
+				c.logf("cloud-to-device error: %s", ev.Err)
 			} else {
-				c.logf("cloud-to-device %s", iotutil.FormatPropertiesShort(ev.Properties))
+				if c.debug {
+					c.logf("cloud-to-device"+eventFormat,
+						iotutil.FormatProperties(ev.Properties),
+						iotutil.FormatPayload(ev.Payload),
+					)
+				} else {
+					c.logf("cloud-to-device %s", iotutil.FormatPropertiesShort(ev.Properties))
+				}
 			}
+
 			c.mu.RLock()
-			if len(c.subs) == 0 {
-				c.logf("cloud-to-device no subscribers")
-			}
-			for _, f := range c.subs {
-				go f(&Event{
-					Payload:    ev.Payload,
-					Properties: ev.Properties,
-				})
+			for _, w := range c.subs {
+				w <- ev
 			}
 			c.mu.RUnlock()
 		case call, ok := <-dmi:
@@ -325,20 +324,33 @@ Loop:
 			}
 			c.mu.RUnlock()
 			c.logf("direct-method %q is missing", call.Method)
-		case b, ok := <-dsc:
+		case s, ok := <-dsc:
 			if !ok {
 				panic("dsc channel is closed unexpectedly")
 			}
-			var v State
-			if err := json.Unmarshal(b, &v); err != nil {
-				c.logf("error parsing twin updates: %s", err)
-				continue Loop
+
+			// TODO: double json parsing here and all by all subscribers
+			var v TwinState
+			if err := json.Unmarshal(s.Payload, &v); err != nil {
+				s.Err = err
 			}
 
-			c.logf("desired state update:\n--------------\n%s\n--------------", b)
+			if s.Err == nil {
+				if c.debug {
+					c.logf("twin-desired-state ver=%d:\n--------------\n%s\n--------------",
+						v.Version(),
+						iotutil.FormatPayload(s.Payload),
+					)
+				} else {
+					c.logf("twin-desired-state ver=%d", v.Version())
+				}
+			} else {
+				c.logf("twin-desired-state error: %s", s.Err)
+			}
+
 			c.mu.RLock()
-			for _, f := range c.changes {
-				go f(v)
+			for _, w := range c.changes {
+				w <- s
 			}
 			c.mu.RUnlock()
 		case <-c.close:
@@ -385,19 +397,36 @@ func (c *Client) SubscribeEvents(ctx context.Context, f CloudToDeviceFunc) error
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
+
+	w := make(chan *transport.Event, 1)
 	c.mu.Lock()
-	c.subs = append(c.subs, f)
+	c.subs = append(c.subs, w)
 	c.mu.Unlock()
-	<-ctx.Done()
-	c.mu.Lock()
-	for i, fn := range c.subs {
-		if ptreq(f, fn) {
-			c.subs = append(c.subs[:i], c.subs[i+1:]...)
-			break
+	defer func() {
+		c.mu.Lock()
+		for i, x := range c.subs {
+			if w == x {
+				c.subs = append(c.subs[:i], c.subs[i+1:]...)
+				break
+			}
+		}
+		c.mu.Unlock()
+	}()
+
+	for {
+		select {
+		case ev := <-w:
+			if ev.Err != nil {
+				return ev.Err
+			}
+			go f(&Event{
+				Payload:    ev.Payload,
+				Properties: ev.Properties,
+			})
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
-	c.mu.Unlock()
-	return ctx.Err()
 }
 
 // HandleMethod registers the given direct method handler,
@@ -428,11 +457,11 @@ func (c *Client) HandleMethod(ctx context.Context, name string, f DirectMethodFu
 	return ctx.Err()
 }
 
-// State is both desired and reported twin device's state.
-type State map[string]interface{}
+// TwinState is both desired and reported twin device's state.
+type TwinState map[string]interface{}
 
 // Version is state version.
-func (s State) Version() int {
+func (s TwinState) Version() int {
 	v, ok := s["$version"].(float64)
 	if !ok {
 		return 0
@@ -440,8 +469,8 @@ func (s State) Version() int {
 	return int(v)
 }
 
-// RetrieveState returns desired and reported twin device states.
-func (c *Client) RetrieveState(ctx context.Context) (desired State, reported State, err error) {
+// RetrieveTwinState returns desired and reported twin device states.
+func (c *Client) RetrieveTwinState(ctx context.Context) (desired TwinState, reported TwinState, err error) {
 	if err := c.ConnectionError(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -450,8 +479,8 @@ func (c *Client) RetrieveState(ctx context.Context) (desired State, reported Sta
 		return nil, nil, err
 	}
 	var v struct {
-		Desired  State `json:"desired"`
-		Reported State `json:"reported"`
+		Desired  TwinState `json:"desired"`
+		Reported TwinState `json:"reported"`
 	}
 	if err := json.Unmarshal(b, &v); err != nil {
 		return nil, nil, err
@@ -459,9 +488,9 @@ func (c *Client) RetrieveState(ctx context.Context) (desired State, reported Sta
 	return v.Desired, v.Reported, nil
 }
 
-// UpdateTwin updates twin device's state and returns new version.
+// UpdateTwinState updates twin device's state and returns new version.
 // To remove any attribute set its value to nil.
-func (c *Client) UpdateTwin(ctx context.Context, s State) (int, error) {
+func (c *Client) UpdateTwinState(ctx context.Context, s TwinState) (int, error) {
 	if err := c.ConnectionError(ctx); err != nil {
 		return 0, err
 	}
@@ -473,23 +502,38 @@ func (c *Client) UpdateTwin(ctx context.Context, s State) (int, error) {
 }
 
 // SubscribeDesiredStateChanges watches twin device desired state changes until ctx canceled.
-func (c *Client) SubscribeTwinChanges(ctx context.Context, f DesiredStateChangeFunc) error {
+func (c *Client) SubscribeTwinStateChanges(ctx context.Context, f DesiredStateChangeFunc) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
+
+	w := make(chan *transport.TwinState, 1)
 	c.mu.Lock()
-	c.changes = append(c.changes, f)
+	c.changes = append(c.changes, w)
 	c.mu.Unlock()
-	<-ctx.Done()
-	c.mu.Lock()
-	for i, fn := range c.changes {
-		if ptreq(f, fn) {
-			c.changes = append(c.changes[:i], c.changes[i+1:]...)
-			break
+	defer func() {
+		c.mu.Lock()
+		for i, x := range c.changes {
+			if w == x {
+				c.changes = append(c.changes[:i], c.changes[i+1:]...)
+				break
+			}
+		}
+		c.mu.Unlock()
+	}()
+
+	for {
+		select {
+		case s := <-w:
+			var v TwinState
+			if err := json.Unmarshal(s.Payload, &v); err != nil {
+				return err
+			}
+			go f(v)
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
-	c.mu.Unlock()
-	return ctx.Err()
 }
 
 // Event is a device-to-cloud event.
@@ -545,11 +589,4 @@ func (c *Client) Close() error {
 		close(c.close)
 	}
 	return c.tr.Close()
-}
-
-// ptreq reports whether two functions are equal or not,
-// because they cannot be compared natively for performance reasons,
-// so we just compare pointer values.
-func ptreq(v1, v2 interface{}) bool {
-	return fmt.Sprintf("%p", v1) == fmt.Sprintf("%p", v2)
 }

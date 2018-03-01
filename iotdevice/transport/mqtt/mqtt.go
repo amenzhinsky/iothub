@@ -14,8 +14,8 @@ import (
 	"sync"
 
 	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	"github.com/amenzhinsky/iothub/iotutil"
-	"github.com/amenzhinsky/iothub/transport"
 	"github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -39,8 +39,8 @@ func New(opts ...TransportOption) (transport.Transport, error) {
 	tr := &Transport{
 		done: make(chan struct{}),
 		c2ds: make(chan *transport.Event, 10),
-		dmis: make(chan *transport.Call, 10),
-		dscs: make(chan []byte, 10),
+		dmis: make(chan *transport.Invocation, 10),
+		dscs: make(chan *transport.TwinState, 10),
 		resp: make(map[string]chan *resp),
 
 		logger: log.New(os.Stdout, "[mqtt] ", 0),
@@ -58,11 +58,11 @@ type Transport struct {
 	conn mqtt.Client
 	ridg iotutil.RIDGenerator
 
-	done chan struct{}         // closed when Close() invoked
-	c2ds chan *transport.Event // cloud-to-device messages
-	dmis chan *transport.Call  // direct method invocations
-	dscs chan []byte           // desired state changes
-	resp map[string]chan *resp // responses from iothub
+	done chan struct{}              // closed when Close() invoked
+	c2ds chan *transport.Event      // cloud-to-device messages
+	dmis chan *transport.Invocation // direct method invocations
+	dscs chan *transport.TwinState  // desired state changes
+	resp map[string]chan *resp      // responses from iothub
 
 	logger *log.Logger
 }
@@ -193,7 +193,7 @@ func (tr *Transport) directMethodHandler(_ mqtt.Client, m mqtt.Message) {
 		return
 	}
 	select {
-	case tr.dmis <- &transport.Call{
+	case tr.dmis <- &transport.Invocation{
 		RID:     rid,
 		Method:  method,
 		Payload: m.Payload(),
@@ -202,7 +202,7 @@ func (tr *Transport) directMethodHandler(_ mqtt.Client, m mqtt.Message) {
 	}
 }
 
-func (tr *Transport) DMI() chan *transport.Call {
+func (tr *Transport) DMI() chan *transport.Invocation {
 	return tr.dmis
 }
 
@@ -319,12 +319,14 @@ func parseTwinPropsTopic(s string) (int, string, int, error) {
 
 func (tr *Transport) desiredStateChangesHandler(_ mqtt.Client, m mqtt.Message) {
 	select {
-	case tr.dscs <- m.Payload():
+	case tr.dscs <- &transport.TwinState{
+		Payload: m.Payload(),
+	}:
 	case <-tr.done:
 	}
 }
 
-func (tr *Transport) DSC() chan []byte {
+func (tr *Transport) DSC() chan *transport.TwinState {
 	return tr.dscs
 }
 

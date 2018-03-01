@@ -13,7 +13,7 @@ import (
 	"pack.ag/amqp"
 )
 
-// Dial connects to the named amqp broker and returns a eventhub client.
+// Dial connects to the named amqp broker and returns an eventhub client.
 func Dial(hostname string, tlsConfig *tls.Config) (*Client, error) {
 	conn, err := amqp.Dial("amqps://"+hostname,
 		amqp.ConnTLSConfig(tlsConfig),

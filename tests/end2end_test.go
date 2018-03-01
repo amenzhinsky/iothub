@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/iotdevice"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/iotdevice/transport/amqp"
+	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
 	"github.com/amenzhinsky/iothub/iotservice"
-	"github.com/amenzhinsky/iothub/transport"
-	"github.com/amenzhinsky/iothub/transport/mqtt"
 )
 
 func TestEnd2End(t *testing.T) {
@@ -30,22 +31,22 @@ func TestEnd2End(t *testing.T) {
 		t.Fatal("TEST_X509_HOSTNAME is empty")
 	}
 
-	for name, opts := range map[string][]iotdevice.ClientOption{
-		"x509": {
-			iotdevice.WithDeviceID(device),
-			iotdevice.WithHostname(hostname),
-			iotdevice.WithX509FromFile("./testdata/dev.crt", "./testdata/dev.key"),
-		},
-		"symmetric-key": {
-			iotdevice.WithConnectionString(dcs),
-		},
+	for name, mk := range map[string]func() (transport.Transport, error){
+		"mqtt": func() (transport.Transport, error) { return mqtt.New(mqtt.WithLogger(nil)) },
+		"amqp": func() (transport.Transport, error) { return amqp.New(amqp.WithLogger(nil)) },
 	} {
 		t.Run(name, func(t *testing.T) {
-			for name, mk := range map[string]func() (transport.Transport, error){
-				"mqtt": func() (transport.Transport, error) { return mqtt.New(mqtt.WithLogger(nil)) },
-				//"amqp": func() (transport.Transport, error) { return amqp.New() },
+			for auth, opts := range map[string][]iotdevice.ClientOption{
+				"x509": {
+					iotdevice.WithDeviceID(device),
+					iotdevice.WithHostname(hostname),
+					iotdevice.WithX509FromFile("./testdata/dev.crt", "./testdata/dev.key"),
+				},
+				"sas": {
+					iotdevice.WithConnectionString(dcs),
+				},
 			} {
-				t.Run(name, func(t *testing.T) {
+				t.Run(auth, func(t *testing.T) {
 					for name, test := range map[string]func(*testing.T, ...iotdevice.ClientOption){
 						"DeviceToCloud": testDeviceToCloud,
 						"CloudToDevice": testCloudToDevice,
@@ -185,7 +186,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 		select {
 		case <-fbsc:
 			// feedback has successfully arrived
-		case <-time.After(15 * time.Second):
+		case <-time.After(30 * time.Second):
 			t.Fatal("feedback timed out")
 		}
 		testEventsAreEqual(t, g, w)
@@ -220,14 +221,14 @@ func testTwinDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 
 	// update state and keep track of version
 	s := fmt.Sprintf("%d", time.Now().UnixNano())
-	v, err := dc.UpdateTwin(ctx, map[string]interface{}{
+	v, err := dc.UpdateTwinState(ctx, map[string]interface{}{
 		"ts": s,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, r, err := dc.RetrieveState(ctx)
+	_, r, err := dc.RetrieveTwinState(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

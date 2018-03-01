@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/amenzhinsky/iothub/eventhub"
-	"github.com/amenzhinsky/iothub/transport"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	"github.com/satori/go.uuid"
 	"pack.ag/amqp"
 )
@@ -54,7 +54,7 @@ func (tr *Transport) Connect(
 	ctx context.Context,
 	tlsConfig *tls.Config,
 	deviceID string,
-	sasFunc transport.AuthFunc,
+	authFunc transport.AuthFunc,
 ) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -62,12 +62,19 @@ func (tr *Transport) Connect(
 		return errors.New("already connected")
 	}
 
-	// SAS uri for amqp has to be: hostname + "/devices/" + deviceID
-	hostname, token, err := sasFunc(ctx, "/devices/"+deviceID)
-	if err != nil {
-		return err
+	host := tlsConfig.ServerName
+	token := ""
+
+	if authFunc != nil {
+		// SAS uri for amqp has to be: hostname + "/devices/" + deviceID
+		var err error
+		host, token, err = authFunc(ctx, "/devices/"+deviceID)
+		if err != nil {
+			return err
+		}
 	}
-	c, err := eventhub.Dial(hostname, tlsConfig)
+
+	c, err := eventhub.Dial(host, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -77,16 +84,19 @@ func (tr *Transport) Connect(
 		}
 	}()
 
-	if err := c.PutTokenContinuously(
-		ctx,
-		hostname+"/devices/"+deviceID,
-		token,
-		tr.done,
-	); err != nil {
-		return err
+	// put token in the background when sas authentication is on
+	if token != "" {
+		if err := c.PutTokenContinuously(ctx, host+"/devices/"+deviceID, token, tr.done); err != nil {
+			return err
+		}
 	}
 
-	//TODO: ctx, cancel := context.WithCancel(context.Background())
+	// interrupt all receivers when transport is closed
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-tr.done
+		cancel()
+	}()
 
 	c2d, err := c.Sess().NewReceiver(
 		amqp.LinkSourceAddress("/devices/" + deviceID + "/messages/devicebound"),
@@ -94,18 +104,17 @@ func (tr *Transport) Connect(
 	if err != nil {
 		return err
 	}
+
 	go func() {
 		for {
-			msg, err := c2d.Receive(context.Background())
+			msg, err := c2d.Receive(ctx)
 			if err != nil {
 				select {
+				case tr.c2ds <- &transport.Event{Err: err}:
+					return
 				case <-tr.done:
 					return
-				default:
 				}
-
-				// TODO: disconnect errors can occur here
-				panic(err)
 			}
 
 			props := make(map[string]string, len(msg.ApplicationProperties))
@@ -119,7 +128,9 @@ func (tr *Transport) Connect(
 				Payload:    msg.Data[0],
 				Properties: props,
 			}:
+				msg.Accept()
 			case <-tr.done:
+				return
 			}
 		}
 	}()
@@ -165,11 +176,11 @@ func (tr *Transport) C2D() chan *transport.Event {
 	return tr.c2ds
 }
 
-func (tr *Transport) DMI() chan *transport.Call {
+func (tr *Transport) DMI() chan *transport.Invocation {
 	return nil
 }
 
-func (tr *Transport) DSC() chan []byte {
+func (tr *Transport) DSC() chan *transport.TwinState {
 	return nil
 }
 

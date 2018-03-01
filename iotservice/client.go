@@ -17,7 +17,6 @@ import (
 	"crypto/tls"
 
 	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/eventhub"
 	"gopkg.in/satori/go.uuid.v1"
 	"pack.ag/amqp"
@@ -29,7 +28,7 @@ type ClientOption func(*Client) error
 // WithConnectionString parses the given connection string instead of using `WithCredentials`.
 func WithConnectionString(cs string) ClientOption {
 	return func(c *Client) error {
-		creds, err := credentials.ParseConnectionString(cs)
+		creds, err := common.ParseConnectionString(cs)
 		if err != nil {
 			return err
 		}
@@ -39,7 +38,7 @@ func WithConnectionString(cs string) ClientOption {
 }
 
 // WithCredentials uses the given credentials to generate SAS tokens.
-func WithCredentials(creds *credentials.Credentials) ClientOption {
+func WithCredentials(creds *common.Credentials) ClientOption {
 	return func(c *Client) error {
 		c.creds = creds
 		return nil
@@ -105,7 +104,7 @@ type Client struct {
 	mu     sync.Mutex
 	conn   *eventhub.Client
 	done   chan struct{}
-	creds  *credentials.Credentials
+	creds  *common.Credentials
 	logger *log.Logger
 	debug  bool
 	http   *http.Client // REST client

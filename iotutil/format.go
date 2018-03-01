@@ -7,23 +7,14 @@ import (
 	"unicode"
 )
 
-// IsPrintable reports whether the given slice
-// of bytes can be safely printed to console.
-func IsPrintable(b []byte) bool {
-	for _, r := range string(b) {
-		if !unicode.IsPrint(r) {
-			return false
-		}
-	}
-	return true
-}
-
 // FormatPayload converts b into sequence of hex words if it's not printable.
 func FormatPayload(b []byte) string {
-	if IsPrintable(b) {
-		return string(b)
+	for _, r := range string(b) {
+		if !unicode.IsPrint(r) {
+			return fmt.Sprintf("[% x]", string(b))
+		}
 	}
-	return fmt.Sprintf("[% x]", string(b))
+	return string(b)
 }
 
 // FormatProperties formats the given map of properties to a one-line string.

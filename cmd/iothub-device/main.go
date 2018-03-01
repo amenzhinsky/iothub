@@ -12,10 +12,10 @@ import (
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
 	"github.com/amenzhinsky/iothub/iotdevice"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/iotdevice/transport/amqp"
+	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
 	"github.com/amenzhinsky/iothub/iotutil"
-	"github.com/amenzhinsky/iothub/transport"
-	"github.com/amenzhinsky/iothub/transport/amqp"
-	"github.com/amenzhinsky/iothub/transport/mqtt"
 )
 
 var transports = map[string]func() (transport.Transport, error){
@@ -207,7 +207,7 @@ func watchTwin(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error
 	if fs.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-	return c.SubscribeTwinChanges(ctx, func(s iotdevice.State) {
+	return c.SubscribeTwinStateChanges(ctx, func(s iotdevice.TwinState) {
 		b, err := json.MarshalIndent(s, "", "  ")
 		if err != nil {
 			panic(err)

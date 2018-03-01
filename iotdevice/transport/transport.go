@@ -11,26 +11,34 @@ type Transport interface {
 	IsNetworkError(err error) bool
 	PublishEvent(ctx context.Context, event *Event) error
 	C2D() chan *Event
-	DMI() chan *Call
-	DSC() chan []byte
+	DMI() chan *Invocation
+	DSC() chan *TwinState
 	RespondDirectMethod(ctx context.Context, rid string, code int, payload []byte) error
 	RetrieveTwinProperties(ctx context.Context) (payload []byte, err error)
 	UpdateTwinProperties(ctx context.Context, payload []byte) (version int, err error)
 	Close() error
 }
 
-// Event can be both D2C or C2D event.
+// Event can be both D2C or C2D event message.
 type Event struct {
 	DeviceID   string
 	Payload    []byte
 	Properties map[string]string
+	Err        error
 }
 
-// Call is a direct method invocation.
-type Call struct {
+// TwinState is desired twin state update message.
+type TwinState struct {
+	Payload []byte
+	Err     error
+}
+
+// Invocation is a direct method invocation message.
+type Invocation struct {
 	RID     string
 	Method  string
 	Payload []byte
+	Err     error
 }
 
 // AuthFunc is used to obtain hostname and sas token before authenticating.
