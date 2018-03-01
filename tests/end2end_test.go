@@ -166,7 +166,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 			id, err := sc.Publish(ctx, w)
 			if err != nil {
 				errc <- err
-				break
+				return
 			}
 
 			mu.Lock()
@@ -175,7 +175,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 
 			select {
 			case <-ctx.Done():
-				break
+				return
 			case <-time.After(500 * time.Millisecond):
 			}
 		}

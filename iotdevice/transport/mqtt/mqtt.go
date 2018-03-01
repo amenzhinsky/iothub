@@ -40,7 +40,7 @@ func New(opts ...TransportOption) (transport.Transport, error) {
 		done: make(chan struct{}),
 		c2ds: make(chan *transport.Event, 10),
 		dmis: make(chan *transport.Invocation, 10),
-		dscs: make(chan *transport.TwinState, 10),
+		tscs: make(chan *transport.TwinState, 10),
 		resp: make(map[string]chan *resp),
 
 		logger: log.New(os.Stdout, "[mqtt] ", 0),
@@ -61,7 +61,7 @@ type Transport struct {
 	done chan struct{}              // closed when Close() invoked
 	c2ds chan *transport.Event      // cloud-to-device messages
 	dmis chan *transport.Invocation // direct method invocations
-	dscs chan *transport.TwinState  // desired state changes
+	tscs chan *transport.TwinState  // desired state changes
 	resp map[string]chan *resp      // responses from iothub
 
 	logger *log.Logger
@@ -78,11 +78,11 @@ func (tr *Transport) Connect(
 	tlsConfig *tls.Config,
 	deviceID string,
 	auth transport.AuthFunc,
-) error {
+) (chan *transport.Event, chan *transport.Invocation, chan *transport.TwinState, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
-		return errors.New("already connected")
+		return nil, nil, nil, errors.New("already connected")
 	}
 
 	host := tlsConfig.ServerName
@@ -91,7 +91,7 @@ func (tr *Transport) Connect(
 		var err error
 		host, pass, err = auth(ctx, "")
 		if err != nil {
-			return err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -111,7 +111,7 @@ func (tr *Transport) Connect(
 
 	c := mqtt.NewClient(o)
 	if t := c.Connect(); t.Wait() && t.Error() != nil {
-		return t.Error()
+		return nil, nil, nil, t.Error()
 	}
 
 	// TODO: on-demand subscriptions
@@ -123,12 +123,12 @@ func (tr *Transport) Connect(
 	} {
 		if t := c.Subscribe(topic, defaultQoS, handler); t.Wait() && t.Error() != nil {
 			c.Disconnect(250)
-			return t.Error()
+			return nil, nil, nil, t.Error()
 		}
 	}
 
 	tr.conn = c
-	return nil
+	return tr.c2ds, tr.dmis, tr.tscs, nil
 }
 
 // mqtt library wraps errors with fmt.Errorf.
@@ -142,7 +142,7 @@ func (tr *Transport) IsNetworkError(err error) bool {
 func (tr *Transport) cloudToDeviceHandler(_ mqtt.Client, m mqtt.Message) {
 	p, err := parseCloudToDeviceTopic(m.Topic())
 	if err != nil {
-		tr.logf("cloud-to-device error: %s", err)
+		tr.c2ds <- &transport.Event{Err: err}
 		return
 	}
 	select {
@@ -152,10 +152,6 @@ func (tr *Transport) cloudToDeviceHandler(_ mqtt.Client, m mqtt.Message) {
 	}:
 	case <-tr.done:
 	}
-}
-
-func (tr *Transport) C2D() chan *transport.Event {
-	return tr.c2ds
 }
 
 // devices/{device}/messages/devicebound/%24.to=%2Fdevices%2F{device}%2Fmessages%2FdeviceBound&a=b&b=c
@@ -189,7 +185,7 @@ func parseCloudToDeviceTopic(s string) (map[string]string, error) {
 func (tr *Transport) directMethodHandler(_ mqtt.Client, m mqtt.Message) {
 	method, rid, err := parseDirectMethodTopic(m.Topic())
 	if err != nil {
-		tr.logf("direct-method error: %s", err)
+		tr.c2ds <- &transport.Event{Err: err}
 		return
 	}
 	select {
@@ -200,10 +196,6 @@ func (tr *Transport) directMethodHandler(_ mqtt.Client, m mqtt.Message) {
 	}:
 	case <-tr.done:
 	}
-}
-
-func (tr *Transport) DMI() chan *transport.Invocation {
-	return tr.dmis
 }
 
 func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, code int, b []byte) error {
@@ -226,7 +218,7 @@ func parseDirectMethodTopic(s string) (string, string, error) {
 func (tr *Transport) twinResponseHandler(_ mqtt.Client, m mqtt.Message) {
 	rc, rid, ver, err := parseTwinPropsTopic(m.Topic())
 	if err != nil {
-		tr.logf("error parsing twin response topic: %s", err)
+		tr.c2ds <- &transport.Event{Err: err}
 		return
 	}
 
@@ -319,15 +311,11 @@ func parseTwinPropsTopic(s string) (int, string, int, error) {
 
 func (tr *Transport) desiredStateChangesHandler(_ mqtt.Client, m mqtt.Message) {
 	select {
-	case tr.dscs <- &transport.TwinState{
+	case tr.tscs <- &transport.TwinState{
 		Payload: m.Payload(),
 	}:
 	case <-tr.done:
 	}
-}
-
-func (tr *Transport) DSC() chan *transport.TwinState {
-	return tr.dscs
 }
 
 func (tr *Transport) PublishEvent(ctx context.Context, ev *transport.Event) error {

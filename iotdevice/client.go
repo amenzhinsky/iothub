@@ -132,7 +132,7 @@ func New(opts ...ClientOption) (*Client, error) {
 		subs:    make([]chan *transport.Event, 0, 10),
 		changes: make([]chan *transport.TwinState, 0, 10),
 		methods: make(map[string]DirectMethodFunc, 10),
-		close:   make(chan struct{}),
+		done:    make(chan struct{}),
 		logger:  log.New(os.Stdout, "[iotdev] ", 0),
 		debug:   os.Getenv("DEBUG") != "",
 		connErr: errNotConnected,
@@ -165,11 +165,15 @@ type Client struct {
 	subs    []chan *transport.Event
 	changes []chan *transport.TwinState
 	methods map[string]DirectMethodFunc
-	close   chan struct{}
+	done    chan struct{}
 
 	connCh  chan struct{}
 	connMu  sync.RWMutex
 	connErr error // nil means successfully connected
+
+	c2ds chan *transport.Event      // cloud-to-device events
+	dmis chan *transport.Invocation // direct method invocations
+	tscs chan *transport.TwinState  // twin state changes
 
 	tr transport.Transport
 }
@@ -197,7 +201,12 @@ func (c *Client) Connect(ctx context.Context, ignoreNetErrors bool) error {
 	defer c.connMu.Unlock()
 
 Retry:
-	c.connErr = c.tr.Connect(ctx, c.tls.Clone(), c.deviceID, transport.AuthFunc(c.authFunc))
+	c.c2ds, c.dmis, c.tscs, c.connErr = c.tr.Connect(
+		ctx,
+		c.tls.Clone(),
+		c.deviceID,
+		transport.AuthFunc(c.authFunc),
+	)
 	if ignoreNetErrors && c.tr.IsNetworkError(c.connErr) {
 		c.logf("couldn't connect, reconnecting")
 		goto Retry
@@ -258,8 +267,8 @@ func (c *Client) ConnectionError(ctx context.Context) error {
 	select {
 	case <-w:
 		return c.connErr
-	case <-c.close:
-		return errors.New("closed")
+	case <-c.done:
+		return errors.New("client is closed")
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -273,18 +282,13 @@ const eventFormat = `
 ====================`
 
 func (c *Client) recv() {
-	c2d := c.tr.C2D()
-	dmi := c.tr.DMI()
-	dsc := c.tr.DSC()
-
 Loop:
 	for {
 		select {
-		case ev, ok := <-c2d:
+		case ev, ok := <-c.c2ds:
 			if !ok {
-				panic("c2d channel is closed unexpectedly")
+				break Loop
 			}
-
 			if ev.Err == nil {
 				c.logf("cloud-to-device error: %s", ev.Err)
 			} else {
@@ -300,12 +304,16 @@ Loop:
 
 			c.mu.RLock()
 			for _, w := range c.subs {
-				w <- ev
+				select {
+				case w <- ev:
+				default:
+					panic("c2d jam")
+				}
 			}
 			c.mu.RUnlock()
-		case call, ok := <-dmi:
+		case call, ok := <-c.dmis:
 			if !ok {
-				panic("dmi channel is closed unexpectedly")
+				break Loop
 			}
 			c.mu.RLock()
 			for k, f := range c.methods {
@@ -324,9 +332,9 @@ Loop:
 			}
 			c.mu.RUnlock()
 			c.logf("direct-method %q is missing", call.Method)
-		case s, ok := <-dsc:
+		case s, ok := <-c.tscs:
 			if !ok {
-				panic("dsc channel is closed unexpectedly")
+				break Loop
 			}
 
 			// TODO: double json parsing here and all by all subscribers
@@ -350,13 +358,23 @@ Loop:
 
 			c.mu.RLock()
 			for _, w := range c.changes {
-				w <- s
+				select {
+				case w <- s:
+				default:
+					panic("dsc jam")
+				}
 			}
 			c.mu.RUnlock()
-		case <-c.close:
+		case <-c.done:
 			return
 		}
 	}
+
+	// if the loop exits we consider client closed
+	// TODO: add error describing what causes it
+	c.mu.Lock()
+	close(c.done)
+	c.mu.Unlock()
 }
 
 func (c *Client) handleDirectMethod(f DirectMethodFunc, p map[string]interface{}, name, rid string) {
@@ -583,10 +601,10 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	select {
-	case <-c.close:
+	case <-c.done:
 		return nil
 	default:
-		close(c.close)
+		close(c.done)
 	}
 	return c.tr.Close()
 }

@@ -48,6 +48,8 @@ type Transport struct {
 
 	c2ds chan *transport.Event
 	done chan struct{}
+
+	d2cSender *amqp.Sender
 }
 
 func (tr *Transport) Connect(
@@ -55,11 +57,11 @@ func (tr *Transport) Connect(
 	tlsConfig *tls.Config,
 	deviceID string,
 	authFunc transport.AuthFunc,
-) error {
+) (chan *transport.Event, chan *transport.Invocation, chan *transport.TwinState, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
-		return errors.New("already connected")
+		return nil, nil, nil, errors.New("already connected")
 	}
 
 	host := tlsConfig.ServerName
@@ -70,13 +72,13 @@ func (tr *Transport) Connect(
 		var err error
 		host, token, err = authFunc(ctx, "/devices/"+deviceID)
 		if err != nil {
-			return err
+			return nil, nil, nil, err
 		}
 	}
 
 	c, err := eventhub.Dial(host, tlsConfig)
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
 	defer func() {
 		if err != nil {
@@ -87,7 +89,7 @@ func (tr *Transport) Connect(
 	// put token in the background when sas authentication is on
 	if token != "" {
 		if err := c.PutTokenContinuously(ctx, host+"/devices/"+deviceID, token, tr.done); err != nil {
-			return err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -102,13 +104,19 @@ func (tr *Transport) Connect(
 		amqp.LinkSourceAddress("/devices/" + deviceID + "/messages/devicebound"),
 	)
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
 
 	go func() {
+		defer close(tr.c2ds)
+
 		for {
 			msg, err := c2d.Receive(ctx)
 			if err != nil {
+				if _, ok := err.(amqp.DetachError); ok {
+					c.Close()
+				}
+
 				select {
 				case tr.c2ds <- &transport.Event{Err: err}:
 					return
@@ -136,7 +144,7 @@ func (tr *Transport) Connect(
 	}()
 
 	tr.conn = c
-	return nil
+	return tr.c2ds, nil, nil, nil
 }
 
 func (tr *Transport) IsNetworkError(err error) bool {
@@ -147,24 +155,18 @@ func (tr *Transport) PublishEvent(ctx context.Context, event *transport.Event) e
 	if err := tr.checkConnection(); err != nil {
 		return err
 	}
-
-	target := "/devices/" + event.DeviceID + "/messages/events"
-	send, err := tr.conn.Sess().NewSender(
-		amqp.LinkTargetAddress(target),
-	)
-	if err != nil {
+	if err := tr.enablePublishing(event.DeviceID); err != nil {
 		return err
 	}
-	defer send.Close()
 
 	ap := make(map[string]interface{}, len(event.Properties))
 	for k, v := range event.Properties {
 		ap[k] = v
 	}
-	return send.Send(ctx, &amqp.Message{
+	return tr.d2cSender.Send(ctx, &amqp.Message{
 		Data: [][]byte{event.Payload},
 		Properties: &amqp.MessageProperties{
-			To:            target,
+			To:            d2cTarget(event.DeviceID),
 			MessageID:     uuid.Must(uuid.NewV4()).String(),
 			CorrelationID: uuid.Must(uuid.NewV4()).String(),
 		},
@@ -172,16 +174,21 @@ func (tr *Transport) PublishEvent(ctx context.Context, event *transport.Event) e
 	})
 }
 
-func (tr *Transport) C2D() chan *transport.Event {
-	return tr.c2ds
+func (tr Transport) enablePublishing(deviceID string) error {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.d2cSender != nil {
+		return nil
+	}
+	var err error
+	tr.d2cSender, err = tr.conn.Sess().NewSender(
+		amqp.LinkTargetAddress(d2cTarget(deviceID)),
+	)
+	return err
 }
 
-func (tr *Transport) DMI() chan *transport.Invocation {
-	return nil
-}
-
-func (tr *Transport) DSC() chan *transport.TwinState {
-	return nil
+func d2cTarget(deviceID string) string {
+	return "/devices/" + deviceID + "/messages/events"
 }
 
 func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, code int, payload []byte) error {
@@ -199,6 +206,11 @@ func (tr *Transport) UpdateTwinProperties(ctx context.Context, payload []byte) (
 func (tr *Transport) checkConnection() error {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
+	select {
+	case <-tr.done:
+		return errors.New("closed")
+	default:
+	}
 	if tr.conn == nil {
 		return errors.New("not connected")
 	}
@@ -213,6 +225,9 @@ func (tr *Transport) Close() error {
 		return nil
 	default:
 		close(tr.done)
+	}
+	if tr.d2cSender != nil {
+		tr.d2cSender.Close()
 	}
 	return tr.conn.Close()
 }

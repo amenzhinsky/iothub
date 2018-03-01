@@ -7,12 +7,12 @@ import (
 
 // Transport interface.
 type Transport interface {
-	Connect(ctx context.Context, tlsConfig *tls.Config, deviceID string, auth AuthFunc) error
+	Connect(
+		ctx context.Context, tlsConfig *tls.Config, deviceID string, auth AuthFunc,
+	) (c2ds chan *Event, dmis chan *Invocation, tscs chan *TwinState, err error)
+
 	IsNetworkError(err error) bool
 	PublishEvent(ctx context.Context, event *Event) error
-	C2D() chan *Event
-	DMI() chan *Invocation
-	DSC() chan *TwinState
 	RespondDirectMethod(ctx context.Context, rid string, code int, payload []byte) error
 	RetrieveTwinProperties(ctx context.Context) (payload []byte, err error)
 	UpdateTwinProperties(ctx context.Context, payload []byte) (version int, err error)
