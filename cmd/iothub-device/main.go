@@ -10,12 +10,12 @@ import (
 	"log"
 	"os"
 
-	"github.com/amenzhinsky/iothub/cmd/internal"
-	"github.com/amenzhinsky/iothub/iotdevice"
-	"github.com/amenzhinsky/iothub/iotdevice/transport"
-	"github.com/amenzhinsky/iothub/iotdevice/transport/amqp"
-	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
-	"github.com/amenzhinsky/iothub/iotutil"
+	"github.com/amenzhinsky/golang-iothub/cmd/internal"
+	"github.com/amenzhinsky/golang-iothub/iotdevice"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/amqp"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
+	"github.com/amenzhinsky/golang-iothub/iotutil"
 )
 
 var transports = map[string]func() (transport.Transport, error){
@@ -167,7 +167,7 @@ func send(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
 			p[fs.Arg(i)] = fs.Arg(i + 1)
 		}
 	}
-	return c.Publish(ctx, &iotdevice.Event{
+	return c.PublishEvent(ctx, &iotdevice.Event{
 		Payload:    []byte(fs.Arg(0)),
 		Properties: p,
 	})

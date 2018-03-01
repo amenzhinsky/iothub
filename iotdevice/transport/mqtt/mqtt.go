@@ -13,9 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/iotdevice/transport"
-	"github.com/amenzhinsky/iothub/iotutil"
+	"github.com/amenzhinsky/golang-iothub/common"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
+	"github.com/amenzhinsky/golang-iothub/iotutil"
 	"github.com/eclipse/paho.mqtt.golang"
 )
 

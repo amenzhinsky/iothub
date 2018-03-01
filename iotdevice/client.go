@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/iotdevice/transport"
-	"github.com/amenzhinsky/iothub/iotutil"
+	"github.com/amenzhinsky/golang-iothub/common"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
+	"github.com/amenzhinsky/golang-iothub/iotutil"
 )
 
 // ClientOption is a client configuration option.
@@ -560,9 +560,9 @@ type Event struct {
 	Properties map[string]string
 }
 
-// Publish sends a device-to-cloud message.
+// PublishEvent sends a device-to-cloud message.
 // Panics when event is nil.
-func (c *Client) Publish(ctx context.Context, event *Event) error {
+func (c *Client) PublishEvent(ctx context.Context, event *Event) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}

@@ -16,8 +16,8 @@ import (
 
 	"crypto/tls"
 
-	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/eventhub"
+	"github.com/amenzhinsky/golang-iothub/common"
+	"github.com/amenzhinsky/golang-iothub/eventhub"
 	"gopkg.in/satori/go.uuid.v1"
 	"pack.ag/amqp"
 )
@@ -223,7 +223,7 @@ type Event struct {
 
 // SubscribeEvents subscribes to device events.
 // No need to call Connect first, because this method different connect
-// method that dials an eventhub instance first opposed to Publish func.
+// method that dials an eventhub instance first opposed to PublishEvent func.
 func (c *Client) Subscribe(ctx context.Context, f SubscribeFunc) error {
 	conn, group, err := c.connectToEventHub(ctx)
 	if err != nil {
@@ -265,7 +265,7 @@ func mi2ms(m map[interface{}]interface{}) map[string]string {
 	return r
 }
 
-// Publish sends the given cloud-to-device message and returns its id.
+// PublishEvent sends the given cloud-to-device message and returns its id.
 // Panics when event is nil.
 func (c *Client) Publish(ctx context.Context, event *Event) (string, error) {
 	if event == nil {

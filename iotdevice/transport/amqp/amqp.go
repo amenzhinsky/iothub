@@ -9,8 +9,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/amenzhinsky/iothub/eventhub"
-	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/golang-iothub/eventhub"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
 	"github.com/satori/go.uuid"
 	"pack.ag/amqp"
 )
@@ -174,7 +174,9 @@ func (tr *Transport) PublishEvent(ctx context.Context, event *transport.Event) e
 	})
 }
 
-func (tr Transport) enablePublishing(deviceID string) error {
+// enablePublishing initializes the sender link just once,
+// because we don't want to do this every `PublishEvent` call.
+func (tr *Transport) enablePublishing(deviceID string) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.d2cSender != nil {

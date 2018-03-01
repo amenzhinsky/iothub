@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amenzhinsky/iothub/iotdevice"
-	"github.com/amenzhinsky/iothub/iotdevice/transport"
-	"github.com/amenzhinsky/iothub/iotdevice/transport/amqp"
-	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
-	"github.com/amenzhinsky/iothub/iotservice"
+	"github.com/amenzhinsky/golang-iothub/iotdevice"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/amqp"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
+	"github.com/amenzhinsky/golang-iothub/iotservice"
 )
 
 func TestEnd2End(t *testing.T) {
@@ -22,13 +22,17 @@ func TestEnd2End(t *testing.T) {
 	if dcs == "" {
 		t.Fatal("TEST_DEVICE_CONNECTION_STRING is empty")
 	}
-	device := os.Getenv("TEST_X509_DEVICE")
-	if device == "" {
+	ddcs := os.Getenv("TEST_DISABLED_DEVICE_CONNECTION_STRING")
+	if ddcs == "" {
+		t.Fatal("TEST_DISABLED_DEVICE_CONNECTION_STRING is empty")
+	}
+	x509DeviceID := os.Getenv("TEST_X509_DEVICE")
+	if x509DeviceID == "" {
 		t.Fatal("TEST_X509_DEVICE is empty")
 	}
-	hostname := os.Getenv("TEST_X509_HOSTNAME")
+	hostname := os.Getenv("TEST_HOSTNAME")
 	if hostname == "" {
-		t.Fatal("TEST_X509_HOSTNAME is empty")
+		t.Fatal("TEST_HOSTNAME is empty")
 	}
 
 	for name, mk := range map[string]func() (transport.Transport, error){
@@ -38,7 +42,7 @@ func TestEnd2End(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			for auth, opts := range map[string][]iotdevice.ClientOption{
 				"x509": {
-					iotdevice.WithDeviceID(device),
+					iotdevice.WithDeviceID(x509DeviceID),
 					iotdevice.WithHostname(hostname),
 					iotdevice.WithX509FromFile("./testdata/dev.crt", "./testdata/dev.key"),
 				},
@@ -63,6 +67,10 @@ func TestEnd2End(t *testing.T) {
 					}
 				})
 			}
+
+			// TODO: add test
+			t.Run("DisabledDevice", func(t *testing.T) {
+			})
 		})
 	}
 }
@@ -92,7 +100,7 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	// send events until one of them is received
 	go func() {
 		for {
-			if err := dc.Publish(ctx, w); err != nil {
+			if err := dc.PublishEvent(ctx, w); err != nil {
 				errc <- err
 				break
 			}

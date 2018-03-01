@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/amenzhinsky/iothub/cmd/internal"
-	"github.com/amenzhinsky/iothub/iotservice"
-	"github.com/amenzhinsky/iothub/iotutil"
+	"github.com/amenzhinsky/golang-iothub/cmd/internal"
+	"github.com/amenzhinsky/golang-iothub/iotservice"
+	"github.com/amenzhinsky/golang-iothub/iotutil"
 )
 
 // globally accessible by command handlers, is it a good idea?
