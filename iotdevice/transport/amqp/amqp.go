@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 
 	"github.com/amenzhinsky/golang-iothub/eventhub"
@@ -29,9 +28,8 @@ func WithLogger(l *log.Logger) TransportOption {
 // New creates new amqp iothub transport.
 func New(opts ...TransportOption) (transport.Transport, error) {
 	tr := &Transport{
-		c2ds:   make(chan *transport.Event, 10),
-		done:   make(chan struct{}),
-		logger: log.New(os.Stdout, "[amqp] ", 0),
+		c2ds: make(chan *transport.Event, 10),
+		done: make(chan struct{}),
 	}
 	for _, opt := range opts {
 		if err := opt(tr); err != nil {

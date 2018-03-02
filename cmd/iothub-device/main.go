@@ -132,7 +132,7 @@ func conn(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		if err != nil {
 			return err
 		}
-		c, err := iotdevice.New(append(opts,
+		c, err := iotdevice.NewClient(append(opts,
 			iotdevice.WithLogger(mklog("[iothub] ")),
 			iotdevice.WithTransport(t),
 		)...)

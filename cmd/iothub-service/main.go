@@ -37,7 +37,7 @@ func run() error {
 		return errors.New("SERVICE_CONNECTION_STRING is blank")
 	}
 
-	c, err := iotservice.New(
+	c, err := iotservice.NewClient(
 		iotservice.WithLogger(nil), // disable logging
 		iotservice.WithConnectionString(cs),
 	)

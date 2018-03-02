@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -42,8 +41,6 @@ func New(opts ...TransportOption) (transport.Transport, error) {
 		dmis: make(chan *transport.Invocation, 10),
 		tscs: make(chan *transport.TwinState, 10),
 		resp: make(map[string]chan *resp),
-
-		logger: log.New(os.Stdout, "[mqtt] ", 0),
 	}
 	for _, opt := range opts {
 		if err := opt(tr); err != nil {

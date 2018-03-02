@@ -40,14 +40,25 @@ func TestEnd2End(t *testing.T) {
 		"amqp": func() (transport.Transport, error) { return amqp.New(amqp.WithLogger(nil)) },
 	} {
 		t.Run(name, func(t *testing.T) {
-			for auth, opts := range map[string][]iotdevice.ClientOption{
+			for auth, suite := range map[string]struct {
+				opts []iotdevice.ClientOption
+				test string
+			}{
 				"x509": {
-					iotdevice.WithDeviceID(x509DeviceID),
-					iotdevice.WithHostname(hostname),
-					iotdevice.WithX509FromFile("./testdata/dev.crt", "./testdata/dev.key"),
+					[]iotdevice.ClientOption{
+						iotdevice.WithDeviceID(x509DeviceID),
+						iotdevice.WithHostname(hostname),
+						iotdevice.WithX509FromFile("testdata/device.crt", "testdata/device.key"),
+					},
+
+					// we test only access here so we don't want to run all the tests
+					"TwinDevice",
 				},
 				"sas": {
-					iotdevice.WithConnectionString(dcs),
+					[]iotdevice.ClientOption{
+						iotdevice.WithConnectionString(dcs),
+					},
+					"*",
 				},
 			} {
 				t.Run(auth, func(t *testing.T) {
@@ -57,12 +68,15 @@ func TestEnd2End(t *testing.T) {
 						"DirectMethod":  testDirectMethod,
 						"TwinDevice":    testTwinDevice,
 					} {
+						if suite.test != "*" && suite.test != name {
+							continue
+						}
 						t.Run(name, func(t *testing.T) {
 							tr, err := mk()
 							if err != nil {
 								t.Fatal(err)
 							}
-							test(t, append(opts, iotdevice.WithLogger(nil), iotdevice.WithTransport(tr))...)
+							test(t, append(suite.opts, iotdevice.WithLogger(nil), iotdevice.WithTransport(tr))...)
 						})
 					}
 				})
@@ -307,7 +321,7 @@ func mkDeviceAndService(
 		t.Fatal("TEST_SERVICE_CONNECTION_STRING is empty")
 	}
 
-	dc, err := iotdevice.New(opts...)
+	dc, err := iotdevice.NewClient(opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +329,7 @@ func mkDeviceAndService(
 		t.Fatal(err)
 	}
 
-	sc, err := iotservice.New(
+	sc, err := iotservice.NewClient(
 		iotservice.WithLogger(nil),
 		iotservice.WithConnectionString(ccs),
 	)

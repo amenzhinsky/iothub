@@ -11,7 +11,7 @@ This project in pre-alpha state if you decided to use it anyway, please vendor t
 ## Example
 
 ```go
-c, err := iotdevice.New(
+c, err := iotdevice.NewClient(
 		iotdevice.WithConnectionString(os.Getenv("DEVICE_CONNECTION_STRING")),
 
 	// for x509 authentication use this options:
@@ -103,6 +103,7 @@ On the cloud side you need to create:
 
 ## TODO
 
+1. Files uploading.
 1. HTTP transport.
 1. Finalize AMQP transport.
 1. AMQP-WS transport.

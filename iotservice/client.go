@@ -3,18 +3,16 @@ package iotservice
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"crypto/tls"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/eventhub"
@@ -69,11 +67,10 @@ func WithDebug(d bool) ClientOption {
 	}
 }
 
-// New creates new iothub service client.
-func New(opts ...ClientOption) (*Client, error) {
+// NewClient creates new iothub service client.
+func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		done:   make(chan struct{}),
-		logger: log.New(os.Stdout, "[iotsvc] ", 0),
+		done: make(chan struct{}),
 	}
 	for _, opt := range opts {
 		if err := opt(c); err != nil {

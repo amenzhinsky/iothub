@@ -125,15 +125,14 @@ func WithX509FromFile(certFile, keyFile string) ClientOption {
 // errNotConnected is the initial connection state.
 var errNotConnected = errors.New("not connected")
 
-// New returns new iothub client parsing the given connection string.
-func New(opts ...ClientOption) (*Client, error) {
+// NewClient returns new iothub client.
+func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		tls:     &tls.Config{RootCAs: common.RootCAs()},
 		subs:    make([]chan *transport.Event, 0, 10),
 		changes: make([]chan *transport.TwinState, 0, 10),
 		methods: make(map[string]DirectMethodFunc, 10),
 		done:    make(chan struct{}),
-		logger:  log.New(os.Stdout, "[iotdev] ", 0),
 		debug:   os.Getenv("DEBUG") != "",
 		connErr: errNotConnected,
 	}
