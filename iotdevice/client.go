@@ -13,7 +13,6 @@ import (
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
-	"github.com/amenzhinsky/golang-iothub/iotutil"
 )
 
 // ClientOption is a client configuration option.
@@ -129,7 +128,7 @@ var errNotConnected = errors.New("not connected")
 func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		tls:     &tls.Config{RootCAs: common.RootCAs()},
-		subs:    make([]chan *transport.Event, 0, 10),
+		subs:    make([]chan *transport.Message, 0, 10),
 		changes: make([]chan *transport.TwinState, 0, 10),
 		methods: make(map[string]DirectMethodFunc, 10),
 		done:    make(chan struct{}),
@@ -161,7 +160,7 @@ type Client struct {
 	debug  bool
 
 	mu      sync.RWMutex
-	subs    []chan *transport.Event
+	subs    []chan *transport.Message
 	changes []chan *transport.TwinState
 	methods map[string]DirectMethodFunc
 	done    chan struct{}
@@ -170,7 +169,7 @@ type Client struct {
 	connMu  sync.RWMutex
 	connErr error // nil means successfully connected
 
-	c2ds chan *transport.Event      // cloud-to-device events
+	c2ds chan *transport.Message    // cloud-to-device events
 	dmis chan *transport.Invocation // direct method invocations
 	tscs chan *transport.TwinState  // twin state changes
 
@@ -178,7 +177,7 @@ type Client struct {
 }
 
 // CloudToDeviceFunc handles cloud-to-device events.
-type CloudToDeviceFunc func(event *Event)
+type CloudToDeviceFunc func(msg *common.Message)
 
 // DirectMethodFunc handles direct method invocations.
 type DirectMethodFunc func(p map[string]interface{}) (map[string]interface{}, error)
@@ -273,13 +272,6 @@ func (c *Client) ConnectionError(ctx context.Context) error {
 	}
 }
 
-const eventFormat = `
----- PROPERTIES ----
-%s
------- PAYLOAD -----
-%s
-====================`
-
 func (c *Client) recv() {
 Loop:
 	for {
@@ -288,16 +280,13 @@ Loop:
 			if !ok {
 				break Loop
 			}
-			if ev.Err == nil {
+			if ev.Err != nil {
 				c.logf("cloud-to-device error: %s", ev.Err)
 			} else {
 				if c.debug {
-					c.logf("cloud-to-device"+eventFormat,
-						iotutil.FormatProperties(ev.Properties),
-						iotutil.FormatPayload(ev.Payload),
-					)
+					c.logf("cloud-to-device received\n%s", ev.Msg.Inspect())
 				} else {
-					c.logf("cloud-to-device %s", iotutil.FormatPropertiesShort(ev.Properties))
+					c.logf("cloud-to-device received %s", ev.Msg.MessageID)
 				}
 			}
 
@@ -346,7 +335,7 @@ Loop:
 				if c.debug {
 					c.logf("twin-desired-state ver=%d:\n--------------\n%s\n--------------",
 						v.Version(),
-						iotutil.FormatPayload(s.Payload),
+						s.Payload,
 					)
 				} else {
 					c.logf("twin-desired-state ver=%d", v.Version())
@@ -415,7 +404,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, f CloudToDeviceFunc) error
 		return err
 	}
 
-	w := make(chan *transport.Event, 1)
+	w := make(chan *transport.Message, 1)
 	c.mu.Lock()
 	c.subs = append(c.subs, w)
 	c.mu.Unlock()
@@ -432,14 +421,11 @@ func (c *Client) SubscribeEvents(ctx context.Context, f CloudToDeviceFunc) error
 
 	for {
 		select {
-		case ev := <-w:
-			if ev.Err != nil {
-				return ev.Err
+		case m := <-w:
+			if m.Err != nil {
+				return m.Err
 			}
-			go f(&Event{
-				Payload:    ev.Payload,
-				Properties: ev.Properties,
-			})
+			go f(m.Msg)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -553,38 +539,25 @@ func (c *Client) SubscribeTwinStateChanges(ctx context.Context, f DesiredStateCh
 	}
 }
 
-// Event is a device-to-cloud event.
-type Event struct {
-	Payload    []byte
-	Properties map[string]string
-}
-
-// PublishEvent sends a device-to-cloud message.
+// SendEvent sends a device-to-cloud message.
 // Panics when event is nil.
-func (c *Client) PublishEvent(ctx context.Context, event *Event) error {
+func (c *Client) SendEvent(ctx context.Context, msg *common.Message) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
-	if event == nil {
+	if msg == nil {
 		panic("event is nil")
 	}
-	if event.Payload == nil {
+	if msg.Payload == nil {
 		return errors.New("payload is nil")
 	}
-	if err := c.tr.PublishEvent(ctx, &transport.Event{
-		DeviceID:   c.deviceID,
-		Payload:    event.Payload,
-		Properties: event.Properties,
-	}); err != nil {
+	if err := c.tr.Send(ctx, c.deviceID, msg); err != nil {
 		return err
 	}
 	if c.debug {
-		c.logf("device-to-cloud"+eventFormat,
-			iotutil.FormatProperties(event.Properties),
-			iotutil.FormatPayload(event.Payload),
-		)
+		c.logf("device-to-cloud sent\n%s", msg.Inspect())
 	} else {
-		c.logf("device-to-cloud %s", iotutil.FormatPropertiesShort(event.Properties))
+		c.logf("device-to-cloud sent")
 	}
 	return nil
 }

@@ -3,28 +3,28 @@ package transport
 import (
 	"context"
 	"crypto/tls"
+
+	"github.com/amenzhinsky/golang-iothub/common"
 )
 
 // Transport interface.
 type Transport interface {
 	Connect(
 		ctx context.Context, tlsConfig *tls.Config, deviceID string, auth AuthFunc,
-	) (c2ds chan *Event, dmis chan *Invocation, tscs chan *TwinState, err error)
+	) (c2ds chan *Message, dmis chan *Invocation, tscs chan *TwinState, err error)
 
 	IsNetworkError(err error) bool
-	PublishEvent(ctx context.Context, event *Event) error
+	Send(ctx context.Context, deviceID string, msg *common.Message) error
 	RespondDirectMethod(ctx context.Context, rid string, code int, payload []byte) error
 	RetrieveTwinProperties(ctx context.Context) (payload []byte, err error)
 	UpdateTwinProperties(ctx context.Context, payload []byte) (version int, err error)
 	Close() error
 }
 
-// Event can be both D2C or C2D event message.
-type Event struct {
-	DeviceID   string
-	Payload    []byte
-	Properties map[string]string
-	Err        error
+// Message can be both D2C or C2D event message.
+type Message struct {
+	Msg *common.Message
+	Err error
 }
 
 // TwinState is desired twin state update message.

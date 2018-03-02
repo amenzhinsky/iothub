@@ -8,9 +8,9 @@ import (
 	"log"
 	"sync"
 
+	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/eventhub"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
-	"github.com/satori/go.uuid"
 	"pack.ag/amqp"
 )
 
@@ -28,7 +28,7 @@ func WithLogger(l *log.Logger) TransportOption {
 // New creates new amqp iothub transport.
 func New(opts ...TransportOption) (transport.Transport, error) {
 	tr := &Transport{
-		c2ds: make(chan *transport.Event, 10),
+		c2ds: make(chan *transport.Message, 10),
 		done: make(chan struct{}),
 	}
 	for _, opt := range opts {
@@ -44,7 +44,7 @@ type Transport struct {
 	conn   *eventhub.Client
 	logger *log.Logger
 
-	c2ds chan *transport.Event
+	c2ds chan *transport.Message
 	done chan struct{}
 
 	d2cSender *amqp.Sender
@@ -55,7 +55,7 @@ func (tr *Transport) Connect(
 	tlsConfig *tls.Config,
 	deviceID string,
 	authFunc transport.AuthFunc,
-) (chan *transport.Event, chan *transport.Invocation, chan *transport.TwinState, error) {
+) (chan *transport.Message, chan *transport.Invocation, chan *transport.TwinState, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
@@ -98,6 +98,32 @@ func (tr *Transport) Connect(
 		cancel()
 	}()
 
+	//dmiOpts := []amqp.LinkOption{
+	//	amqp.LinkSourceAddress("/devices/" + deviceID + "/methods/devicebound"),
+	//	amqp.LinkProperty("com.microsoft:client-version", "azure-iot-device/1.3.2"),
+	//	amqp.LinkProperty("com.microsoft:api-version", common.APIVersion),
+	//	amqp.LinkProperty("com.microsoft:channel-correlation-id", deviceID),
+	//}
+	//
+	//dmiSend, err := c.Sess().NewSender(dmiOpts...)
+	//if err != nil {
+	//	return nil, nil, nil, err
+	//}
+	//_ = dmiSend
+	//
+	//dmiRecv, err := c.Sess().NewReceiver(dmiOpts...)
+	//if err != nil {
+	//	return nil, nil, nil, err
+	//}
+	//
+	//for {
+	//	msg, err := dmiRecv.Receive(ctx)
+	//	if err != nil {
+	//
+	//	}
+	//	fmt.Printf("--> %#v\n", msg)
+	//	fmt.Printf("--> %#v\n", err.Error())
+	//}
 	c2d, err := c.Sess().NewReceiver(
 		amqp.LinkSourceAddress("/devices/" + deviceID + "/messages/devicebound"),
 	)
@@ -108,6 +134,7 @@ func (tr *Transport) Connect(
 	go func() {
 		defer close(tr.c2ds)
 
+		// TODO: copy from iotservice
 		for {
 			msg, err := c2d.Receive(ctx)
 			if err != nil {
@@ -116,7 +143,7 @@ func (tr *Transport) Connect(
 				}
 
 				select {
-				case tr.c2ds <- &transport.Event{Err: err}:
+				case tr.c2ds <- &transport.Message{Err: err}:
 					return
 				case <-tr.done:
 					return
@@ -129,10 +156,10 @@ func (tr *Transport) Connect(
 			}
 
 			select {
-			case tr.c2ds <- &transport.Event{
-				DeviceID:   deviceID,
-				Payload:    msg.Data[0],
-				Properties: props,
+			case tr.c2ds <- &transport.Message{
+				//DeviceID:   deviceID,
+				//Payload:    msg.Data[0],
+				//Properties: props,
 			}:
 				msg.Accept()
 			case <-tr.done:
@@ -149,32 +176,47 @@ func (tr *Transport) IsNetworkError(err error) bool {
 	return false
 }
 
-func (tr *Transport) PublishEvent(ctx context.Context, event *transport.Event) error {
+func (tr *Transport) Send(ctx context.Context, deviceID string, msg *common.Message) error {
 	if err := tr.checkConnection(); err != nil {
 		return err
 	}
-	if err := tr.enablePublishing(event.DeviceID); err != nil {
+
+	if msg.To == "" {
+		msg.To = "/devices/" + deviceID + "/messages/events" // required
+	}
+	if err := tr.enablePublishing(msg.To); err != nil {
 		return err
 	}
 
-	ap := make(map[string]interface{}, len(event.Properties))
-	for k, v := range event.Properties {
-		ap[k] = v
+	props := &amqp.MessageProperties{
+		To: msg.To,
+	}
+	if msg.UserID != "" {
+		props.UserID = []byte(msg.UserID)
+	}
+	if msg.MessageID != "" {
+		props.MessageID = msg.MessageID
+	}
+	if msg.CorrelationID != "" {
+		props.CorrelationID = msg.CorrelationID
+	}
+	if !msg.ExpiryTime.IsZero() {
+		props.AbsoluteExpiryTime = msg.ExpiryTime
+	}
+	appProps := make(map[string]interface{}, len(msg.Properties))
+	for k, v := range msg.Properties {
+		appProps[k] = v
 	}
 	return tr.d2cSender.Send(ctx, &amqp.Message{
-		Data: [][]byte{event.Payload},
-		Properties: &amqp.MessageProperties{
-			To:            d2cTarget(event.DeviceID),
-			MessageID:     uuid.Must(uuid.NewV4()).String(),
-			CorrelationID: uuid.Must(uuid.NewV4()).String(),
-		},
-		ApplicationProperties: ap,
+		Data:                  [][]byte{msg.Payload},
+		Properties:            props,
+		ApplicationProperties: appProps,
 	})
 }
 
 // enablePublishing initializes the sender link just once,
-// because we don't want to do this every `PublishEvent` call.
-func (tr *Transport) enablePublishing(deviceID string) error {
+// because we don't want to do this every `SendEvent` call.
+func (tr *Transport) enablePublishing(to string) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.d2cSender != nil {
@@ -182,13 +224,9 @@ func (tr *Transport) enablePublishing(deviceID string) error {
 	}
 	var err error
 	tr.d2cSender, err = tr.conn.Sess().NewSender(
-		amqp.LinkTargetAddress(d2cTarget(deviceID)),
+		amqp.LinkTargetAddress(to),
 	)
 	return err
-}
-
-func d2cTarget(deviceID string) string {
-	return "/devices/" + deviceID + "/messages/events"
 }
 
 func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, code int, payload []byte) error {

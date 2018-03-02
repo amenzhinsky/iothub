@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 
+	"time"
+
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
 	"github.com/amenzhinsky/golang-iothub/iotutil"
@@ -37,7 +39,7 @@ func WithLogger(l *log.Logger) TransportOption {
 func New(opts ...TransportOption) (transport.Transport, error) {
 	tr := &Transport{
 		done: make(chan struct{}),
-		c2ds: make(chan *transport.Event, 10),
+		c2ds: make(chan *transport.Message, 10),
 		dmis: make(chan *transport.Invocation, 10),
 		tscs: make(chan *transport.TwinState, 10),
 		resp: make(map[string]chan *resp),
@@ -56,7 +58,7 @@ type Transport struct {
 	ridg iotutil.RIDGenerator
 
 	done chan struct{}              // closed when Close() invoked
-	c2ds chan *transport.Event      // cloud-to-device messages
+	c2ds chan *transport.Message    // cloud-to-device messages
 	dmis chan *transport.Invocation // direct method invocations
 	tscs chan *transport.TwinState  // desired state changes
 	resp map[string]chan *resp      // responses from iothub
@@ -75,7 +77,7 @@ func (tr *Transport) Connect(
 	tlsConfig *tls.Config,
 	deviceID string,
 	auth transport.AuthFunc,
-) (chan *transport.Event, chan *transport.Invocation, chan *transport.TwinState, error) {
+) (chan *transport.Message, chan *transport.Invocation, chan *transport.TwinState, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
@@ -136,19 +138,48 @@ func (tr *Transport) IsNetworkError(err error) bool {
 	return strings.Contains(err.Error(), "Network Error")
 }
 
-func (tr *Transport) cloudToDeviceHandler(_ mqtt.Client, m mqtt.Message) {
-	p, err := parseCloudToDeviceTopic(m.Topic())
+func (tr *Transport) cloudToDeviceHandler(_ mqtt.Client, msg mqtt.Message) {
+	m, err := parseEventMessage(msg)
 	if err != nil {
-		tr.c2ds <- &transport.Event{Err: err}
+		tr.c2ds <- &transport.Message{Err: err}
 		return
 	}
 	select {
-	case tr.c2ds <- &transport.Event{
-		Payload:    m.Payload(),
-		Properties: p,
-	}:
+	case tr.c2ds <- &transport.Message{Msg: m}:
 	case <-tr.done:
 	}
+}
+
+func parseEventMessage(m mqtt.Message) (*common.Message, error) {
+	p, err := parseCloudToDeviceTopic(m.Topic())
+	if err != nil {
+		return nil, err
+	}
+	e := &common.Message{
+		Payload:    m.Payload(),
+		Properties: make(map[string]string, len(p)),
+	}
+	for k, v := range p {
+		switch k {
+		case "$.mid":
+			e.MessageID = v
+		case "$.cid":
+			e.CorrelationID = v
+		case "$.uid":
+			e.UserID = v
+		case "$.to":
+			e.To = v
+		case "$.exp":
+			t, err := time.Parse(time.RFC3339, v)
+			if err != nil {
+				return nil, err
+			}
+			e.ExpiryTime = t
+		default:
+			e.Properties[k] = v
+		}
+	}
+	return e, nil
 }
 
 // devices/{device}/messages/devicebound/%24.to=%2Fdevices%2F{device}%2Fmessages%2FdeviceBound&a=b&b=c
@@ -182,7 +213,7 @@ func parseCloudToDeviceTopic(s string) (map[string]string, error) {
 func (tr *Transport) directMethodHandler(_ mqtt.Client, m mqtt.Message) {
 	method, rid, err := parseDirectMethodTopic(m.Topic())
 	if err != nil {
-		tr.c2ds <- &transport.Event{Err: err}
+		tr.dmis <- &transport.Invocation{Err: err}
 		return
 	}
 	select {
@@ -215,7 +246,7 @@ func parseDirectMethodTopic(s string) (string, string, error) {
 func (tr *Transport) twinResponseHandler(_ mqtt.Client, m mqtt.Message) {
 	rc, rid, ver, err := parseTwinPropsTopic(m.Topic())
 	if err != nil {
-		tr.c2ds <- &transport.Event{Err: err}
+		tr.c2ds <- &transport.Message{Err: err}
 		return
 	}
 
@@ -315,12 +346,30 @@ func (tr *Transport) desiredStateChangesHandler(_ mqtt.Client, m mqtt.Message) {
 	}
 }
 
-func (tr *Transport) PublishEvent(ctx context.Context, ev *transport.Event) error {
-	u := make(url.Values, len(ev.Properties))
-	for k, v := range ev.Properties {
+func (tr *Transport) Send(ctx context.Context, deviceID string, m *common.Message) error {
+	// this is just copying functionality from the nodejs sdk, but
+	// seems like adding meta attributes does nothing or in some cases,
+	// e.g. when $.exp is set the cloud just disconnects.
+	u := make(url.Values, len(m.Properties)+5)
+	if m.MessageID != "" {
+		u["$.mid"] = []string{m.MessageID}
+	}
+	if m.CorrelationID != "" {
+		u["$.cid"] = []string{m.CorrelationID}
+	}
+	if m.UserID != "" {
+		u["$.uid"] = []string{m.UserID}
+	}
+	if m.To != "" {
+		u["$.to"] = []string{m.To}
+	}
+	if !m.ExpiryTime.IsZero() {
+		u["$.exp"] = []string{m.ExpiryTime.UTC().Format(time.RFC3339)}
+	}
+	for k, v := range m.Properties {
 		u[k] = []string{v}
 	}
-	return tr.send(ctx, "devices/"+ev.DeviceID+"/messages/events/"+u.Encode(), ev.Payload)
+	return tr.send(ctx, "devices/"+deviceID+"/messages/events/"+u.Encode(), m.Payload)
 }
 
 func (tr *Transport) send(ctx context.Context, topic string, b []byte) error {

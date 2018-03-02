@@ -1,38 +1,54 @@
 # golang-iothub
 
-This repository provides both SDK and command line tools for device-to-cloud (`iotdevice`) and cloud-to-device (`iotservice`) functionality.
+This repository provides both SDK and command line tools for both device-to-cloud (`iotdevice`) and cloud-to-device (`iotservice`) functionality.
 
-Right now only MQTT transport is implemented in `iotdevice` lib.
+This project in the active development state and if you decided to use it anyway, please vendor the source code.
 
-Many utility functions are missing in `iotservice` lib, e.g. managing devices, but pub/sub, directs methods and twin devices are already there.
-
-This project in pre-alpha state if you decided to use it anyway, please vendor the source code.
+Some of features are missing see [TODO](https://github.com/amenzhinsky/golang-iothub#todo).
 
 ## Example
 
 ```go
-c, err := iotdevice.NewClient(
-		iotdevice.WithConnectionString(os.Getenv("DEVICE_CONNECTION_STRING")),
+package main
 
-	// for x509 authentication use this options:
-	// iotdevice.WithDeviceID(os.Getenv("DEVICE_ID")),
-	// iotdevice.WithHostname(os.Getenv("HOSTNAME"),
-	// iotdevice.WithX509FromFile(os.Getenv("TLS_CERT_FILE"), os.Getenv("TLS_KEY_FILE")),
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/amenzhinsky/golang-iothub/common"
+	"github.com/amenzhinsky/golang-iothub/iotdevice"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
+)
+
+func main() {
+	t, err := mqtt.New()
+	if err != nil {
+		log.Fatal(err)
+	}
+	c, err := iotdevice.NewClient(
+		iotdevice.WithTransport(t),
+		iotdevice.WithConnectionString(os.Getenv("DEVICE_CONNECTION_STRING")),
 	)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	// interrupt all recepients when the function returns
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// publish a device-to-cloud event
-	if err = c.PublishEvent(ctx, &iotdevice.Event{
+	if err = c.Connect(ctx, false); err != nil {
+		log.Fatal(err)
+	}
+
+	// send a device-to-cloud message
+	if err = c.SendEvent(ctx, &common.Message{
 		Payload:    []byte(`hello world`),
 		Properties: map[string]string{"foo": "bar"},
 	}); err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	// need enough buffer space to avoid channel blocking on send
@@ -40,8 +56,8 @@ c, err := iotdevice.NewClient(
 
 	// register "sum" direct method that sums "a" and "b" arguments and returns the result
 	go func() {
-		if err := c.SubscribeEvents(ctx, func(event *iotdevice.Event) {
-			fmt.Printf("new message: %s\n", event.Payload)
+		if err := c.SubscribeEvents(ctx, func(msg *common.Message) {
+			fmt.Printf("new message: %s\n", msg.Payload)
 		}); err != nil {
 			errc <- err
 		}
@@ -49,7 +65,7 @@ c, err := iotdevice.NewClient(
 
 	// subscribe to cloud-to-device events
 	go func() {
-		if err := c.HandleMethod(ctx, "sum",  func(v map[string]interface{}) (map[string]interface{}, error) {
+		if err := c.HandleMethod(ctx, "sum", func(v map[string]interface{}) (map[string]interface{}, error) {
 			a, ok := v["a"].(float64) // default type for JSON numbers
 			if !ok {
 				return nil, fmt.Errorf("malformed 'a' argument")
@@ -58,7 +74,6 @@ c, err := iotdevice.NewClient(
 			if !ok {
 				return nil, fmt.Errorf("malformed 'b' argument")
 			}
-
 			return map[string]interface{}{
 				"result": a + b,
 			}, nil
@@ -67,7 +82,8 @@ c, err := iotdevice.NewClient(
 		}
 	}()
 
-	return <-errc
+	log.Fatal(<-errc)
+}
 ```
 
 For working examples, not only `iotdevice` lib, see `cmd` directory.
@@ -103,10 +119,13 @@ On the cloud side you need to create:
 
 ## TODO
 
+1. Stabilize API.
 1. Files uploading.
+1. Batch sending.
 1. HTTP transport.
-1. Finalize AMQP transport.
+1. AMQP transport.
 1. AMQP-WS transport.
 1. Complete set of subcommands for iothub-device and iothub-service.
 1. Add missing iotservice functionality.
 1. Grammar check.
+1. Automated testing.

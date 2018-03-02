@@ -11,11 +11,11 @@ import (
 	"os"
 
 	"github.com/amenzhinsky/golang-iothub/cmd/internal"
+	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/amqp"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
-	"github.com/amenzhinsky/golang-iothub/iotutil"
 )
 
 var transports = map[string]func() (transport.Transport, error){
@@ -65,10 +65,10 @@ func run() error {
 		},
 		"watch-events": {
 			"",
-			"subscribe to events sent from the cloud (C2D)",
+			"subscribe to messages sent from the cloud (C2D)",
 			conn(watchEvents),
 			func(fs *flag.FlagSet) {
-				fs.Var(formatFlag, "f", "output format <simple|json>")
+				fs.Var(formatFlag, "format", "output format <simple|json>")
 			},
 		},
 		"watch-twin": {
@@ -82,7 +82,7 @@ func run() error {
 			"handle the named direct method, reads responses from STDIN",
 			conn(directMethod),
 			func(fs *flag.FlagSet) {
-				fs.BoolVar(&quiteFlag, "q", quiteFlag, "disable additional hints")
+				fs.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
 			},
 		},
 
@@ -92,8 +92,8 @@ func run() error {
 		fs.StringVar(&transportFlag, "transport", transportFlag, "transport to use <mqtt|amqp|http>")
 		fs.StringVar(&tlsCertFlag, "tls-cert", tlsCertFlag, "path to x509 cert file")
 		fs.StringVar(&tlsKeyFlag, "tls-key", tlsKeyFlag, "path to x509 key file")
-		fs.StringVar(&deviceIDFlag, "device-id", deviceIDFlag, "device id")
-		fs.StringVar(&hostnameFlag, "hostname", hostnameFlag, "hostname to connect to")
+		fs.StringVar(&deviceIDFlag, "device-id", deviceIDFlag, "device id, required for x509")
+		fs.StringVar(&hostnameFlag, "hostname", hostnameFlag, "hostname to connect to, required for x509")
 	})
 }
 
@@ -167,36 +167,30 @@ func send(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
 			p[fs.Arg(i)] = fs.Arg(i + 1)
 		}
 	}
-	return c.PublishEvent(ctx, &iotdevice.Event{
+	return c.SendEvent(ctx, &common.Message{
+		MessageID:     "adsf",
+		CorrelationID: "dsaf",
+		UserID:        "dsf",
+
 		Payload:    []byte(fs.Arg(0)),
 		Properties: p,
 	})
 }
 
-const eventFormat = `---- PROPERTIES -----------
-%s
----- PAYLOAD --------------
-%v
-===========================
-`
-
 func watchEvents(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
 	if fs.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-	return c.SubscribeEvents(ctx, func(ev *iotdevice.Event) {
+	return c.SubscribeEvents(ctx, func(msg *common.Message) {
 		switch formatFlag.String() {
 		case "json":
-			b, err := json.Marshal(ev)
+			b, err := json.Marshal(msg)
 			if err != nil {
 				panic(err)
 			}
 			fmt.Println(string(b))
 		case "simple":
-			fmt.Printf(eventFormat,
-				iotutil.FormatProperties(ev.Properties),
-				iotutil.FormatPayload(ev.Payload),
-			)
+			fmt.Println(msg.Inspect())
 		default:
 			panic("unknown output format")
 		}

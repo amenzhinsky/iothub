@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/amenzhinsky/golang-iothub/cmd/internal"
+	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotservice"
 	"github.com/amenzhinsky/golang-iothub/iotutil"
 )
@@ -52,7 +53,7 @@ func run() error {
 			"send a message to the named device (C2D)",
 			send(c),
 			func(fs *flag.FlagSet) {
-				fs.Var(ackFlag, "a", "type of ack feedback")
+				fs.Var(ackFlag, "ack", "type of ack feedback")
 			},
 		},
 		"watch-events": {
@@ -60,7 +61,7 @@ func run() error {
 			"subscribe to device messages (D2C)",
 			watchEvents(c),
 			func(fs *flag.FlagSet) {
-				fs.Var(formatFlag, "f", "output format <simple|json>")
+				fs.Var(formatFlag, "format", "output format <simple|json>")
 			},
 		},
 		"watch-feedback": {
@@ -69,10 +70,10 @@ func run() error {
 			watchFeedback(c),
 			nil,
 		},
-		"invoke": {
+		"call": {
 			"DEVICE METHOD PAYLOAD",
 			"call a direct method on the named device (DM)",
-			directMethod(c),
+			call(c),
 			func(fs *flag.FlagSet) {
 				fs.IntVar(&connectTimeoutFlag, "c", connectTimeoutFlag, "connect timeout in seconds")
 				fs.IntVar(&responseTimeoutFlag, "r", responseTimeoutFlag, "response timeout in seconds")
@@ -81,7 +82,7 @@ func run() error {
 	}, os.Args, nil)
 }
 
-func directMethod(c *iotservice.Client) internal.HandlerFunc {
+func call(c *iotservice.Client) internal.HandlerFunc {
 	return func(ctx context.Context, fs *flag.FlagSet) error {
 		if fs.NArg() != 3 {
 			return internal.ErrInvalidUsage
@@ -90,7 +91,7 @@ func directMethod(c *iotservice.Client) internal.HandlerFunc {
 		if err := json.Unmarshal([]byte(fs.Arg(2)), &v); err != nil {
 			return err
 		}
-		v, err := c.InvokeMethod(ctx, &iotservice.Invocation{
+		v, err := c.Call(ctx, &iotservice.Call{
 			DeviceID:        fs.Arg(0),
 			MethodName:      fs.Arg(1),
 			ConnectTimeout:  connectTimeoutFlag,
@@ -130,48 +131,32 @@ func send(c *iotservice.Client) internal.HandlerFunc {
 		if err := c.Connect(ctx); err != nil {
 			return err
 		}
-		msgID, err := c.Publish(ctx, &iotservice.Event{
-			DeviceID:   fs.Arg(0),
+		mid := iotutil.UUID()
+		if err := c.SendEvent(ctx, fs.Arg(0), &common.Message{
+			MessageID:  mid,
 			Payload:    []byte(fs.Arg(1)),
 			Properties: p,
 			Ack:        ackFlag.String(),
-		})
-		if err != nil {
+		}); err != nil {
 			return err
 		}
-		fmt.Println(msgID)
+		fmt.Println(mid)
 		return nil
 	}
 }
 
-const eventFormat = `----- DEVICE -----------------
-%s
------ PROPERTIES -------------
-%s
------ PAYLOAD ----------------
-%s
------ METADATA----------------
-%s
-==============================
-`
-
 func watchEvents(c *iotservice.Client) internal.HandlerFunc {
 	return func(ctx context.Context, fs *flag.FlagSet) error {
-		return c.Subscribe(ctx, func(ev *iotservice.Event) {
+		return c.SubscribeEvents(ctx, func(msg *common.Message) {
 			switch formatFlag.String() {
 			case "json":
-				b, err := json.Marshal(ev)
+				b, err := json.Marshal(msg)
 				if err != nil {
 					panic(err)
 				}
 				fmt.Println(string(b))
 			case "simple":
-				fmt.Printf(eventFormat,
-					ev.DeviceID,
-					iotutil.FormatProperties(ev.Properties),
-					iotutil.FormatPayload(ev.Payload),
-					iotutil.FormatProperties(ev.Metadata),
-				)
+				fmt.Println(msg.Inspect())
 			default:
 				panic("unknown output format")
 			}

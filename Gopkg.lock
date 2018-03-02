@@ -26,24 +26,18 @@
   revision = "cbe0f9307d0156177f9dd5dc85da1a31abc5f2fb"
 
 [[projects]]
-  name = "gopkg.in/satori/go.uuid.v1"
-  packages = ["."]
-  revision = "f58768cc1a7a7e77a3bd49e98cdd21419399b6a3"
-  version = "v1.2.0"
-
-[[projects]]
+  branch = "master"
   name = "pack.ag/amqp"
   packages = [
     ".",
     "internal/testconn"
   ]
-  revision = "a0dd226acfbfe50b70ce3380963ed2018ddc68ad"
+  revision = "7541c9e406fe7ffe25b0015f2b3fac5789dbbd24"
   source = "github.com/vcabbage/amqp"
-  version = "v0.4.0"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "72f17694c2c881fb9d7504024f232a9509be82e0c14b47d2e967544750f9f835"
+  inputs-digest = "56c7739003348d3227931e52b174e2cd728542307185062058874b76e53b3c05"
   solver-name = "gps-cdcl"
   solver-version = 1

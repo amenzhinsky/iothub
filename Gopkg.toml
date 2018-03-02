@@ -30,10 +30,6 @@
   version = "1.1.0"
 
 [[constraint]]
-  name = "gopkg.in/satori/go.uuid.v1"
-  version = "1.2.0"
-
-[[constraint]]
   name = "pack.ag/amqp"
   source = "github.com/vcabbage/amqp"
   branch = "master"

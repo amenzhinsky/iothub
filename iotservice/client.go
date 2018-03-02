@@ -16,7 +16,7 @@ import (
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/eventhub"
-	"gopkg.in/satori/go.uuid.v1"
+	"github.com/amenzhinsky/golang-iothub/iotutil"
 	"pack.ag/amqp"
 )
 
@@ -203,25 +203,12 @@ func (c *Client) isConnected() bool {
 var errNotConnected = errors.New("not connected")
 
 // SubscribeFunc handles incoming cloud-to-device events.
-type SubscribeFunc func(e *Event)
-
-// Event is a cloud-to-device event.
-type Event struct {
-	DeviceID   string
-	Payload    []byte
-	Properties map[string]string
-
-	// Metadata is event annotations available only for incoming events.
-	Metadata map[string]string
-
-	// Ack is type of the message feedback, available only for outgoing events.
-	Ack string `json:",omitempty"`
-}
+type SubscribeFunc func(e *common.Message)
 
 // SubscribeEvents subscribes to device events.
 // No need to call Connect first, because this method different connect
-// method that dials an eventhub instance first opposed to PublishEvent func.
-func (c *Client) Subscribe(ctx context.Context, f SubscribeFunc) error {
+// method that dials an eventhub instance first opposed to SendEvent func.
+func (c *Client) SubscribeEvents(ctx context.Context, f SubscribeFunc) error {
 	conn, group, err := c.connectToEventHub(ctx)
 	if err != nil {
 		return err
@@ -235,78 +222,74 @@ func (c *Client) Subscribe(ctx context.Context, f SubscribeFunc) error {
 	defer sess.Close()
 
 	return eventhub.SubscribePartitions(ctx, sess, group, "$Default", func(msg *amqp.Message) {
-		props := make(map[string]string, len(msg.ApplicationProperties))
-		for k, v := range msg.ApplicationProperties {
-			props[k] = fmt.Sprint(v)
-		}
-		devid, ok := msg.Annotations["iothub-connection-device-id"].(string)
-		if !ok {
-			c.logf("error: unable to typecast iothub-connection-device-id")
-			return
-		}
-
-		go f(&Event{
-			DeviceID:   devid,
+		m := &common.Message{
 			Payload:    msg.Data[0],
-			Properties: props,
-			Metadata:   mi2ms(msg.Annotations),
-		})
+			Properties: make(map[string]string, len(msg.ApplicationProperties)+3),
+		}
+		for k, v := range msg.Annotations {
+			switch k {
+			case "iothub-enqueuedtime":
+				m.EnqueuedTime = v.(time.Time)
+			case "iothub-connection-device-id":
+				m.ConnectionDeviceID = v.(string)
+			case "iothub-connection-auth-generation-id":
+				m.ConnectionDeviceGenerationID = v.(string)
+			case "iothub-connection-auth-method":
+				m.ConnectionAuthMethod = v.(string)
+			case "iothub-message-source":
+				m.MessageSource = v.(string)
+			default:
+				m.Properties[k.(string)] = fmt.Sprint(v)
+			}
+		}
+		for k, v := range msg.ApplicationProperties {
+			m.Properties[k] = v.(string)
+		}
+		go f(m)
 	})
 }
 
-func mi2ms(m map[interface{}]interface{}) map[string]string {
-	r := make(map[string]string, len(m))
-	for k, v := range m {
-		r[fmt.Sprint(k)] = fmt.Sprint(v)
-	}
-	return r
-}
-
-// PublishEvent sends the given cloud-to-device message and returns its id.
+// SendEvent sends the given cloud-to-device message and returns its id.
 // Panics when event is nil.
-func (c *Client) Publish(ctx context.Context, event *Event) (string, error) {
-	if event == nil {
-		panic("event is nil")
+func (c *Client) SendEvent(ctx context.Context, deviceID string, msg *common.Message) error {
+	if msg == nil {
+		panic("msg is nil")
 	}
-	if event.DeviceID == "" {
-		return "", errors.New("device id is empty")
+	if deviceID == "" {
+		return errors.New("device id is empty")
 	}
-	if event.Payload == nil {
-		return "", errors.New("payload is nil")
+	if msg.Payload == nil {
+		return errors.New("payload is nil")
 	}
 
 	if !c.isConnected() {
-		return "", errNotConnected
+		return errNotConnected
 	}
 	send, err := c.conn.Sess().NewSender(
 		amqp.LinkTargetAddress("/messages/devicebound"),
 	)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer send.Close()
 
-	// convert Properties to ApplicationProperties
-	ap := make(map[string]interface{}, len(event.Properties))
-	for k, v := range event.Properties {
-		ap[k] = v
+	props := make(map[string]interface{}, len(msg.Properties))
+	for k, v := range msg.Properties {
+		props[k] = v
 	}
-	if event.Ack != "" {
-		ap["iothub-ack"] = event.Ack
+	if msg.Ack != "" {
+		props["iothub-ack"] = msg.Ack
 	}
-
-	msgID := uuid.NewV4().String()
-	if err = send.Send(ctx, &amqp.Message{
-		Data: [][]byte{event.Payload},
+	return send.Send(ctx, &amqp.Message{
+		Data: [][]byte{msg.Payload},
 		Properties: &amqp.MessageProperties{
-			MessageID: msgID,
-			To:        fmt.Sprintf("/devices/%s/messages/devicebound", event.DeviceID),
+			To:            fmt.Sprintf("/devices/%s/messages/devicebound", deviceID),
+			UserID:        []byte(msg.UserID),
+			MessageID:     msg.MessageID,
+			CorrelationID: msg.CorrelationID,
 		},
-		ApplicationProperties: ap,
-	}); err != nil {
-		return "", err
-	}
-	return msgID, nil
+		ApplicationProperties: props,
+	})
 }
 
 // FeedbackFunc handles message feedback.
@@ -352,8 +335,8 @@ type Feedback struct {
 	StatusCode         string    `json:"statusCode"`
 }
 
-// Invocation is direct method invocation object.
-type Invocation struct {
+// Call is direct method invocation object.
+type Call struct {
 	// DeviceID is device identifier on azure.
 	DeviceID string `json:"-"`
 
@@ -370,8 +353,8 @@ type Invocation struct {
 	Payload map[string]interface{} `json:"payload"`
 }
 
-// InvokeMethod calls the named direct method on with the given parameters.
-func (c *Client) InvokeMethod(ctx context.Context, invocation *Invocation) (map[string]interface{}, error) {
+// Call calls the named direct method on with the given parameters.
+func (c *Client) Call(ctx context.Context, invocation *Call) (map[string]interface{}, error) {
 	if invocation == nil {
 		return nil, errors.New("invocation is nil")
 	}
@@ -407,7 +390,7 @@ func (c *Client) InvokeMethod(ctx context.Context, invocation *Invocation) (map[
 
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", auth)
-	r.Header.Set("Request-Id", uuid.NewV4().String())
+	r.Header.Set("Request-Id", iotutil.UUID())
 	r.WithContext(ctx)
 
 	res, err := c.http.Do(r)

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/satori/go.uuid.v1"
+	"github.com/amenzhinsky/golang-iothub/iotutil"
 	"pack.ag/amqp"
 )
 
@@ -145,7 +145,7 @@ func (c *Client) PutToken(ctx context.Context, audience, token string) error {
 	if err = send.Send(ctx, &amqp.Message{
 		Value: token,
 		Properties: &amqp.MessageProperties{
-			MessageID: uuid.NewV4().String(),
+			MessageID: iotutil.UUID(),
 			To:        "$cbs",
 			ReplyTo:   "cbs",
 		},
@@ -187,7 +187,7 @@ func (c *Client) Close() error {
 
 // getPartitionIDs returns partition ids for the named eventhub.
 func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]string, error) {
-	replyTo := uuid.NewV4().String()
+	replyTo := iotutil.UUID()
 	recv, err := sess.NewReceiver(
 		amqp.LinkSourceAddress("$management"),
 		amqp.LinkTargetAddress(replyTo),
@@ -206,10 +206,10 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	}
 	defer send.Close()
 
-	msgID := uuid.NewV4().String()
+	mid := iotutil.UUID()
 	if err := send.Send(ctx, &amqp.Message{
 		Properties: &amqp.MessageProperties{
-			MessageID: msgID,
+			MessageID: mid,
 			ReplyTo:   replyTo,
 		},
 		ApplicationProperties: map[string]interface{}{
@@ -228,7 +228,7 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	if err = CheckMessageResponse(msg); err != nil {
 		return nil, err
 	}
-	if msg.Properties.CorrelationID != msgID {
+	if msg.Properties.CorrelationID != mid {
 		return nil, errors.New("message-id mismatch")
 	}
 	msg.Accept()
