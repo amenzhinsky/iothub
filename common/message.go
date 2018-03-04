@@ -31,10 +31,6 @@ type Message struct {
 	// UserID is an ID used to specify the origin of messages.
 	UserID string `json:"UserId,omitempty"`
 
-	// Ack is used in cloud-to-device messages to request IoT Hub to generate feedback
-	// messages as a result of the consumption of the message by the device.jx
-	Ack string `json:"Ack,omitempty"`
-
 	// ConnectionDeviceID is an ID set by IoT Hub on device-to-cloud messages.
 	// It contains the deviceId of the device that sent the message.
 	ConnectionDeviceID string `json:"ConnectionDeviceId,omitempty"`
@@ -99,9 +95,6 @@ func (msg *Message) Inspect() string {
 	if msg.UserID != "" {
 		b.WriteString(f("UserID", msg.UserID))
 	}
-	if msg.Ack != "" {
-		b.WriteString(f("Ack", msg.Ack))
-	}
 	if msg.ConnectionDeviceID != "" {
 		b.WriteString(f("ConnectionDeviceID", msg.ConnectionDeviceID))
 	}
@@ -137,7 +130,6 @@ func (msg *Message) mlen() int {
 	l = lenIfBigger(l, "EnqueuedTime", msg.EnqueuedTime.IsZero())
 	l = lenIfBigger(l, "CorrelationID", msg.CorrelationID == "")
 	l = lenIfBigger(l, "UserID", msg.UserID == "")
-	l = lenIfBigger(l, "Ack", msg.Ack == "")
 	l = lenIfBigger(l, "ConnectionDeviceID", msg.ConnectionDeviceID == "")
 	l = lenIfBigger(l, "ConnectionDeviceGenerationID", msg.ConnectionDeviceGenerationID == "")
 	l = lenIfBigger(l, "ConnectionAuthMethod", msg.ConnectionAuthMethod == "")
