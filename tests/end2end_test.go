@@ -289,16 +289,13 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 
 	resc := make(chan map[string]interface{}, 1)
 	go func() {
-		v, err := sc.Call(ctx, &iotservice.Call{
-			DeviceID:        dc.DeviceID(),
-			MethodName:      "sum",
-			ConnectTimeout:  0,
-			ResponseTimeout: 5,
-			Payload: map[string]interface{}{
-				"a": 1.5,
-				"b": 3,
-			},
-		})
+		v, err := sc.Call(ctx, dc.DeviceID(), "sum", map[string]interface{}{
+			"a": 1.5,
+			"b": 3,
+		},
+			iotservice.CallConnectTimeout(0),
+			iotservice.CallResponseTimeout(5),
+		)
 		if err != nil {
 			errc <- err
 		}

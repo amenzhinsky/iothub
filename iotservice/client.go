@@ -335,40 +335,60 @@ type Feedback struct {
 	StatusCode         string    `json:"statusCode"`
 }
 
-// Call is direct method invocation object.
-type Call struct {
-	// DeviceID is device identifier on azure.
-	DeviceID string `json:"-"`
+type call struct {
+	MethodName      string                 `json:"methodName"`
+	ConnectTimeout  int                    `json:"connectTimeoutInSeconds,omitempty"`
+	ResponseTimeout int                    `json:"responseTimeoutInSeconds,omitempty"`
+	Payload         map[string]interface{} `json:"payload"`
+}
 
-	// MethodName is a direct method name.
-	MethodName string `json:"methodName"`
+// CallOption is a direct-method invocation option.
+type CallOption func(c *call) error
 
-	// ConnectTimeout is connection timeout in seconds.
-	ConnectTimeout int `json:"connectTimeoutInSeconds,omitempty"`
+// ConnectTimeout is connection timeout in seconds.
+func CallConnectTimeout(seconds int) CallOption {
+	return func(c *call) error {
+		c.ConnectTimeout = seconds
+		return nil
+	}
+}
 
-	// ResponseTimeout is response timeout in seconds.
-	ResponseTimeout int `json:"responseTimeoutInSeconds,omitempty"`
-
-	// Payload is method's input data.
-	Payload map[string]interface{} `json:"payload"`
+// ResponseTimeout is response timeout in seconds.
+func CallResponseTimeout(seconds int) CallOption {
+	return func(c *call) error {
+		c.ResponseTimeout = seconds
+		return nil
+	}
 }
 
 // Call calls the named direct method on with the given parameters.
-func (c *Client) Call(ctx context.Context, invocation *Call) (map[string]interface{}, error) {
-	if invocation == nil {
-		return nil, errors.New("invocation is nil")
-	}
-	if invocation.DeviceID == "" {
+func (c *Client) Call(
+	ctx context.Context,
+	deviceID string,
+	methodName string,
+	payload map[string]interface{},
+	opts ...CallOption,
+) (map[string]interface{}, error) {
+	if deviceID == "" {
 		return nil, errors.New("deviceID is empty")
 	}
-	if invocation.MethodName == "" {
+	if methodName == "" {
 		return nil, errors.New("methodName is empty")
 	}
-	if len(invocation.Payload) == 0 {
+	if len(payload) == 0 {
 		return nil, errors.New("payload is empty")
 	}
 
-	b, err := json.Marshal(invocation)
+	v := &call{
+		MethodName: methodName,
+		Payload:    payload,
+	}
+	for _, opt := range opts {
+		if err := opt(v); err != nil {
+			return nil, err
+		}
+	}
+	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +396,7 @@ func (c *Client) Call(ctx context.Context, invocation *Call) (map[string]interfa
 	r, err := http.NewRequest(
 		http.MethodPost,
 		fmt.Sprintf("https://%s/twins/%s/methods?api-version=%s",
-			c.creds.HostName, invocation.DeviceID, common.APIVersion),
+			c.creds.HostName, deviceID, common.APIVersion),
 		bytes.NewReader(b),
 	)
 	if err != nil {

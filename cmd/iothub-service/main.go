@@ -91,13 +91,10 @@ func call(c *iotservice.Client) internal.HandlerFunc {
 		if err := json.Unmarshal([]byte(fs.Arg(2)), &v); err != nil {
 			return err
 		}
-		v, err := c.Call(ctx, &iotservice.Call{
-			DeviceID:        fs.Arg(0),
-			MethodName:      fs.Arg(1),
-			ConnectTimeout:  connectTimeoutFlag,
-			ResponseTimeout: responseTimeoutFlag,
-			Payload:         v,
-		})
+		v, err := c.Call(ctx, fs.Arg(0), fs.Arg(1), v,
+			iotservice.CallConnectTimeout(connectTimeoutFlag),
+			iotservice.CallResponseTimeout(responseTimeoutFlag),
+		)
 		if err != nil {
 			return err
 		}
