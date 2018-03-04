@@ -4,11 +4,11 @@ This repository provides both SDK and command line tools for both device-to-clou
 
 This project in the active development state and if you decided to use it anyway, please vendor the source code.
 
-Some of features are missing see [TODO](https://github.com/amenzhinsky/golang-iothub#todo).
+Some features are missing, see [TODO](https://github.com/amenzhinsky/golang-iothub#todo).
 
 ## Examples
 
-Send a message from a IoT device:
+Send a message from an IoT device:
 
 ```go
 package main
@@ -90,22 +90,15 @@ See `-help` for more details.
 
 ## Testing
 
-To enable end-to-end testing in the `tests` directory you need to set the following environment variables (hope these names are descriptive):
+To enable end-to-end testing in the `tests` directory you need to set the following environment variables:
 
-```
-TEST_HOSTNAME
-TEST_DEVICE_CONNECTION_STRING
-TEST_DISABLED_DEVICE_CONNECTION_STRING
-TEST_SERVICE_CONNECTION_STRING
-TEST_X509_DEVICE
-```
-
-On the cloud side you need to create:
-
-1. access policy (service connect perm)
-1. disabled device (symmetric key)
-1. enabled device (symmetric key)
-1. enabled device (x509 self signed `443ABB6DEA8F93D5987D31D2607BE2931217752C`)
+| Name | Description |
+| --- | --- |
+| `TEST_HOSTNAME`                 | *.azure-devices.net |
+| `TEST_DEVICE_CONNECTION_STRING` | enabled device connection string |
+| `TEST_DISABLED_DEVICE_CONNECTION_STRING` | disabled device connection string |
+| `TEST_SERVICE_CONNECTION_STRING` | access policy with `service connect` permission |
+| `TEST_X509_DEVICE` | enabled device with x509 self signed certificate, thumbprint:  [443ABB6DEA8F93D5987D31D2607BE2931217752C](https://github.com/amenzhinsky/golang-iothub/blob/master/tests/testdata/device.crt) |
 
 ## TODO
 
