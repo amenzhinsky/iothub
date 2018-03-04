@@ -105,6 +105,9 @@ type Client struct {
 	logger *log.Logger
 	debug  bool
 	http   *http.Client // REST client
+
+	sendMu   sync.Mutex
+	sendLink *amqp.Sender
 }
 
 // Connect connects to AMQP broker, has to be done before publishing events.
@@ -299,8 +302,7 @@ func WithSendAck(typ string) SendOption {
 		default:
 			return fmt.Errorf("unknown ack type: %q", typ)
 		}
-		msg.Ack = typ
-		return nil
+		return WithSendProperty("iothub-ack", typ)(msg)
 	}
 }
 
@@ -355,15 +357,6 @@ func (c *Client) SendEvent(
 		return errNotConnected
 	}
 
-	// TODO: create link once
-	send, err := c.conn.Sess().NewSender(
-		amqp.LinkTargetAddress("/messages/devicebound"),
-	)
-	if err != nil {
-		return err
-	}
-	defer send.Close()
-
 	// TODO: we're composing *common.Message and converting it into
 	// TODO: *amqp.Message immediately, probably we should avoid the extra step
 	msg := &common.Message{
@@ -379,10 +372,12 @@ func (c *Client) SendEvent(
 	for k, v := range msg.Properties {
 		props[k] = v
 	}
-	if msg.Ack != "" {
-		props["iothub-ack"] = msg.Ack
-	}
-	return send.Send(ctx, &amqp.Message{
+
+	// Send is not thread-safe
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+
+	return c.sendLink.Send(ctx, &amqp.Message{
 		Data: [][]byte{msg.Payload},
 		Properties: &amqp.MessageProperties{
 			To:                 fmt.Sprintf("/devices/%s/messages/devicebound", deviceID),
@@ -393,6 +388,20 @@ func (c *Client) SendEvent(
 		},
 		ApplicationProperties: props,
 	})
+}
+
+// enablePublish opens the sender link just once.
+func (c *Client) enablePublish() error {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if c.sendLink != nil {
+		return nil
+	}
+	var err error
+	c.sendLink, err = c.conn.Sess().NewSender(
+		amqp.LinkTargetAddress("/messages/devicebound"),
+	)
+	return err
 }
 
 // FeedbackFunc handles message feedback.
