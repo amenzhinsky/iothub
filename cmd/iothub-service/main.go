@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/amenzhinsky/golang-iothub/cmd/internal"
 	"github.com/amenzhinsky/golang-iothub/common"
@@ -16,6 +17,10 @@ import (
 
 // globally accessible by command handlers, is it a good idea?
 var (
+	userIDFlag          = "golang-iothub"
+	messageIDFlag       = ""
+	correlationIDFlag   = ""
+	expiryTimeFlag      = time.Duration(0)
 	ackFlag             = internal.NewChoiceFlag("none", "positive", "negative", "full")
 	formatFlag          = internal.NewChoiceFlag("simple", "json")
 	connectTimeoutFlag  = 0
@@ -54,6 +59,10 @@ func run() error {
 			send(c),
 			func(fs *flag.FlagSet) {
 				fs.Var(ackFlag, "ack", "type of ack feedback")
+				fs.StringVar(&userIDFlag, "user-id", userIDFlag, "origin of the message")
+				fs.StringVar(&messageIDFlag, "message-id", messageIDFlag, "identifier for the message")
+				fs.StringVar(&correlationIDFlag, "correlation-id", correlationIDFlag, "message identifier in a request-reply")
+				fs.DurationVar(&expiryTimeFlag, "expiry", expiryTimeFlag, "message lifetime")
 			},
 		},
 		"watch-events": {
@@ -92,8 +101,8 @@ func call(c *iotservice.Client) internal.HandlerFunc {
 			return err
 		}
 		v, err := c.Call(ctx, fs.Arg(0), fs.Arg(1), v,
-			iotservice.CallConnectTimeout(connectTimeoutFlag),
-			iotservice.CallResponseTimeout(responseTimeoutFlag),
+			iotservice.WithCallConnectTimeout(connectTimeoutFlag),
+			iotservice.WithCallResponseTimeout(responseTimeoutFlag),
 		)
 		if err != nil {
 			return err
@@ -113,31 +122,35 @@ func send(c *iotservice.Client) internal.HandlerFunc {
 			return internal.ErrInvalidUsage
 		}
 
-		// number of props arguments has to be even
-		// they are used as keys and values of props map.
-		p := map[string]string{}
+		var err error
+		var props map[string]string
 		if fs.NArg() > 2 {
-			if fs.NArg()%2 != 0 {
-				return errors.New("number of key-value arguments must be even")
-			}
-			for i := 2; i < fs.NArg(); i += 2 {
-				p[fs.Arg(i)] = fs.Arg(i + 1)
+			props, err = internal.ArgsToMap(fs.Args()[2:])
+			if err != nil {
+				return err
 			}
 		}
-
-		if err := c.Connect(ctx); err != nil {
+		if err = c.Connect(ctx); err != nil {
 			return err
 		}
-		mid := iotutil.UUID()
-		if err := c.SendEvent(ctx, fs.Arg(0), &common.Message{
-			MessageID:  mid,
-			Payload:    []byte(fs.Arg(1)),
-			Properties: p,
-			Ack:        ackFlag.String(),
-		}); err != nil {
+		if messageIDFlag == "" {
+			messageIDFlag = iotutil.UUID()
+		}
+		expiryTime := time.Time{}
+		if expiryTimeFlag != 0 {
+			expiryTime = time.Now().Add(expiryTimeFlag)
+		}
+		if err := c.SendEvent(ctx, fs.Arg(0), []byte(fs.Arg(1)),
+			iotservice.WithSendMessageID(messageIDFlag),
+			iotservice.WithSendAck(ackFlag.String()),
+			iotservice.WithSendProperties(props),
+			iotservice.WithSendUserID(userIDFlag),
+			iotservice.WithSendCorrelationID(correlationIDFlag),
+			iotservice.WithSentExpiryTime(expiryTime),
+		); err != nil {
 			return err
 		}
-		fmt.Println(mid)
+		fmt.Println(messageIDFlag)
 		return nil
 	}
 }
@@ -161,7 +174,7 @@ func watchEvents(c *iotservice.Client) internal.HandlerFunc {
 	}
 }
 
-// TODO: format
+// TODO: different formats
 func watchFeedback(c *iotservice.Client) internal.HandlerFunc {
 	return func(ctx context.Context, fs *flag.FlagSet) error {
 		if err := c.Connect(context.Background()); err != nil {

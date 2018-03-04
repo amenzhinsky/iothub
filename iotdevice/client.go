@@ -539,17 +539,49 @@ func (c *Client) SubscribeTwinStateChanges(ctx context.Context, f DesiredStateCh
 	}
 }
 
+// SendOption is a send event options.
+type SendOption func(msg *common.Message) error
+
+// WithSendProperty sets a message option.
+func WithSendProperty(k, v string) SendOption {
+	return func(msg *common.Message) error {
+		if msg.Properties == nil {
+			msg.Properties = map[string]string{}
+		}
+		msg.Properties[k] = v
+		return nil
+	}
+}
+
+// WithSendProperties same as `WithSendProperty` but accepts map of keys and values.
+func WithSendProperties(m map[string]string) SendOption {
+	return func(msg *common.Message) error {
+		if msg.Properties == nil {
+			msg.Properties = map[string]string{}
+		}
+		for k, v := range m {
+			msg.Properties[k] = v
+		}
+		return nil
+	}
+}
+
+// TODO: other options MessageID, CorreletionID, etc?
+
 // SendEvent sends a device-to-cloud message.
 // Panics when event is nil.
-func (c *Client) SendEvent(ctx context.Context, msg *common.Message) error {
+func (c *Client) SendEvent(ctx context.Context, payload []byte, opts ...SendOption) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
-	if msg == nil {
-		panic("event is nil")
-	}
-	if msg.Payload == nil {
+	if payload == nil {
 		return errors.New("payload is nil")
+	}
+	msg := &common.Message{Payload: payload}
+	for _, opt := range opts {
+		if err := opt(msg); err != nil {
+			return err
+		}
 	}
 	if err := c.tr.Send(ctx, c.deviceID, msg); err != nil {
 		return err

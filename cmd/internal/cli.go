@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 )
 
 // ErrInvalidUsage when returned by a Handler the usage message is displayed.
@@ -100,33 +99,15 @@ func Run(ctx context.Context, commands map[string]*Command, argv []string, fn fu
 	return nil
 }
 
-// NewChoiceFlag creates new flag.Value instance that's
-// value is limited to the given options list.
-// Default value is first in the list.
-//
-// Panics if opts are blank.
-func NewChoiceFlag(opts ...string) flag.Value {
-	if len(opts) == 0 {
-		panic("values are empty")
+// sliceToMap converts sequence of arguments into a key-value map.
+// [a, b, c, d] => {a: b, c: d} or errors when number of args is not even.
+func ArgsToMap(s []string) (map[string]string, error) {
+	m := map[string]string{}
+	if len(s)%2 != 0 {
+		return nil, errors.New("number of key-value arguments must be even")
 	}
-	return &choiceFlag{opts: opts, curr: opts[0]}
-}
-
-type choiceFlag struct {
-	opts []string
-	curr string
-}
-
-func (f *choiceFlag) Set(s string) error {
-	for _, o := range f.opts {
-		if s == o {
-			f.curr = s
-			return nil
-		}
+	for i := 0; i < len(s); i += 2 {
+		m[s[i]] = s[i+1]
 	}
-	return fmt.Errorf("valid values: %s", strings.Join(f.opts, ", "))
-}
-
-func (f *choiceFlag) String() string {
-	return f.curr
+	return m, nil
 }

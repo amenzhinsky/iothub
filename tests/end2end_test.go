@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/amqp"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
 	"github.com/amenzhinsky/golang-iothub/iotservice"
 	"github.com/amenzhinsky/golang-iothub/iotutil"
@@ -39,8 +37,8 @@ func TestEnd2End(t *testing.T) {
 	}
 
 	for name, mk := range map[string]func() (transport.Transport, error){
-		"mqtt": func() (transport.Transport, error) { return mqtt.New(mqtt.WithLogger(nil)) },
-		"amqp": func() (transport.Transport, error) { return amqp.New(amqp.WithLogger(nil)) },
+		"mqtt": func() (transport.Transport, error) { return mqtt.New() },
+		//"amqp": func() (transport.Transport, error) { return amqp.New() },
 	} {
 		t.Run(name, func(t *testing.T) {
 			for auth, suite := range map[string]struct {
@@ -79,7 +77,7 @@ func TestEnd2End(t *testing.T) {
 							if err != nil {
 								t.Fatal(err)
 							}
-							test(t, append(suite.opts, iotdevice.WithLogger(nil), iotdevice.WithTransport(tr))...)
+							test(t, append(suite.opts, iotdevice.WithTransport(tr))...)
 						})
 					}
 				})
@@ -99,25 +97,25 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	dc, sc := mkDeviceAndService(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
-	evch := make(chan *common.Message, 1)
+	msgc := make(chan *common.Message, 1)
 	errc := make(chan error, 2)
 	go func() {
 		errc <- sc.SubscribeEvents(ctx, func(msg *common.Message) {
 			if msg.ConnectionDeviceID == dc.DeviceID() {
-				evch <- msg
+				msgc <- msg
 			}
 		})
 	}()
 
-	w := &common.Message{
-		Payload:    []byte(`hello`),
-		Properties: map[string]string{"foo": "bar"},
-	}
+	payload := []byte(`hello`)
+	props := map[string]string{"a": "a", "b": "b"}
 
 	// send events until one of them is received
 	go func() {
 		for {
-			if err := dc.SendEvent(ctx, w); err != nil {
+			if err := dc.SendEvent(ctx, payload,
+				iotdevice.WithSendProperties(props),
+			); err != nil {
 				errc <- err
 				break
 			}
@@ -130,12 +128,41 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	}()
 
 	select {
-	case g := <-evch:
-		testEventsAreEqual(t, dc.DeviceID(), w, g)
+	case msg := <-msgc:
+		if msg.ConnectionDeviceID != dc.DeviceID() {
+			t.Errorf("ConnectionDeviceID = %q, want %q", msg.ConnectionDeviceID, dc.DeviceID())
+		}
+		if msg.ConnectionDeviceGenerationID == "" {
+			t.Error("ConnectionDeviceGenerationID is empty")
+		}
+		if msg.ConnectionAuthMethod == "" {
+			t.Error("ConnectionAuthMethod is empty")
+		}
+		if msg.MessageSource == "" {
+			t.Error("MessageSource is empty")
+		}
+		if msg.EnqueuedTime.IsZero() {
+			t.Error("EnqueuedTime is zero")
+		}
+		if !bytes.Equal(msg.Payload, payload) {
+			t.Errorf("Payload = %v, want %v", msg.Payload, payload)
+		}
+		testProperties(t, msg.Properties, props)
 	case err := <-errc:
 		t.Fatal(err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("d2c timed out")
+	}
+}
+
+func testProperties(t *testing.T, got, want map[string]string) {
+	t.Helper()
+	for k, v := range want {
+		x, ok := got[k]
+		if !ok || x != v {
+			t.Errorf("Properties = %v, want %v", got, want)
+			return
+		}
 	}
 }
 
@@ -146,26 +173,26 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	dc, sc := mkDeviceAndService(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
-	evsc := make(chan *common.Message, 1)
+	msgc := make(chan *common.Message, 1)
 	fbsc := make(chan *iotservice.Feedback, 1)
 	errc := make(chan error, 3)
 	go func() {
-		if err := dc.SubscribeEvents(ctx, func(ev *common.Message) {
-			evsc <- ev
+		if err := dc.SubscribeEvents(ctx, func(msg *common.Message) {
+			msgc <- msg
 		}); err != nil {
 			errc <- err
 		}
 	}()
 
-	// list of sent event ids
+	// track send message ids
 	mu := sync.Mutex{}
-	ids := make([]string, 10)
+	msgIDs := make([]string, 10)
 
 	// subscribe to feedback and report first registered message id
 	go func() {
 		if err := sc.SubscribeFeedback(ctx, func(fb *iotservice.Feedback) {
 			mu.Lock()
-			for _, id := range ids {
+			for _, id := range msgIDs {
 				if fb.OriginalMessageID == id {
 					fbsc <- fb
 				}
@@ -176,26 +203,28 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 		}
 	}()
 
-	w := &common.Message{
-		Payload:            []byte("hello"),
-		MessageID:          iotutil.UUID(),
-		ConnectionDeviceID: dc.DeviceID(),
-		Properties: map[string]string{
-			"foo": "bar",
-		},
-		Ack: "full",
-	}
+	payload := []byte("hello")
+	props := map[string]string{"a": "a", "b": "b"}
+	userID := "golang-iothub"
 
 	// send events until one of them received.
 	go func() {
 		for {
-			if err := sc.SendEvent(ctx, dc.DeviceID(), w); err != nil {
+			msgID := iotutil.UUID()
+			if err := sc.SendEvent(ctx, dc.DeviceID(), payload,
+				iotservice.WithSendAck("full"),
+				iotservice.WithSendProperties(props),
+				iotservice.WithSendUserID(userID),
+				iotservice.WithSendMessageID(msgID),
+				iotservice.WithSendCorrelationID(iotutil.UUID()),
+				iotservice.WithSentExpiryTime(time.Now().Add(5*time.Second)),
+			); err != nil {
 				errc <- err
 				return
 			}
 
 			mu.Lock()
-			ids = append(ids, w.MessageID)
+			msgIDs = append(msgIDs, msgID)
 			mu.Unlock()
 
 			select {
@@ -207,37 +236,40 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	}()
 
 	select {
-	case g := <-evsc:
+	case msg := <-msgc:
+		// test feedback is received
 		select {
-		case <-fbsc:
-			// feedback has successfully arrived
+		case fb := <-fbsc:
+			if fb.StatusCode != "Success" {
+				t.Errorf("feedback status = %q, want %q", fb.StatusCode, "Success")
+			}
 		case <-time.After(30 * time.Second):
 			t.Fatal("feedback timed out")
 		}
-		testEventsAreEqual(t, dc.DeviceID(), g, w)
+
+		if msg.To == "" {
+			t.Error("To is empty")
+		}
+		if msg.UserID != userID {
+			t.Errorf("UserID = %q, want %q", msg.UserID, userID)
+		}
+		if !bytes.Equal(msg.Payload, payload) {
+			t.Errorf("Payload = %v, want %v", msg.Payload, payload)
+		}
+		if msg.MessageID == "" {
+			t.Error("MessageID is empty")
+		}
+		if msg.CorrelationID == "" {
+			t.Error("CorrelationID is empty")
+		}
+		if msg.ExpiryTime.IsZero() {
+			t.Error("ExpiryTime is zero")
+		}
+		testProperties(t, msg.Properties, props)
 	case err := <-errc:
 		t.Fatal(err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("c2d timed out")
-	}
-}
-
-func testEventsAreEqual(t *testing.T, deviceID string, d *common.Message, c *common.Message) {
-	t.Helper()
-	if deviceID != c.ConnectionDeviceID {
-		t.Fatalf("device-ids are not equal: %q and %q", deviceID, c.ConnectionDeviceID)
-	}
-	if !bytes.Equal(d.Payload, c.Payload) {
-		t.Fatalf("payloads are not equal: %v and %v", d.Payload, c.Payload)
-	}
-	for k, v := range c.Properties {
-		// ignore meta properties
-		if strings.HasPrefix(k, "x-opt-") {
-			continue
-		}
-		if d.Properties[k] != v {
-			t.Fatalf("properties are not equal: %v and %v", d.Properties, c.Properties)
-		}
 	}
 }
 
@@ -293,8 +325,8 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 			"a": 1.5,
 			"b": 3,
 		},
-			iotservice.CallConnectTimeout(0),
-			iotservice.CallResponseTimeout(5),
+			iotservice.WithCallConnectTimeout(0),
+			iotservice.WithCallResponseTimeout(5),
 		)
 		if err != nil {
 			errc <- err
@@ -334,7 +366,6 @@ func mkDeviceAndService(
 	}
 
 	sc, err := iotservice.NewClient(
-		iotservice.WithLogger(nil),
 		iotservice.WithConnectionString(ccs),
 	)
 	if err != nil {

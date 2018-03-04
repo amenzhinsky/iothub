@@ -188,6 +188,7 @@ func (tr *Transport) Send(ctx context.Context, deviceID string, msg *common.Mess
 		return err
 	}
 
+	// TODO: see iotservice.SendEvent
 	props := &amqp.MessageProperties{
 		To: msg.To,
 	}

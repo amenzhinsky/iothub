@@ -1,23 +1,24 @@
 package internal
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
-func TestNewChoiceFlag(t *testing.T) {
+func TestArgsToMap(t *testing.T) {
 	t.Parallel()
 
-	f := NewChoiceFlag("foo", "bar", "baz")
-	if f.String() != "foo" {
-		t.Errorf("default value is invalid")
-	}
-
-	if err := f.Set("bar"); err != nil {
-		t.Fatal(err)
-	}
-	if f.String() != "bar" {
-		t.Errorf("unexpected value after Set")
-	}
-
-	if err := f.Set("bum"); err == nil {
-		t.Errorf("no error returned, but it's expected")
+	for _, s := range []struct {
+		args []string
+		want map[string]string
+	}{
+		{[]string{"a", "b", "c", "d"}, map[string]string{"a": "b", "c": "d"}},
+		{[]string{}, map[string]string{}},
+		{[]string{"a"}, nil}, // errors
+	} {
+		m, _ := ArgsToMap(s.args)
+		if !reflect.DeepEqual(m, s.want) {
+			t.Errorf("m, _ = ArgsToMap(%v); s = %v, want %v", s.args, m, s.want)
+		}
 	}
 }

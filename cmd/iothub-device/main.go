@@ -158,23 +158,15 @@ func send(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
 	if fs.NArg() < 1 {
 		return internal.ErrInvalidUsage
 	}
-	p := map[string]string{}
+	var props map[string]string
 	if fs.NArg() > 1 {
-		if fs.NArg()%2 != 1 {
-			return errors.New("number of key-value arguments must be even")
-		}
-		for i := 1; i < fs.NArg(); i += 2 {
-			p[fs.Arg(i)] = fs.Arg(i + 1)
+		var err error
+		props, err = internal.ArgsToMap(fs.Args()[1:])
+		if err != nil {
+			return err
 		}
 	}
-	return c.SendEvent(ctx, &common.Message{
-		MessageID:     "adsf",
-		CorrelationID: "dsaf",
-		UserID:        "dsf",
-
-		Payload:    []byte(fs.Arg(0)),
-		Properties: p,
-	})
+	return c.SendEvent(ctx, []byte(fs.Arg(0)), iotdevice.WithSendProperties(props))
 }
 
 func watchEvents(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {

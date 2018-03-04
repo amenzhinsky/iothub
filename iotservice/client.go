@@ -249,22 +249,113 @@ func (c *Client) SubscribeEvents(ctx context.Context, f SubscribeFunc) error {
 	})
 }
 
+// SendOption is a send option.
+type SendOption func(msg *common.Message) error
+
+// WithSendMessageID sets message id.
+func WithSendMessageID(id string) SendOption {
+	return func(msg *common.Message) error {
+		msg.MessageID = id
+		return nil
+	}
+}
+
+// WithSendCorrelationID sets correlation id.
+func WithSendCorrelationID(id string) SendOption {
+	return func(msg *common.Message) error {
+		msg.CorrelationID = id
+		return nil
+	}
+}
+
+// WithSendUserID sets user id.
+func WithSendUserID(id string) SendOption {
+	return func(msg *common.Message) error {
+		msg.UserID = id
+		return nil
+	}
+}
+
+const (
+	// AckNone no feedback.
+	AckNone = "none"
+
+	// AckPositive receive a feedback message if the message was completed.
+	AckPositive = "positive"
+
+	// AckNegative receive a feedback message if the message expired
+	// (or maximum delivery count was reached) without being completed by the device.
+	AckNegative = "negative"
+
+	// AckFull both positive and negative.
+	AckFull = "full"
+)
+
+// WithSendAck sets message confirmation type.
+func WithSendAck(typ string) SendOption {
+	return func(msg *common.Message) error {
+		switch typ {
+		case "", AckNone, AckPositive, AckNegative, AckFull:
+		default:
+			return fmt.Errorf("unknown ack type: %q", typ)
+		}
+		msg.Ack = typ
+		return nil
+	}
+}
+
+// WithSentExpiryTime sets message expiration time.
+func WithSentExpiryTime(t time.Time) SendOption {
+	return func(msg *common.Message) error {
+		msg.ExpiryTime = t
+		return nil
+	}
+}
+
+// WithSendProperty sets a message property.
+func WithSendProperty(k, v string) SendOption {
+	return func(msg *common.Message) error {
+		if msg.Properties == nil {
+			msg.Properties = map[string]string{}
+		}
+		msg.Properties[k] = v
+		return nil
+	}
+}
+
+// WithSendProperties same as `WithSendProperty` but accepts map of keys and values.
+func WithSendProperties(m map[string]string) SendOption {
+	return func(msg *common.Message) error {
+		if msg.Properties == nil {
+			msg.Properties = map[string]string{}
+		}
+		for k, v := range m {
+			msg.Properties[k] = v
+		}
+		return nil
+	}
+}
+
 // SendEvent sends the given cloud-to-device message and returns its id.
 // Panics when event is nil.
-func (c *Client) SendEvent(ctx context.Context, deviceID string, msg *common.Message) error {
-	if msg == nil {
-		panic("msg is nil")
-	}
+func (c *Client) SendEvent(
+	ctx context.Context,
+	deviceID string,
+	payload []byte,
+	opts ...SendOption,
+) error {
 	if deviceID == "" {
 		return errors.New("device id is empty")
 	}
-	if msg.Payload == nil {
+	if payload == nil {
 		return errors.New("payload is nil")
 	}
 
 	if !c.isConnected() {
 		return errNotConnected
 	}
+
+	// TODO: create link once
 	send, err := c.conn.Sess().NewSender(
 		amqp.LinkTargetAddress("/messages/devicebound"),
 	)
@@ -272,6 +363,17 @@ func (c *Client) SendEvent(ctx context.Context, deviceID string, msg *common.Mes
 		return err
 	}
 	defer send.Close()
+
+	// TODO: we're composing *common.Message and converting it into
+	// TODO: *amqp.Message immediately, probably we should avoid the extra step
+	msg := &common.Message{
+		Payload: payload,
+	}
+	for _, opt := range opts {
+		if err := opt(msg); err != nil {
+			return err
+		}
+	}
 
 	props := make(map[string]interface{}, len(msg.Properties))
 	for k, v := range msg.Properties {
@@ -283,10 +385,11 @@ func (c *Client) SendEvent(ctx context.Context, deviceID string, msg *common.Mes
 	return send.Send(ctx, &amqp.Message{
 		Data: [][]byte{msg.Payload},
 		Properties: &amqp.MessageProperties{
-			To:            fmt.Sprintf("/devices/%s/messages/devicebound", deviceID),
-			UserID:        []byte(msg.UserID),
-			MessageID:     msg.MessageID,
-			CorrelationID: msg.CorrelationID,
+			To:                 fmt.Sprintf("/devices/%s/messages/devicebound", deviceID),
+			UserID:             []byte(msg.UserID),
+			MessageID:          msg.MessageID,
+			CorrelationID:      msg.CorrelationID,
+			AbsoluteExpiryTime: msg.ExpiryTime,
 		},
 		ApplicationProperties: props,
 	})
@@ -346,7 +449,7 @@ type call struct {
 type CallOption func(c *call) error
 
 // ConnectTimeout is connection timeout in seconds.
-func CallConnectTimeout(seconds int) CallOption {
+func WithCallConnectTimeout(seconds int) CallOption {
 	return func(c *call) error {
 		c.ConnectTimeout = seconds
 		return nil
@@ -354,7 +457,7 @@ func CallConnectTimeout(seconds int) CallOption {
 }
 
 // ResponseTimeout is response timeout in seconds.
-func CallResponseTimeout(seconds int) CallOption {
+func WithCallResponseTimeout(seconds int) CallOption {
 	return func(c *call) error {
 		c.ResponseTimeout = seconds
 		return nil

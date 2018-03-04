@@ -6,7 +6,6 @@ import (
 
 func TestRIDGenerator_Next(t *testing.T) {
 	t.Parallel()
-
 	g := NewRIDGenerator()
 	s := make([]string, 10000)
 	for i := 0; i < 10000; i++ {
