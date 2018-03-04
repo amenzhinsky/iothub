@@ -105,9 +105,6 @@ type Client struct {
 	logger *log.Logger
 	debug  bool
 	http   *http.Client // REST client
-
-	sendMu   sync.Mutex
-	sendLink *amqp.Sender
 }
 
 // Connect connects to AMQP broker, has to be done before publishing events.
@@ -253,28 +250,28 @@ func (c *Client) SubscribeEvents(ctx context.Context, f SubscribeFunc) error {
 }
 
 // SendOption is a send option.
-type SendOption func(msg *common.Message) error
+type SendOption func(msg *amqp.Message) error
 
 // WithSendMessageID sets message id.
 func WithSendMessageID(id string) SendOption {
-	return func(msg *common.Message) error {
-		msg.MessageID = id
+	return func(msg *amqp.Message) error {
+		msg.Properties.MessageID = id
 		return nil
 	}
 }
 
 // WithSendCorrelationID sets correlation id.
 func WithSendCorrelationID(id string) SendOption {
-	return func(msg *common.Message) error {
-		msg.CorrelationID = id
+	return func(msg *amqp.Message) error {
+		msg.Properties.CorrelationID = id
 		return nil
 	}
 }
 
 // WithSendUserID sets user id.
 func WithSendUserID(id string) SendOption {
-	return func(msg *common.Message) error {
-		msg.UserID = id
+	return func(msg *amqp.Message) error {
+		msg.Properties.UserID = []byte(id)
 		return nil
 	}
 }
@@ -296,7 +293,7 @@ const (
 
 // WithSendAck sets message confirmation type.
 func WithSendAck(typ string) SendOption {
-	return func(msg *common.Message) error {
+	return func(msg *amqp.Message) error {
 		switch typ {
 		case "", AckNone, AckPositive, AckNegative, AckFull:
 		default:
@@ -308,31 +305,31 @@ func WithSendAck(typ string) SendOption {
 
 // WithSentExpiryTime sets message expiration time.
 func WithSentExpiryTime(t time.Time) SendOption {
-	return func(msg *common.Message) error {
-		msg.ExpiryTime = t
+	return func(msg *amqp.Message) error {
+		msg.Properties.AbsoluteExpiryTime = t
 		return nil
 	}
 }
 
 // WithSendProperty sets a message property.
 func WithSendProperty(k, v string) SendOption {
-	return func(msg *common.Message) error {
-		if msg.Properties == nil {
-			msg.Properties = map[string]string{}
+	return func(msg *amqp.Message) error {
+		if msg.ApplicationProperties == nil {
+			msg.ApplicationProperties = map[string]interface{}{}
 		}
-		msg.Properties[k] = v
+		msg.ApplicationProperties[k] = v
 		return nil
 	}
 }
 
 // WithSendProperties same as `WithSendProperty` but accepts map of keys and values.
 func WithSendProperties(m map[string]string) SendOption {
-	return func(msg *common.Message) error {
-		if msg.Properties == nil {
-			msg.Properties = map[string]string{}
+	return func(msg *amqp.Message) error {
+		if msg.ApplicationProperties == nil {
+			msg.ApplicationProperties = map[string]interface{}{}
 		}
 		for k, v := range m {
-			msg.Properties[k] = v
+			msg.ApplicationProperties[k] = v
 		}
 		return nil
 	}
@@ -357,10 +354,11 @@ func (c *Client) SendEvent(
 		return errNotConnected
 	}
 
-	// TODO: we're composing *common.Message and converting it into
-	// TODO: *amqp.Message immediately, probably we should avoid the extra step
-	msg := &common.Message{
-		Payload: payload,
+	msg := &amqp.Message{
+		Data: [][]byte{payload},
+		Properties: &amqp.MessageProperties{
+			To: "/devices/" + deviceID + "/messages/devicebound",
+		},
 	}
 	for _, opt := range opts {
 		if err := opt(msg); err != nil {
@@ -368,40 +366,15 @@ func (c *Client) SendEvent(
 		}
 	}
 
-	props := make(map[string]interface{}, len(msg.Properties))
-	for k, v := range msg.Properties {
-		props[k] = v
-	}
-
-	// Send is not thread-safe
-	c.sendMu.Lock()
-	defer c.sendMu.Unlock()
-
-	return c.sendLink.Send(ctx, &amqp.Message{
-		Data: [][]byte{msg.Payload},
-		Properties: &amqp.MessageProperties{
-			To:                 fmt.Sprintf("/devices/%s/messages/devicebound", deviceID),
-			UserID:             []byte(msg.UserID),
-			MessageID:          msg.MessageID,
-			CorrelationID:      msg.CorrelationID,
-			AbsoluteExpiryTime: msg.ExpiryTime,
-		},
-		ApplicationProperties: props,
-	})
-}
-
-// enablePublish opens the sender link just once.
-func (c *Client) enablePublish() error {
-	c.sendMu.Lock()
-	defer c.sendMu.Unlock()
-	if c.sendLink != nil {
-		return nil
-	}
-	var err error
-	c.sendLink, err = c.conn.Sess().NewSender(
+	// opening a new link for every message is not the most efficient way
+	send, err := c.conn.Sess().NewSender(
 		amqp.LinkTargetAddress("/messages/devicebound"),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	defer send.Close()
+	return send.Send(ctx, msg)
 }
 
 // FeedbackFunc handles message feedback.
