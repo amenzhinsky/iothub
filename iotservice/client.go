@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/commonamqp"
+	"github.com/amenzhinsky/golang-iothub/common/commonamqp"
 	"github.com/amenzhinsky/golang-iothub/eventhub"
 	"pack.ag/amqp"
 )
@@ -222,11 +222,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, f SubscribeFunc) error {
 	defer sess.Close()
 
 	return eventhub.SubscribePartitions(ctx, sess, group, "$Default", func(msg *amqp.Message) {
-		m, err := commonamqp.FromAMQPMessage(msg)
-		if err != nil {
-			c.logf("parse amqp message error: %s", err)
-		}
-		go f(m)
+		go f(commonamqp.FromAMQPMessage(msg))
 	})
 }
 

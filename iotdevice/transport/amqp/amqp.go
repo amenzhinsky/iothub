@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/commonamqp"
+	"github.com/amenzhinsky/golang-iothub/common/commonamqp"
 	"github.com/amenzhinsky/golang-iothub/eventhub"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
 	"pack.ag/amqp"
@@ -168,14 +168,8 @@ func (tr *Transport) Connect(
 				}
 			}
 
-			m, err := commonamqp.FromAMQPMessage(msg)
-			if err != nil {
-				tr.c2ds <- &transport.Message{Err: err}
-				return
-			}
-
 			select {
-			case tr.c2ds <- &transport.Message{Msg: m}:
+			case tr.c2ds <- &transport.Message{Msg: commonamqp.FromAMQPMessage(msg)}:
 				msg.Accept()
 			case <-tr.done:
 				return

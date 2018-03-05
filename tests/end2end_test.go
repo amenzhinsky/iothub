@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"crypto/rand"
+
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/amqp"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
 	"github.com/amenzhinsky/golang-iothub/iotservice"
-	"github.com/amenzhinsky/golang-iothub/iotutil"
 )
 
 func TestEnd2End(t *testing.T) {
@@ -91,6 +92,14 @@ func TestEnd2End(t *testing.T) {
 	}
 }
 
+func randString() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%x", b)
+}
+
 func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -116,8 +125,8 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 		for {
 			if err := dc.SendEvent(ctx, payload,
 				//iotdevice.WithSendTo(to), // TODO: breaks amqp
-				iotdevice.WithSendMessageID(iotutil.UUID()),
-				iotdevice.WithSendCorrelationID(iotutil.UUID()),
+				iotdevice.WithSendMessageID(randString()),
+				iotdevice.WithSendCorrelationID(randString()),
 				iotdevice.WithSendProperties(props),
 			); err != nil {
 				errc <- err
@@ -220,13 +229,13 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	// send events until one of them received.
 	go func() {
 		for {
-			msgID := iotutil.UUID()
+			msgID := randString()
 			if err := sc.SendEvent(ctx, dc.DeviceID(), payload,
 				iotservice.WithSendAck("full"),
 				iotservice.WithSendProperties(props),
 				iotservice.WithSendUserID(uid),
 				iotservice.WithSendMessageID(msgID),
-				iotservice.WithSendCorrelationID(iotutil.UUID()),
+				iotservice.WithSendCorrelationID(randString()),
 				iotservice.WithSentExpiryTime(time.Now().Add(5*time.Second)),
 			); err != nil {
 				errc <- err

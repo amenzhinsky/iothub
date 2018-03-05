@@ -8,7 +8,8 @@ import (
 	"pack.ag/amqp"
 )
 
-func FromAMQPMessage(msg *amqp.Message) (*common.Message, error) {
+// FromAMQPMessage converts a amqp.Message into common.Message.
+func FromAMQPMessage(msg *amqp.Message) *common.Message {
 	m := &common.Message{
 		Payload:    msg.Data[0],
 		Properties: make(map[string]string, len(msg.ApplicationProperties)+5),
@@ -39,9 +40,10 @@ func FromAMQPMessage(msg *amqp.Message) (*common.Message, error) {
 	for k, v := range msg.ApplicationProperties {
 		m.Properties[k] = v.(string)
 	}
-	return m, nil
+	return m
 }
 
+// ToAMQPMessage converts amqp.Message into common.Message.
 func ToAMQPMessage(msg *common.Message) *amqp.Message {
 	props := make(map[string]interface{}, len(msg.Properties))
 	for k, v := range msg.Properties {

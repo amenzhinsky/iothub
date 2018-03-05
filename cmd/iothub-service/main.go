@@ -12,7 +12,6 @@ import (
 	"github.com/amenzhinsky/golang-iothub/cmd/internal"
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotservice"
-	"github.com/amenzhinsky/golang-iothub/iotutil"
 )
 
 // globally accessible by command handlers, is it a good idea?
@@ -133,9 +132,6 @@ func send(c *iotservice.Client) internal.HandlerFunc {
 		if err = c.Connect(ctx); err != nil {
 			return err
 		}
-		if midFlag == "" {
-			midFlag = iotutil.UUID()
-		}
 		expiryTime := time.Time{}
 		if expFlag != 0 {
 			expiryTime = time.Now().Add(expFlag)
@@ -150,7 +146,6 @@ func send(c *iotservice.Client) internal.HandlerFunc {
 		); err != nil {
 			return err
 		}
-		fmt.Println(midFlag)
 		return nil
 	}
 }
