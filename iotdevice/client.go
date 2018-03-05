@@ -130,7 +130,7 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 		tls:     &tls.Config{RootCAs: common.RootCAs()},
 		subs:    make([]chan *transport.Message, 0, 10),
 		changes: make([]chan *transport.TwinState, 0, 10),
-		methods: make(map[string]DirectMethodFunc, 10),
+		methods: make(map[string]chan *transport.Invocation, 10),
 		done:    make(chan struct{}),
 		debug:   os.Getenv("DEBUG") != "",
 		connErr: errNotConnected,
@@ -162,7 +162,7 @@ type Client struct {
 	mu      sync.RWMutex
 	subs    []chan *transport.Message
 	changes []chan *transport.TwinState
-	methods map[string]DirectMethodFunc
+	methods map[string]chan *transport.Invocation
 	done    chan struct{}
 
 	connCh  chan struct{}
@@ -265,10 +265,10 @@ func (c *Client) ConnectionError(ctx context.Context) error {
 	select {
 	case <-w:
 		return c.connErr
-	case <-c.done:
-		return errors.New("client is closed")
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-c.done:
+		return ErrClosed
 	}
 }
 
@@ -282,6 +282,7 @@ Loop:
 			}
 			if ev.Err != nil {
 				c.logf("cloud-to-device error: %s", ev.Err)
+				continue
 			} else {
 				if c.debug {
 					c.logf("cloud-to-device received\n%s", ev.Msg.Inspect())
@@ -303,23 +304,24 @@ Loop:
 			if !ok {
 				break Loop
 			}
-			c.mu.RLock()
-			for k, f := range c.methods {
-				if k != call.Method {
-					continue
-				}
-				c.mu.RUnlock()
 
-				var v map[string]interface{}
-				if err := json.Unmarshal(call.Payload, &v); err != nil {
-					c.logf("error direct-method payload: %s", err)
-					continue Loop
-				}
-				go c.handleDirectMethod(f, v, call.Method, call.RID)
-				continue Loop
+			if call.Err != nil {
+				c.logf("direct-method error: %s", call.Err)
+				continue
+			}
+
+			c.mu.RLock()
+			w, ok := c.methods[call.Method]
+			if !ok {
+				c.logf("direct-method %q is missing", call.Method)
 			}
 			c.mu.RUnlock()
-			c.logf("direct-method %q is missing", call.Method)
+
+			select {
+			case w <- call:
+			default:
+				panic("dmi jam")
+			}
 		case s, ok := <-c.tscs:
 			if !ok {
 				break Loop
@@ -337,6 +339,7 @@ Loop:
 						v.Version(),
 						s.Payload,
 					)
+					continue
 				} else {
 					c.logf("twin-desired-state ver=%d", v.Version())
 				}
@@ -363,39 +366,6 @@ Loop:
 	c.mu.Lock()
 	close(c.done)
 	c.mu.Unlock()
-}
-
-func (c *Client) handleDirectMethod(f DirectMethodFunc, p map[string]interface{}, name, rid string) {
-	if c.debug {
-		c.logf("direct-method %q rid=%s\n---- body ----\n%s\n--------------", name, rid, p)
-	} else {
-		c.logf("direct-method %q rid=%s", name, rid)
-	}
-	code := 200
-	body, err := f(p)
-	if err != nil {
-		code = 500
-		if body == nil {
-			body = map[string]interface{}{
-				"error": err.Error(),
-			}
-		}
-	}
-
-	b, err := json.Marshal(body)
-	if err != nil {
-		c.logf("error marshalling payload: %s", err)
-		return
-	}
-
-	if c.debug {
-		c.logf("direct-method %q rid=%s code=%d\n---- body ----\n%s\n--------------", name, rid, code, body)
-	} else {
-		c.logf("direct-method %q rid=%s code=%d", name, rid, code)
-	}
-	if err = c.tr.RespondDirectMethod(context.Background(), rid, code, b); err != nil {
-		c.logf("error sending direct-method %q result: %s", name, err)
-	}
 }
 
 // SubscribeEvents subscribes to cloud-to-device events and blocks until ctx is canceled.
@@ -428,6 +398,8 @@ func (c *Client) SubscribeEvents(ctx context.Context, f CloudToDeviceFunc) error
 			go f(m.Msg)
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-c.done:
+			return ErrClosed
 		}
 	}
 }
@@ -437,27 +409,88 @@ func (c *Client) SubscribeEvents(ctx context.Context, f CloudToDeviceFunc) error
 // If f returns an error and empty body its error string
 // used as value of the error attribute in the result json.
 // Blocks until context is done and deregisters it.
-func (c *Client) HandleMethod(ctx context.Context, name string, f DirectMethodFunc) error {
+func (c *Client) HandleMethod(ctx context.Context, name string, handler DirectMethodFunc) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
 	if name == "" {
 		return errors.New("name cannot be blank")
 	}
+	if handler == nil {
+		panic("handler is nil")
+	}
+
+	w := make(chan *transport.Invocation, 1)
 	c.mu.Lock()
 	if _, ok := c.methods[name]; ok {
-		c.mu.Unlock()
 		return fmt.Errorf("method %q is already registered", name)
+		c.mu.Unlock()
 	}
-	c.methods[name] = f
+	c.methods[name] = w
 	c.mu.Unlock()
 	c.logf("direct-method %q registered", name)
-	<-ctx.Done()
-	c.mu.Lock()
-	delete(c.methods, name)
-	c.mu.Unlock()
-	c.logf("direct-method %q deregistered", name)
-	return ctx.Err()
+	defer func() {
+		c.mu.Lock()
+		delete(c.methods, name)
+		c.mu.Unlock()
+		c.logf("direct-method %q deregistered", name)
+	}()
+
+	for {
+		select {
+		case call := <-w:
+			if call.Err != nil {
+				return call.Err
+			}
+			var v map[string]interface{}
+			if err := json.Unmarshal(call.Payload, &v); err != nil {
+				return err
+			}
+			if c.debug {
+				c.logf("direct-method %q rid=%s\n---- body ----\n%s\n--------------",
+					call.Method, call.RID, call.Payload,
+				)
+			} else {
+				c.logf("direct-method %q rid=%s len=%d", call.Method, call.RID, len(call.Payload))
+			}
+			go c.handleDirectMethod(handler, v, call.Method, call.RID)
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-c.done:
+			return ErrClosed
+		}
+	}
+}
+
+// ErrClosed returned by methods when client closes.
+var ErrClosed = errors.New("iotdevice: closed")
+
+func (c *Client) handleDirectMethod(f DirectMethodFunc, p map[string]interface{}, name, rid string) {
+	code := 200
+	body, err := f(p)
+	if err != nil {
+		code = 500
+		if body == nil {
+			body = map[string]interface{}{
+				"error": err.Error(),
+			}
+		}
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		c.logf("error marshalling payload: %s", err)
+		return
+	}
+	if c.debug {
+		c.logf("direct-method %q rid=%s code=%d\n---- body ----\n%s\n--------------",
+			name, rid, code, body,
+		)
+	} else {
+		c.logf("direct-method %q rid=%s code=%d len=%d", name, rid, code, len(b))
+	}
+	if err = c.tr.RespondDirectMethod(context.Background(), rid, code, b); err != nil {
+		c.logf("error sending direct-method %q result: %s", name, err)
+	}
 }
 
 // TwinState is both desired and reported twin device's state.
@@ -535,12 +568,54 @@ func (c *Client) SubscribeTwinStateChanges(ctx context.Context, f DesiredStateCh
 			go f(v)
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-c.done:
+			return ErrClosed
 		}
 	}
 }
 
 // SendOption is a send event options.
 type SendOption func(msg *common.Message) error
+
+// WithSendMessageID sets message id.
+func WithSendMessageID(mid string) SendOption {
+	return func(msg *common.Message) error {
+		msg.MessageID = mid
+		return nil
+	}
+}
+
+// WithSendMessageID sets message correlation id.
+func WithSendCorrelationID(cid string) SendOption {
+	return func(msg *common.Message) error {
+		msg.CorrelationID = cid
+		return nil
+	}
+}
+
+// WithSendTo sets message destination.
+func WithSendTo(to string) SendOption {
+	return func(msg *common.Message) error {
+		msg.To = to
+		return nil
+	}
+}
+
+// TODO: seems like has no effect.
+//func WithSendUserID(uid string) SendOption {
+//	return func(msg *common.Message) error {
+//		msg.UserID = uid
+//		return nil
+//	}
+//}
+
+// TODO: cloud disconnects when using mqtt, for amqp has no effect
+//func WithSendExpiryTime(t time.Time) SendOption {
+//	return func(msg *common.Message) error {
+//		msg.ExpiryTime = t
+//		return nil
+//	}
+//}
 
 // WithSendProperty sets a message option.
 func WithSendProperty(k, v string) SendOption {
@@ -565,8 +640,6 @@ func WithSendProperties(m map[string]string) SendOption {
 		return nil
 	}
 }
-
-// TODO: other options MessageID, CorreletionID, etc?
 
 // SendEvent sends a device-to-cloud message.
 // Panics when event is nil.

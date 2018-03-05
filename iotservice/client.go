@@ -16,12 +16,11 @@ import (
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/eventhub"
-	"github.com/amenzhinsky/golang-iothub/iotutil"
 	"pack.ag/amqp"
 )
 
 // ClientOption is a client connectivity option.
-type ClientOption func(*Client) error
+type ClientOption func(c *Client) error
 
 // WithConnectionString parses the given connection string instead of using `WithCredentials`.
 func WithConnectionString(cs string) ClientOption {
@@ -79,12 +78,12 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 	}
 
 	if c.creds == nil {
-		return nil, errors.New("credentials are missing, consider using `WithCredentials` option")
+		return nil, errors.New("credentials are missing, consider using `WithCredentials` or `WithConnectionString` option")
 	}
 
 	// set the default rest client, it uses only bundled ca-certificates
 	// it's useful when the ca-certificates package is not present on
-	// very slim host systems like alpine and busybox.
+	// a very slim host systems like alpine or busybox.
 	if c.http == nil {
 		c.http = &http.Client{
 			Transport: &http.Transport{
@@ -224,7 +223,14 @@ func (c *Client) SubscribeEvents(ctx context.Context, f SubscribeFunc) error {
 	return eventhub.SubscribePartitions(ctx, sess, group, "$Default", func(msg *amqp.Message) {
 		m := &common.Message{
 			Payload:    msg.Data[0],
-			Properties: make(map[string]string, len(msg.ApplicationProperties)+3),
+			Properties: make(map[string]string, len(msg.ApplicationProperties)+5),
+		}
+		if msg.Properties != nil {
+			m.UserID = string(msg.Properties.UserID)
+			m.MessageID = msg.Properties.MessageID.(string)
+			m.CorrelationID = msg.Properties.CorrelationID.(string)
+			m.To = msg.Properties.To
+			m.ExpiryTime = msg.Properties.AbsoluteExpiryTime
 		}
 		for k, v := range msg.Annotations {
 			switch k {
@@ -253,25 +259,25 @@ func (c *Client) SubscribeEvents(ctx context.Context, f SubscribeFunc) error {
 type SendOption func(msg *amqp.Message) error
 
 // WithSendMessageID sets message id.
-func WithSendMessageID(id string) SendOption {
+func WithSendMessageID(mid string) SendOption {
 	return func(msg *amqp.Message) error {
-		msg.Properties.MessageID = id
+		msg.Properties.MessageID = mid
 		return nil
 	}
 }
 
 // WithSendCorrelationID sets correlation id.
-func WithSendCorrelationID(id string) SendOption {
+func WithSendCorrelationID(cid string) SendOption {
 	return func(msg *amqp.Message) error {
-		msg.Properties.CorrelationID = id
+		msg.Properties.CorrelationID = cid
 		return nil
 	}
 }
 
 // WithSendUserID sets user id.
-func WithSendUserID(id string) SendOption {
+func WithSendUserID(uid string) SendOption {
 	return func(msg *amqp.Message) error {
-		msg.Properties.UserID = []byte(id)
+		msg.Properties.UserID = []byte(uid)
 		return nil
 	}
 }
@@ -492,10 +498,14 @@ func (c *Client) Call(
 	if err != nil {
 		return nil, err
 	}
+	rid, err := eventhub.RandString()
+	if err != nil {
+		return nil, err
+	}
 
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", auth)
-	r.Header.Set("Request-Id", iotutil.UUID())
+	r.Header.Set("Request-Id", rid)
 	r.WithContext(ctx)
 
 	res, err := c.http.Do(r)

@@ -13,6 +13,7 @@ import (
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
+	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/amqp"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
 	"github.com/amenzhinsky/golang-iothub/iotservice"
 	"github.com/amenzhinsky/golang-iothub/iotutil"
@@ -38,7 +39,7 @@ func TestEnd2End(t *testing.T) {
 
 	for name, mk := range map[string]func() (transport.Transport, error){
 		"mqtt": func() (transport.Transport, error) { return mqtt.New() },
-		//"amqp": func() (transport.Transport, error) { return amqp.New() },
+		"amqp": func() (transport.Transport, error) { return amqp.New() },
 	} {
 		t.Run(name, func(t *testing.T) {
 			for auth, suite := range map[string]struct {
@@ -114,6 +115,9 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	go func() {
 		for {
 			if err := dc.SendEvent(ctx, payload,
+				//iotdevice.WithSendTo(to), // TODO: breaks amqp
+				iotdevice.WithSendMessageID(iotutil.UUID()),
+				iotdevice.WithSendCorrelationID(iotutil.UUID()),
 				iotdevice.WithSendProperties(props),
 			); err != nil {
 				errc <- err
@@ -129,6 +133,12 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 
 	select {
 	case msg := <-msgc:
+		if msg.MessageID == "" {
+			t.Error("MessageID is empty")
+		}
+		if msg.CorrelationID == "" {
+			t.Error("CorrelationID is empty")
+		}
 		if msg.ConnectionDeviceID != dc.DeviceID() {
 			t.Errorf("ConnectionDeviceID = %q, want %q", msg.ConnectionDeviceID, dc.DeviceID())
 		}
@@ -205,7 +215,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 
 	payload := []byte("hello")
 	props := map[string]string{"a": "a", "b": "b"}
-	userID := "golang-iothub"
+	uid := "golang-iothub"
 
 	// send events until one of them received.
 	go func() {
@@ -214,7 +224,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 			if err := sc.SendEvent(ctx, dc.DeviceID(), payload,
 				iotservice.WithSendAck("full"),
 				iotservice.WithSendProperties(props),
-				iotservice.WithSendUserID(userID),
+				iotservice.WithSendUserID(uid),
 				iotservice.WithSendMessageID(msgID),
 				iotservice.WithSendCorrelationID(iotutil.UUID()),
 				iotservice.WithSentExpiryTime(time.Now().Add(5*time.Second)),
@@ -250,8 +260,8 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 		if msg.To == "" {
 			t.Error("To is empty")
 		}
-		if msg.UserID != userID {
-			t.Errorf("UserID = %q, want %q", msg.UserID, userID)
+		if msg.UserID != uid {
+			t.Errorf("UserID = %q, want %q", msg.UserID, uid)
 		}
 		if !bytes.Equal(msg.Payload, payload) {
 			t.Errorf("Payload = %v, want %v", msg.Payload, payload)

@@ -2,6 +2,7 @@ package eventhub
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amenzhinsky/golang-iothub/iotutil"
 	"pack.ag/amqp"
 )
 
@@ -128,6 +128,9 @@ func (c *Client) PutTokenContinuously(
 }
 
 func (c *Client) PutToken(ctx context.Context, audience, token string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	send, err := c.sess.NewSender(
 		amqp.LinkTargetAddress("$cbs"),
 	)
@@ -145,9 +148,8 @@ func (c *Client) PutToken(ctx context.Context, audience, token string) error {
 	if err = send.Send(ctx, &amqp.Message{
 		Value: token,
 		Properties: &amqp.MessageProperties{
-			MessageID: iotutil.UUID(),
-			To:        "$cbs",
-			ReplyTo:   "cbs",
+			To:      "$cbs",
+			ReplyTo: "cbs",
 		},
 		ApplicationProperties: map[string]interface{}{
 			"operation": "put-token",
@@ -185,9 +187,21 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
+// RandString generates a random 32 bytes long string.
+func RandString() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", b), nil
+}
+
 // getPartitionIDs returns partition ids for the named eventhub.
 func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]string, error) {
-	replyTo := iotutil.UUID()
+	replyTo, err := RandString()
+	if err != nil {
+		return nil, err
+	}
 	recv, err := sess.NewReceiver(
 		amqp.LinkSourceAddress("$management"),
 		amqp.LinkTargetAddress(replyTo),
@@ -206,7 +220,10 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	}
 	defer send.Close()
 
-	mid := iotutil.UUID()
+	mid, err := RandString()
+	if err != nil {
+		return nil, err
+	}
 	if err := send.Send(ctx, &amqp.Message{
 		Properties: &amqp.MessageProperties{
 			MessageID: mid,

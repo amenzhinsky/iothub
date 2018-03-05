@@ -17,10 +17,10 @@ import (
 
 // globally accessible by command handlers, is it a good idea?
 var (
-	userIDFlag          = "golang-iothub"
-	messageIDFlag       = ""
-	correlationIDFlag   = ""
-	expiryTimeFlag      = time.Duration(0)
+	uidFlag             = "golang-iothub"
+	midFlag             = ""
+	cidFlag             = ""
+	expFlag             = time.Duration(0)
 	ackFlag             = internal.NewChoiceFlag("none", "positive", "negative", "full")
 	formatFlag          = internal.NewChoiceFlag("simple", "json")
 	connectTimeoutFlag  = 0
@@ -59,10 +59,10 @@ func run() error {
 			send(c),
 			func(fs *flag.FlagSet) {
 				fs.Var(ackFlag, "ack", "type of ack feedback")
-				fs.StringVar(&userIDFlag, "user-id", userIDFlag, "origin of the message")
-				fs.StringVar(&messageIDFlag, "message-id", messageIDFlag, "identifier for the message")
-				fs.StringVar(&correlationIDFlag, "correlation-id", correlationIDFlag, "message identifier in a request-reply")
-				fs.DurationVar(&expiryTimeFlag, "expiry", expiryTimeFlag, "message lifetime")
+				fs.StringVar(&uidFlag, "uid", uidFlag, "origin of the message")
+				fs.StringVar(&midFlag, "mid", midFlag, "identifier for the message")
+				fs.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
+				fs.DurationVar(&expFlag, "exp", expFlag, "message lifetime")
 			},
 		},
 		"watch-events": {
@@ -133,24 +133,24 @@ func send(c *iotservice.Client) internal.HandlerFunc {
 		if err = c.Connect(ctx); err != nil {
 			return err
 		}
-		if messageIDFlag == "" {
-			messageIDFlag = iotutil.UUID()
+		if midFlag == "" {
+			midFlag = iotutil.UUID()
 		}
 		expiryTime := time.Time{}
-		if expiryTimeFlag != 0 {
-			expiryTime = time.Now().Add(expiryTimeFlag)
+		if expFlag != 0 {
+			expiryTime = time.Now().Add(expFlag)
 		}
 		if err := c.SendEvent(ctx, fs.Arg(0), []byte(fs.Arg(1)),
-			iotservice.WithSendMessageID(messageIDFlag),
+			iotservice.WithSendMessageID(midFlag),
 			iotservice.WithSendAck(ackFlag.String()),
 			iotservice.WithSendProperties(props),
-			iotservice.WithSendUserID(userIDFlag),
-			iotservice.WithSendCorrelationID(correlationIDFlag),
+			iotservice.WithSendUserID(uidFlag),
+			iotservice.WithSendCorrelationID(cidFlag),
 			iotservice.WithSentExpiryTime(expiryTime),
 		); err != nil {
 			return err
 		}
-		fmt.Println(messageIDFlag)
+		fmt.Println(midFlag)
 		return nil
 	}
 }

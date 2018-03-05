@@ -11,12 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
+	"sync/atomic"
 	"time"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
-	"github.com/amenzhinsky/golang-iothub/iotutil"
 	"github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -55,7 +54,8 @@ func New(opts ...TransportOption) (transport.Transport, error) {
 type Transport struct {
 	mu   sync.RWMutex
 	conn mqtt.Client
-	ridg iotutil.RIDGenerator
+
+	rid uint32
 
 	done chan struct{}              // closed when Close() invoked
 	c2ds chan *transport.Message    // cloud-to-device messages
@@ -291,7 +291,7 @@ func (tr *Transport) UpdateTwinProperties(ctx context.Context, b []byte) (int, e
 }
 
 func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp, error) {
-	rid := tr.ridg.Next()
+	rid := fmt.Sprintf("%d", atomic.AddUint32(&tr.rid, 1)) // increment rid counter
 	dst := fmt.Sprintf(topic, rid)
 	rch := make(chan *resp, 1)
 	tr.mu.Lock()
@@ -313,6 +313,8 @@ func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp
 			return nil, fmt.Errorf("request failed with %d response code", r.code)
 		}
 		return r, nil
+	case <-time.After(30 * time.Second):
+		return nil, errors.New("request timed out")
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

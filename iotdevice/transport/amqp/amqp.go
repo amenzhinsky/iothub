@@ -7,6 +7,10 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
+
+	"encoding/hex"
+	"strings"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/eventhub"
@@ -29,6 +33,7 @@ func WithLogger(l *log.Logger) TransportOption {
 func New(opts ...TransportOption) (transport.Transport, error) {
 	tr := &Transport{
 		c2ds: make(chan *transport.Message, 10),
+		dmis: make(chan *transport.Invocation, 10),
 		done: make(chan struct{}),
 	}
 	for _, opt := range opts {
@@ -45,16 +50,18 @@ type Transport struct {
 	logger *log.Logger
 
 	c2ds chan *transport.Message
+	dmis chan *transport.Invocation
 	done chan struct{}
 
-	d2cSender *amqp.Sender
+	d2cSend *amqp.Sender
+	dmiSend *amqp.Sender
 }
 
 func (tr *Transport) Connect(
 	ctx context.Context,
 	tlsConfig *tls.Config,
 	deviceID string,
-	authFunc transport.AuthFunc,
+	auth transport.AuthFunc,
 ) (chan *transport.Message, chan *transport.Invocation, chan *transport.TwinState, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -65,10 +72,10 @@ func (tr *Transport) Connect(
 	host := tlsConfig.ServerName
 	token := ""
 
-	if authFunc != nil {
+	if auth != nil {
 		// SAS uri for amqp has to be: hostname + "/devices/" + deviceID
 		var err error
-		host, token, err = authFunc(ctx, "/devices/"+deviceID)
+		host, token, err = auth(ctx, "/devices/"+deviceID)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -98,32 +105,45 @@ func (tr *Transport) Connect(
 		cancel()
 	}()
 
-	//dmiOpts := []amqp.LinkOption{
-	//	amqp.LinkSourceAddress("/devices/" + deviceID + "/methods/devicebound"),
-	//	amqp.LinkProperty("com.microsoft:client-version", "azure-iot-device/1.3.2"),
-	//	amqp.LinkProperty("com.microsoft:api-version", common.APIVersion),
-	//	amqp.LinkProperty("com.microsoft:channel-correlation-id", deviceID),
-	//}
-	//
-	//dmiSend, err := c.Sess().NewSender(dmiOpts...)
-	//if err != nil {
-	//	return nil, nil, nil, err
-	//}
-	//_ = dmiSend
-	//
-	//dmiRecv, err := c.Sess().NewReceiver(dmiOpts...)
-	//if err != nil {
-	//	return nil, nil, nil, err
-	//}
-	//
-	//for {
-	//	msg, err := dmiRecv.Receive(ctx)
-	//	if err != nil {
-	//
-	//	}
-	//	fmt.Printf("--> %#v\n", msg)
-	//	fmt.Printf("--> %#v\n", err.Error())
-	//}
+	addr := "/devices/" + deviceID + "/methods/devicebound"
+	tr.dmiSend, err = c.Sess().NewSender(
+		amqp.LinkTargetAddress(addr),
+		amqp.LinkProperty("com.microsoft:api-version", common.APIVersion),
+		amqp.LinkProperty("com.microsoft:channel-correlation-id", deviceID),
+		amqp.LinkProperty("com.microsoft:client-version", "azure-iot-device/1.3.2"),
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	dmiRecv, err := c.Sess().NewReceiver(
+		amqp.LinkSourceAddress(addr),
+		amqp.LinkProperty("com.microsoft:api-version", common.APIVersion),
+		amqp.LinkProperty("com.microsoft:channel-correlation-id", deviceID),
+		amqp.LinkProperty("com.microsoft:client-version", "azure-iot-device/1.3.2"),
+		amqp.LinkCredit(100),
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	go func() {
+		defer close(tr.dmis)
+
+		for {
+			msg, err := dmiRecv.Receive(ctx)
+			if err != nil {
+				tr.dmis <- &transport.Invocation{Err: err}
+				return
+			}
+			tr.dmis <- &transport.Invocation{
+				RID:     msg.Properties.CorrelationID.(amqp.UUID).String(),
+				Method:  msg.ApplicationProperties["IoThub-methodname"].(string),
+				Payload: msg.Data[0],
+			}
+		}
+	}()
+
 	c2d, err := c.Sess().NewReceiver(
 		amqp.LinkSourceAddress("/devices/" + deviceID + "/messages/devicebound"),
 	)
@@ -134,13 +154,13 @@ func (tr *Transport) Connect(
 	go func() {
 		defer close(tr.c2ds)
 
-		// TODO: copy from iotservice
 		for {
 			msg, err := c2d.Receive(ctx)
 			if err != nil {
-				if _, ok := err.(amqp.DetachError); ok {
-					c.Close()
-				}
+				// TODO: find a way to handle disconnect errors
+				//if _, ok := err.(amqp.DetachError); ok {
+				//	c.Close()
+				//}
 
 				select {
 				case tr.c2ds <- &transport.Message{Err: err}:
@@ -155,12 +175,14 @@ func (tr *Transport) Connect(
 				props[k] = fmt.Sprint(v)
 			}
 
+			m, err := parseMessage(msg)
+			if err != nil {
+				tr.c2ds <- &transport.Message{Err: err}
+				return
+			}
+
 			select {
-			case tr.c2ds <- &transport.Message{
-				//DeviceID:   deviceID,
-				//Payload:    msg.Data[0],
-				//Properties: props,
-			}:
+			case tr.c2ds <- &transport.Message{Msg: m}:
 				msg.Accept()
 			case <-tr.done:
 				return
@@ -169,7 +191,42 @@ func (tr *Transport) Connect(
 	}()
 
 	tr.conn = c
-	return tr.c2ds, nil, nil, nil
+	return tr.c2ds, tr.dmis, nil, nil
+}
+
+// TODO: duplicates iotservice.SubscribeEvents
+func parseMessage(msg *amqp.Message) (*common.Message, error) {
+	m := &common.Message{
+		Payload:    msg.Data[0],
+		Properties: make(map[string]string, len(msg.ApplicationProperties)+5),
+	}
+	if msg.Properties != nil {
+		m.UserID = string(msg.Properties.UserID)
+		m.MessageID = msg.Properties.MessageID.(string)
+		m.CorrelationID = msg.Properties.CorrelationID.(string)
+		m.To = msg.Properties.To
+		m.ExpiryTime = msg.Properties.AbsoluteExpiryTime
+	}
+	for k, v := range msg.Annotations {
+		switch k {
+		case "iothub-enqueuedtime":
+			m.EnqueuedTime = v.(time.Time)
+		case "iothub-connection-device-id":
+			m.ConnectionDeviceID = v.(string)
+		case "iothub-connection-auth-generation-id":
+			m.ConnectionDeviceGenerationID = v.(string)
+		case "iothub-connection-auth-method":
+			m.ConnectionAuthMethod = v.(string)
+		case "iothub-message-source":
+			m.MessageSource = v.(string)
+		default:
+			m.Properties[k.(string)] = fmt.Sprint(v)
+		}
+	}
+	for k, v := range msg.ApplicationProperties {
+		m.Properties[k] = v.(string)
+	}
+	return m, nil
 }
 
 func (tr *Transport) IsNetworkError(err error) bool {
@@ -177,61 +234,56 @@ func (tr *Transport) IsNetworkError(err error) bool {
 }
 
 func (tr *Transport) Send(ctx context.Context, deviceID string, msg *common.Message) error {
-	if err := tr.checkConnection(); err != nil {
+	var err error
+	if err = tr.checkConnection(); err != nil {
 		return err
 	}
 
 	if msg.To == "" {
 		msg.To = "/devices/" + deviceID + "/messages/events" // required
 	}
-	if err := tr.enablePublishing(msg.To); err != nil {
-		return err
+	props := make(map[string]interface{}, len(msg.Properties))
+	for k, v := range msg.Properties {
+		props[k] = v
 	}
 
-	// TODO: see iotservice.SendEvent
-	props := &amqp.MessageProperties{
-		To: msg.To,
+	// lock mu here to open the sending linkSend just once,
+	// plus amqp.Send might not be thread-safe.
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.d2cSend == nil {
+		tr.d2cSend, err = tr.conn.Sess().NewSender(
+			amqp.LinkTargetAddress(msg.To),
+		)
 	}
-	if msg.UserID != "" {
-		props.UserID = []byte(msg.UserID)
-	}
-	if msg.MessageID != "" {
-		props.MessageID = msg.MessageID
-	}
-	if msg.CorrelationID != "" {
-		props.CorrelationID = msg.CorrelationID
-	}
-	if !msg.ExpiryTime.IsZero() {
-		props.AbsoluteExpiryTime = msg.ExpiryTime
-	}
-	appProps := make(map[string]interface{}, len(msg.Properties))
-	for k, v := range msg.Properties {
-		appProps[k] = v
-	}
-	return tr.d2cSender.Send(ctx, &amqp.Message{
-		Data:                  [][]byte{msg.Payload},
-		Properties:            props,
-		ApplicationProperties: appProps,
+	return tr.d2cSend.Send(ctx, &amqp.Message{
+		Data: [][]byte{msg.Payload},
+		Properties: &amqp.MessageProperties{
+			To:                 msg.To,
+			UserID:             []byte(msg.UserID),
+			MessageID:          msg.MessageID,
+			CorrelationID:      msg.CorrelationID,
+			AbsoluteExpiryTime: msg.ExpiryTime,
+		},
+		ApplicationProperties: props,
 	})
 }
 
-// enablePublishing initializes the sender link just once,
-// because we don't want to do this every `SendEvent` call.
-func (tr *Transport) enablePublishing(to string) error {
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
-	if tr.d2cSender != nil {
-		return nil
+func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, rc int, data []byte) error {
+	// convert rid back into amqp.UUID
+	cid := amqp.UUID{}
+	if _, err := hex.Decode(cid[:], []byte(strings.Replace(rid, "-", "", 4))); err != nil {
+		return err
 	}
-	var err error
-	tr.d2cSender, err = tr.conn.Sess().NewSender(
-		amqp.LinkTargetAddress(to),
-	)
-	return err
-}
-
-func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, code int, payload []byte) error {
-	return nil
+	return tr.dmiSend.Send(ctx, &amqp.Message{
+		Data: [][]byte{data},
+		Properties: &amqp.MessageProperties{
+			CorrelationID: cid,
+		},
+		ApplicationProperties: map[string]interface{}{
+			"IoThub-status": int32(rc),
+		},
+	})
 }
 
 func (tr *Transport) RetrieveTwinProperties(ctx context.Context) (payload []byte, err error) {
@@ -265,8 +317,8 @@ func (tr *Transport) Close() error {
 	default:
 		close(tr.done)
 	}
-	if tr.d2cSender != nil {
-		tr.d2cSender.Close()
+	if tr.d2cSend != nil {
+		tr.d2cSend.Close()
 	}
 	return tr.conn.Close()
 }

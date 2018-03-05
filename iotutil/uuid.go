@@ -3,7 +3,6 @@ package iotutil
 import (
 	"crypto/rand"
 	"fmt"
-	"io"
 )
 
 // UUID generates UUIDs based on RFC 4122.
@@ -12,8 +11,7 @@ import (
 // changed API over few last versions and we don't want to mess up with user deps.
 func UUID() string {
 	u := make([]byte, 16)
-	n, err := io.ReadFull(rand.Reader, u)
-	if err != nil || n != 16 {
+	if _, err := rand.Read(u); err != nil {
 		panic(err)
 	}
 	// variant bits, section 4.1.1

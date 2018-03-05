@@ -35,6 +35,8 @@ var (
 	quiteFlag     = false
 	transportFlag = "mqtt"
 	formatFlag    = internal.NewChoiceFlag("simple", "json")
+	midFlag       = ""
+	cidFlag       = ""
 
 	// x509 flags
 	tlsCertFlag  = ""
@@ -61,7 +63,10 @@ func run() error {
 			"PAYLOAD [KEY VALUE]...",
 			"send a message to the cloud (D2C)",
 			conn(send),
-			nil,
+			func(fs *flag.FlagSet) {
+				fs.StringVar(&midFlag, "mid", midFlag, "identifier for the message")
+				fs.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
+			},
 		},
 		"watch-events": {
 			"",
@@ -166,7 +171,11 @@ func send(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
 			return err
 		}
 	}
-	return c.SendEvent(ctx, []byte(fs.Arg(0)), iotdevice.WithSendProperties(props))
+	return c.SendEvent(ctx, []byte(fs.Arg(0)),
+		iotdevice.WithSendProperties(props),
+		iotdevice.WithSendMessageID(midFlag),
+		iotdevice.WithSendCorrelationID(cidFlag),
+	)
 }
 
 func watchEvents(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
