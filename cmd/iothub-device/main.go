@@ -90,7 +90,12 @@ func run() error {
 				fs.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
 			},
 		},
-
+		"twin": {
+			"",
+			"retrieve desired and reported states",
+			conn(twin),
+			nil,
+		},
 		// TODO: other methods
 	}, os.Args, func(fs *flag.FlagSet) {
 		fs.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
@@ -250,4 +255,25 @@ func directMethod(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) er
 	}()
 
 	return <-errc
+}
+
+func twin(ctx context.Context, _ *flag.FlagSet, c *iotdevice.Client) error {
+	desired, reported, err := c.RetrieveTwinState(ctx)
+	if err != nil {
+		return err
+	}
+
+	b, err := json.Marshal(desired)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+
+	b, err = json.Marshal(reported)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+
+	return nil
 }

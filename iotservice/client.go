@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/golang-iothub/common"
+	"github.com/amenzhinsky/golang-iothub/commonamqp"
 	"github.com/amenzhinsky/golang-iothub/eventhub"
 	"pack.ag/amqp"
 )
@@ -221,63 +222,37 @@ func (c *Client) SubscribeEvents(ctx context.Context, f SubscribeFunc) error {
 	defer sess.Close()
 
 	return eventhub.SubscribePartitions(ctx, sess, group, "$Default", func(msg *amqp.Message) {
-		m := &common.Message{
-			Payload:    msg.Data[0],
-			Properties: make(map[string]string, len(msg.ApplicationProperties)+5),
-		}
-		if msg.Properties != nil {
-			m.UserID = string(msg.Properties.UserID)
-			m.MessageID = msg.Properties.MessageID.(string)
-			m.CorrelationID = msg.Properties.CorrelationID.(string)
-			m.To = msg.Properties.To
-			m.ExpiryTime = msg.Properties.AbsoluteExpiryTime
-		}
-		for k, v := range msg.Annotations {
-			switch k {
-			case "iothub-enqueuedtime":
-				m.EnqueuedTime = v.(time.Time)
-			case "iothub-connection-device-id":
-				m.ConnectionDeviceID = v.(string)
-			case "iothub-connection-auth-generation-id":
-				m.ConnectionDeviceGenerationID = v.(string)
-			case "iothub-connection-auth-method":
-				m.ConnectionAuthMethod = v.(string)
-			case "iothub-message-source":
-				m.MessageSource = v.(string)
-			default:
-				m.Properties[k.(string)] = fmt.Sprint(v)
-			}
-		}
-		for k, v := range msg.ApplicationProperties {
-			m.Properties[k] = v.(string)
+		m, err := commonamqp.FromAMQPMessage(msg)
+		if err != nil {
+			c.logf("parse amqp message error: %s", err)
 		}
 		go f(m)
 	})
 }
 
 // SendOption is a send option.
-type SendOption func(msg *amqp.Message) error
+type SendOption func(msg *common.Message) error
 
 // WithSendMessageID sets message id.
 func WithSendMessageID(mid string) SendOption {
-	return func(msg *amqp.Message) error {
-		msg.Properties.MessageID = mid
+	return func(msg *common.Message) error {
+		msg.MessageID = mid
 		return nil
 	}
 }
 
 // WithSendCorrelationID sets correlation id.
 func WithSendCorrelationID(cid string) SendOption {
-	return func(msg *amqp.Message) error {
-		msg.Properties.CorrelationID = cid
+	return func(msg *common.Message) error {
+		msg.CorrelationID = cid
 		return nil
 	}
 }
 
 // WithSendUserID sets user id.
 func WithSendUserID(uid string) SendOption {
-	return func(msg *amqp.Message) error {
-		msg.Properties.UserID = []byte(uid)
+	return func(msg *common.Message) error {
+		msg.UserID = uid
 		return nil
 	}
 }
@@ -299,7 +274,7 @@ const (
 
 // WithSendAck sets message confirmation type.
 func WithSendAck(typ string) SendOption {
-	return func(msg *amqp.Message) error {
+	return func(msg *common.Message) error {
 		switch typ {
 		case "", AckNone, AckPositive, AckNegative, AckFull:
 		default:
@@ -311,31 +286,31 @@ func WithSendAck(typ string) SendOption {
 
 // WithSentExpiryTime sets message expiration time.
 func WithSentExpiryTime(t time.Time) SendOption {
-	return func(msg *amqp.Message) error {
-		msg.Properties.AbsoluteExpiryTime = t
+	return func(msg *common.Message) error {
+		msg.ExpiryTime = t
 		return nil
 	}
 }
 
 // WithSendProperty sets a message property.
 func WithSendProperty(k, v string) SendOption {
-	return func(msg *amqp.Message) error {
-		if msg.ApplicationProperties == nil {
-			msg.ApplicationProperties = map[string]interface{}{}
+	return func(msg *common.Message) error {
+		if msg.Properties == nil {
+			msg.Properties = map[string]string{}
 		}
-		msg.ApplicationProperties[k] = v
+		msg.Properties[k] = v
 		return nil
 	}
 }
 
 // WithSendProperties same as `WithSendProperty` but accepts map of keys and values.
 func WithSendProperties(m map[string]string) SendOption {
-	return func(msg *amqp.Message) error {
-		if msg.ApplicationProperties == nil {
-			msg.ApplicationProperties = map[string]interface{}{}
+	return func(msg *common.Message) error {
+		if msg.Properties == nil {
+			msg.Properties = map[string]string{}
 		}
 		for k, v := range m {
-			msg.ApplicationProperties[k] = v
+			msg.Properties[k] = v
 		}
 		return nil
 	}
@@ -360,11 +335,9 @@ func (c *Client) SendEvent(
 		return errNotConnected
 	}
 
-	msg := &amqp.Message{
-		Data: [][]byte{payload},
-		Properties: &amqp.MessageProperties{
-			To: "/devices/" + deviceID + "/messages/devicebound",
-		},
+	msg := &common.Message{
+		Payload: payload,
+		To:      "/devices/" + deviceID + "/messages/devicebound",
 	}
 	for _, opt := range opts {
 		if err := opt(msg); err != nil {
@@ -380,7 +353,7 @@ func (c *Client) SendEvent(
 		return err
 	}
 	defer send.Close()
-	return send.Send(ctx, msg)
+	return send.Send(ctx, commonamqp.ToAMQPMessage(msg))
 }
 
 // FeedbackFunc handles message feedback.

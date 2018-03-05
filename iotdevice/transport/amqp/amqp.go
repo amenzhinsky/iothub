@@ -3,16 +3,14 @@ package amqp
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"fmt"
-	"log"
-	"sync"
-	"time"
-
 	"encoding/hex"
+	"errors"
+	"log"
 	"strings"
+	"sync"
 
 	"github.com/amenzhinsky/golang-iothub/common"
+	"github.com/amenzhinsky/golang-iothub/commonamqp"
 	"github.com/amenzhinsky/golang-iothub/eventhub"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
 	"pack.ag/amqp"
@@ -170,12 +168,7 @@ func (tr *Transport) Connect(
 				}
 			}
 
-			props := make(map[string]string, len(msg.ApplicationProperties))
-			for k, v := range msg.ApplicationProperties {
-				props[k] = fmt.Sprint(v)
-			}
-
-			m, err := parseMessage(msg)
+			m, err := commonamqp.FromAMQPMessage(msg)
 			if err != nil {
 				tr.c2ds <- &transport.Message{Err: err}
 				return
@@ -192,41 +185,6 @@ func (tr *Transport) Connect(
 
 	tr.conn = c
 	return tr.c2ds, tr.dmis, nil, nil
-}
-
-// TODO: duplicates iotservice.SubscribeEvents
-func parseMessage(msg *amqp.Message) (*common.Message, error) {
-	m := &common.Message{
-		Payload:    msg.Data[0],
-		Properties: make(map[string]string, len(msg.ApplicationProperties)+5),
-	}
-	if msg.Properties != nil {
-		m.UserID = string(msg.Properties.UserID)
-		m.MessageID = msg.Properties.MessageID.(string)
-		m.CorrelationID = msg.Properties.CorrelationID.(string)
-		m.To = msg.Properties.To
-		m.ExpiryTime = msg.Properties.AbsoluteExpiryTime
-	}
-	for k, v := range msg.Annotations {
-		switch k {
-		case "iothub-enqueuedtime":
-			m.EnqueuedTime = v.(time.Time)
-		case "iothub-connection-device-id":
-			m.ConnectionDeviceID = v.(string)
-		case "iothub-connection-auth-generation-id":
-			m.ConnectionDeviceGenerationID = v.(string)
-		case "iothub-connection-auth-method":
-			m.ConnectionAuthMethod = v.(string)
-		case "iothub-message-source":
-			m.MessageSource = v.(string)
-		default:
-			m.Properties[k.(string)] = fmt.Sprint(v)
-		}
-	}
-	for k, v := range msg.ApplicationProperties {
-		m.Properties[k] = v.(string)
-	}
-	return m, nil
 }
 
 func (tr *Transport) IsNetworkError(err error) bool {
@@ -253,20 +211,11 @@ func (tr *Transport) Send(ctx context.Context, deviceID string, msg *common.Mess
 	defer tr.mu.Unlock()
 	if tr.d2cSend == nil {
 		tr.d2cSend, err = tr.conn.Sess().NewSender(
+			// TODO: msg.To can be different from the default value
 			amqp.LinkTargetAddress(msg.To),
 		)
 	}
-	return tr.d2cSend.Send(ctx, &amqp.Message{
-		Data: [][]byte{msg.Payload},
-		Properties: &amqp.MessageProperties{
-			To:                 msg.To,
-			UserID:             []byte(msg.UserID),
-			MessageID:          msg.MessageID,
-			CorrelationID:      msg.CorrelationID,
-			AbsoluteExpiryTime: msg.ExpiryTime,
-		},
-		ApplicationProperties: props,
-	})
+	return tr.d2cSend.Send(ctx, commonamqp.ToAMQPMessage(msg))
 }
 
 func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, rc int, data []byte) error {
