@@ -5,9 +5,11 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/common/commonamqp"
@@ -31,6 +33,7 @@ func New(opts ...TransportOption) transport.Transport {
 	tr := &Transport{
 		c2ds: make(chan *transport.Message, 10),
 		dmis: make(chan *transport.Invocation, 10),
+		tscs: make(chan *transport.TwinState, 10),
 		done: make(chan struct{}),
 	}
 	for _, opt := range opts {
@@ -44,13 +47,25 @@ type Transport struct {
 	conn   *eventhub.Client
 	logger *log.Logger
 
+	did string // device id
+	cid uint64 // correlation id counter
+
 	c2ds chan *transport.Message
 	dmis chan *transport.Invocation
+	tscs chan *transport.TwinState
 	done chan struct{}
 
 	d2cSend *amqp.Sender
 	dmiSend *amqp.Sender
 }
+
+const (
+	propAPIVersion    = "com.microsoft:api-version"
+	propClientVersion = "com.microsoft:client-version"
+	propCorrelationID = "com.microsoft:channel-correlation-id"
+
+	clientVersion = "azure-iot-device/1.3.2"
+)
 
 func (tr *Transport) Connect(
 	ctx context.Context,
@@ -63,32 +78,34 @@ func (tr *Transport) Connect(
 	if tr.conn != nil {
 		return nil, nil, nil, errors.New("already connected")
 	}
+	tr.did = deviceID
 
 	host := tlsConfig.ServerName
 	token := ""
 
+	var err error
 	if auth != nil {
 		// SAS uri for amqp has to be: hostname + "/devices/" + deviceID
-		var err error
 		host, token, err = auth(ctx, "/devices/"+deviceID)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 	}
 
-	c, err := eventhub.Dial(host, tlsConfig)
+	tr.conn, err = eventhub.Dial(host, tlsConfig)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	defer func() {
 		if err != nil {
-			c.Close()
+			tr.conn.Close()
+			tr.conn = nil
 		}
 	}()
 
 	// put token in the background when sas authentication is on
 	if token != "" {
-		if err := c.PutTokenContinuously(ctx, host+"/devices/"+deviceID, token, tr.done); err != nil {
+		if err := tr.conn.PutTokenContinuously(ctx, host+"/devices/"+deviceID, token, tr.done); err != nil {
 			return nil, nil, nil, err
 		}
 	}
@@ -101,21 +118,21 @@ func (tr *Transport) Connect(
 	}()
 
 	addr := "/devices/" + deviceID + "/methods/devicebound"
-	tr.dmiSend, err = c.Sess().NewSender(
+	tr.dmiSend, err = tr.conn.Sess().NewSender(
 		amqp.LinkTargetAddress(addr),
-		amqp.LinkProperty("com.microsoft:api-version", common.APIVersion),
-		amqp.LinkProperty("com.microsoft:channel-correlation-id", deviceID),
-		amqp.LinkProperty("com.microsoft:client-version", "azure-iot-device/1.3.2"),
+		amqp.LinkProperty(propAPIVersion, common.APIVersion),
+		amqp.LinkProperty(propCorrelationID, deviceID),
+		amqp.LinkProperty(propClientVersion, clientVersion),
 	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	dmiRecv, err := c.Sess().NewReceiver(
+	dmiRecv, err := tr.conn.Sess().NewReceiver(
 		amqp.LinkSourceAddress(addr),
-		amqp.LinkProperty("com.microsoft:api-version", common.APIVersion),
-		amqp.LinkProperty("com.microsoft:channel-correlation-id", deviceID),
-		amqp.LinkProperty("com.microsoft:client-version", "azure-iot-device/1.3.2"),
+		amqp.LinkProperty(propAPIVersion, common.APIVersion),
+		amqp.LinkProperty(propCorrelationID, deviceID),
+		amqp.LinkProperty(propClientVersion, clientVersion),
 		amqp.LinkCredit(100),
 	)
 	if err != nil {
@@ -139,7 +156,7 @@ func (tr *Transport) Connect(
 		}
 	}()
 
-	c2d, err := c.Sess().NewReceiver(
+	c2d, err := tr.conn.Sess().NewReceiver(
 		amqp.LinkSourceAddress("/devices/" + deviceID + "/messages/devicebound"),
 	)
 	if err != nil {
@@ -152,11 +169,6 @@ func (tr *Transport) Connect(
 		for {
 			msg, err := c2d.Receive(ctx)
 			if err != nil {
-				// TODO: find a way to handle disconnect errors
-				//if _, ok := err.(amqp.DetachError); ok {
-				//	c.Close()
-				//}
-
 				select {
 				case tr.c2ds <- &transport.Message{Err: err}:
 					return
@@ -174,8 +186,47 @@ func (tr *Transport) Connect(
 		}
 	}()
 
-	tr.conn = c
-	return tr.c2ds, tr.dmis, nil, nil
+	twinSend, twinRecv, err := tr.twinSendRecv()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	go func() {
+		defer close(tr.tscs)
+
+		if err = twinSend.Send(ctx, tr.twinRequest(
+			"PUT",
+			"/notifications/twin/properties/desired",
+			nil,
+		)); err != nil {
+			tr.tscs <- &transport.TwinState{Err: err}
+			return
+		}
+
+		msg, err := twinRecv.Receive(ctx)
+		if err != nil {
+			tr.tscs <- &transport.TwinState{Err: err}
+			return
+		}
+
+		if err = checkTwinResponse(msg); err != nil {
+			tr.tscs <- &transport.TwinState{Err: err}
+			return
+		}
+
+		for {
+			msg, err := twinRecv.Receive(ctx)
+			if err != nil {
+				tr.tscs <- &transport.TwinState{Err: err}
+				return
+			}
+			tr.tscs <- &transport.TwinState{
+				Payload: msg.Data[0],
+			}
+		}
+	}()
+
+	return tr.c2ds, tr.dmis, tr.tscs, nil
 }
 
 func (tr *Transport) IsNetworkError(err error) bool {
@@ -189,7 +240,7 @@ func (tr *Transport) Send(ctx context.Context, deviceID string, msg *common.Mess
 	}
 
 	if msg.To == "" {
-		msg.To = "/devices/" + deviceID + "/messages/events" // required
+		msg.To = "/devices/" + tr.did + "/messages/events" // required
 	}
 	props := make(map[string]interface{}, len(msg.Properties))
 	for k, v := range msg.Properties {
@@ -226,12 +277,104 @@ func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, rc int
 	})
 }
 
-func (tr *Transport) RetrieveTwinProperties(ctx context.Context) (payload []byte, err error) {
-	return nil, nil
+func (tr *Transport) RetrieveTwinProperties(ctx context.Context) ([]byte, error) {
+	send, recv, err := tr.twinSendRecv()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		send.Close()
+		recv.Close()
+	}()
+
+	if err = send.Send(ctx, tr.twinRequest("GET", "", nil)); err != nil {
+		return nil, err
+	}
+
+	msg, err := recv.Receive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = checkTwinResponse(msg); err != nil {
+		return nil, err
+	}
+	return msg.Data[0], nil
 }
 
-func (tr *Transport) UpdateTwinProperties(ctx context.Context, payload []byte) (version int, err error) {
-	return 0, nil
+func (tr *Transport) twinRequest(action, resource string, body []byte) *amqp.Message {
+	return &amqp.Message{
+		Data: [][]byte{body},
+		Annotations: amqp.Annotations{
+			"operation": action,
+			"resource":  resource,
+		},
+		Properties: &amqp.MessageProperties{
+			CorrelationID: atomic.AddUint64(&tr.cid, 1),
+		},
+	}
+}
+
+// TODO: open this links once
+func (tr *Transport) twinSendRecv() (*amqp.Sender, *amqp.Receiver, error) {
+	cid, err := eventhub.RandString()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	send, err := tr.conn.Sess().NewSender(
+		amqp.LinkTargetAddress("/devices/"+tr.did+"/twin"),
+		amqp.LinkProperty(propAPIVersion, common.APIVersion),
+		amqp.LinkProperty(propCorrelationID, "twin:"+cid),
+		amqp.LinkProperty(propClientVersion, clientVersion),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	recv, err := tr.conn.Sess().NewReceiver(
+		amqp.LinkSourceAddress("/devices/"+tr.did+"/twin"),
+		amqp.LinkProperty(propAPIVersion, common.APIVersion),
+		amqp.LinkProperty(propCorrelationID, "twin:"+cid),
+		amqp.LinkProperty(propClientVersion, clientVersion),
+	)
+	if err != nil {
+		send.Close()
+		return nil, nil, err
+	}
+	return send, recv, nil
+}
+
+func checkTwinResponse(msg *amqp.Message) error {
+	if rc, ok := msg.Annotations["status"].(int32); !ok || rc != 200 {
+		return fmt.Errorf("unexpected response status = %v", msg.Annotations["status"])
+	}
+	return nil
+}
+
+func (tr *Transport) UpdateTwinProperties(ctx context.Context, data []byte) (int, error) {
+	send, recv, err := tr.twinSendRecv()
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		send.Close()
+		recv.Close()
+	}()
+
+	if err = send.Send(ctx, tr.twinRequest("PATCH", "/properties/reported", data)); err != nil {
+		return 0, err
+	}
+
+	msg, err := recv.Receive(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if err = checkTwinResponse(msg); err != nil {
+		return 0, err
+	}
+
+	ver := msg.Annotations["version"].(int64)
+	return int(ver), nil
 }
 
 func (tr *Transport) checkConnection() error {

@@ -20,10 +20,10 @@ import (
 
 var transports = map[string]func() (transport.Transport, error){
 	"mqtt": func() (transport.Transport, error) {
-		return mqtt.New(mqtt.WithLogger(mklog("[mqtt]   ")))
+		return mqtt.New(mqtt.WithLogger(mklog("[mqtt]   "))), nil
 	},
 	"amqp": func() (transport.Transport, error) {
-		return amqp.New(amqp.WithLogger(mklog("[amqp]   ")))
+		return amqp.New(amqp.WithLogger(mklog("[amqp]   "))), nil
 	},
 	"http": func() (transport.Transport, error) {
 		return nil, errors.New("not implemented")
@@ -78,7 +78,7 @@ func run() error {
 		},
 		"watch-twin": {
 			"",
-			"subscribe to twin device updates",
+			"subscribe to desired twin state updates",
 			conn(watchTwin),
 			nil,
 		},
@@ -90,13 +90,18 @@ func run() error {
 				fs.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
 			},
 		},
-		"twin": {
+		"twin-state": {
 			"",
 			"retrieve desired and reported states",
 			conn(twin),
 			nil,
 		},
-		// TODO: other methods
+		"update-twin": {
+			"[KEY VALUE]...",
+			"updates the twin device deported state, null means delete the key",
+			conn(updateTwin),
+			nil,
+		},
 	}, os.Args, func(fs *flag.FlagSet) {
 		fs.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
 		fs.StringVar(&transportFlag, "transport", transportFlag, "transport to use <mqtt|amqp|http>")
@@ -149,7 +154,7 @@ func conn(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		if err != nil {
 			return err
 		}
-		if err := c.ConnectInBackground(ctx, false); err != nil {
+		if err := c.ConnectInBackground(ctx); err != nil {
 			return err
 		}
 		return fn(ctx, fs, c)
@@ -267,13 +272,38 @@ func twin(ctx context.Context, _ *flag.FlagSet, c *iotdevice.Client) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(b))
+	fmt.Println("desired:  " + string(b))
 
 	b, err = json.Marshal(reported)
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(b))
+	fmt.Println("reported: " + string(b))
 
+	return nil
+}
+
+func updateTwin(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
+	if fs.NArg() == 0 {
+		return internal.ErrInvalidUsage
+	}
+
+	s, err := internal.ArgsToMap(fs.Args())
+	if err != nil {
+		return err
+	}
+	m := make(iotdevice.TwinState, len(s))
+	for k, v := range s {
+		if v == "null" {
+			m[k] = nil
+		} else {
+			m[k] = v
+		}
+	}
+	ver, err := c.UpdateTwinState(ctx, m)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("version: %d\n", ver)
 	return nil
 }
