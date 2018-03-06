@@ -23,12 +23,8 @@ import (
 )
 
 func main() {
-	t, err := mqtt.New()
-	if err != nil {
-		log.Fatal(err)
-	}
 	c, err := iotdevice.NewClient(
-		iotdevice.WithTransport(t),
+		iotdevice.WithTransport(mqtt.New()),
 		iotdevice.WithConnectionString(os.Getenv("DEVICE_CONNECTION_STRING")),
 	)
 	if err != nil {
@@ -36,14 +32,13 @@ func main() {
 	}
 
 	// connect to the iothub
-	if err = c.Connect(context.Background(), false); err != nil {
+	if err = c.Connect(context.Background()); err != nil {
 		log.Fatal(err)
 	}
 
 	// send a device-to-cloud message
 	if err = c.SendEvent(context.Background(), []byte(`hello`),
-		iotdevice.WithSendProperty("a", "1"),
-		iotdevice.WithSendProperty("b", "2"),
+		iotdevice.WithSendProperty("foo", "bar"),
 	); err != nil {
 		log.Fatal(err)
 	}

@@ -17,29 +17,26 @@ import (
 )
 
 // TransportOption is transport configuration option.
-type TransportOption func(tr *Transport) error
+type TransportOption func(tr *Transport)
 
 // WithLogger overrides transport logger.
 func WithLogger(l *log.Logger) TransportOption {
-	return func(c *Transport) error {
+	return func(c *Transport) {
 		c.logger = l
-		return nil
 	}
 }
 
 // New creates new amqp iothub transport.
-func New(opts ...TransportOption) (transport.Transport, error) {
+func New(opts ...TransportOption) transport.Transport {
 	tr := &Transport{
 		c2ds: make(chan *transport.Message, 10),
 		dmis: make(chan *transport.Invocation, 10),
 		done: make(chan struct{}),
 	}
 	for _, opt := range opts {
-		if err := opt(tr); err != nil {
-			return nil, err
-		}
+		opt(tr)
 	}
-	return tr, nil
+	return tr
 }
 
 type Transport struct {

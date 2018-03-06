@@ -3,14 +3,13 @@ package tests
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
-
-	"crypto/rand"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice"
@@ -38,9 +37,9 @@ func TestEnd2End(t *testing.T) {
 		t.Fatal("TEST_HOSTNAME is empty")
 	}
 
-	for name, mk := range map[string]func() (transport.Transport, error){
-		"mqtt": func() (transport.Transport, error) { return mqtt.New() },
-		"amqp": func() (transport.Transport, error) { return amqp.New() },
+	for name, tr := range map[string]func() transport.Transport{
+		"mqtt": func() transport.Transport { return mqtt.New() },
+		"amqp": func() transport.Transport { return amqp.New() },
 	} {
 		t.Run(name, func(t *testing.T) {
 			for auth, suite := range map[string]struct {
@@ -75,11 +74,7 @@ func TestEnd2End(t *testing.T) {
 							continue
 						}
 						t.Run(name, func(t *testing.T) {
-							tr, err := mk()
-							if err != nil {
-								t.Fatal(err)
-							}
-							test(t, append(suite.opts, iotdevice.WithTransport(tr))...)
+							test(t, append(suite.opts, iotdevice.WithTransport(tr()))...)
 						})
 					}
 				})
@@ -380,7 +375,7 @@ func mkDeviceAndService(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = dc.ConnectInBackground(ctx, false); err != nil {
+	if err = dc.ConnectInBackground(ctx, iotdevice.WithConnIgnoreNetErrors(true)); err != nil {
 		t.Fatal(err)
 	}
 

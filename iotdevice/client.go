@@ -190,13 +190,30 @@ func (c *Client) DeviceID() string {
 	return c.deviceID
 }
 
-// Connect connects to iothub and subscribes to communication topics.
-//
-// If `ignoreNetErrors` is true it reconnects until connection is
-// established or other kind of error encountered.
-func (c *Client) Connect(ctx context.Context, ignoreNetErrors bool) error {
+type connection struct {
+	ignoreNetErrors bool
+}
+
+// ConnOption is a connection option.
+type ConnOption func(c *connection)
+
+// WithConnIgnoreNetErrors when a network error occurs while connecting
+// it's just ignored and connection reestablished until it succeeds.
+func WithConnIgnoreNetErrors(ignore bool) ConnOption {
+	return func(c *connection) {
+		c.ignoreNetErrors = ignore
+	}
+}
+
+// Connect connects to the iothub.
+func (c *Client) Connect(ctx context.Context, opts ...ConnOption) error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
+
+	conn := &connection{}
+	for _, opt := range opts {
+		opt(conn)
+	}
 
 Retry:
 	c.c2ds, c.dmis, c.tscs, c.connErr = c.tr.Connect(
@@ -205,7 +222,7 @@ Retry:
 		c.deviceID,
 		transport.AuthFunc(c.authFunc),
 	)
-	if ignoreNetErrors && c.tr.IsNetworkError(c.connErr) {
+	if conn.ignoreNetErrors && c.tr.IsNetworkError(c.connErr) {
 		c.logf("couldn't connect, reconnecting")
 		goto Retry
 	}
@@ -223,12 +240,12 @@ Retry:
 //
 // It can be useful to check connection state using `ConnectionError`
 // in a separate goroutine.
-func (c *Client) ConnectInBackground(ctx context.Context, ignoreNetErrors bool) error {
+func (c *Client) ConnectInBackground(ctx context.Context, opts ...ConnOption) error {
 	c.connMu.Lock()
 	c.connCh = make(chan struct{})
 	c.connMu.Unlock()
 	go func() {
-		if err := c.Connect(ctx, ignoreNetErrors); err != nil {
+		if err := c.Connect(ctx, opts...); err != nil {
 			c.logf("background connection error: %s", err)
 		}
 		c.connMu.Lock()

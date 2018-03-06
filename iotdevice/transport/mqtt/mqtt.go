@@ -24,18 +24,17 @@ const (
 	defaultQoS = 1
 )
 
-type TransportOption func(tr *Transport) error
+type TransportOption func(tr *Transport)
 
 func WithLogger(l *log.Logger) TransportOption {
-	return func(tr *Transport) error {
+	return func(tr *Transport) {
 		tr.logger = l
-		return nil
 	}
 }
 
 // New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
-func New(opts ...TransportOption) (transport.Transport, error) {
+func New(opts ...TransportOption) transport.Transport {
 	tr := &Transport{
 		done: make(chan struct{}),
 		c2ds: make(chan *transport.Message, 10),
@@ -44,11 +43,9 @@ func New(opts ...TransportOption) (transport.Transport, error) {
 		resp: make(map[string]chan *resp),
 	}
 	for _, opt := range opts {
-		if err := opt(tr); err != nil {
-			return nil, err
-		}
+		opt(tr)
 	}
-	return tr, nil
+	return tr
 }
 
 type Transport struct {
