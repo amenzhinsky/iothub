@@ -363,7 +363,7 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 		t.Fatal(err)
 	}
 
-	resc := make(chan map[string]interface{}, 1)
+	resc := make(chan *iotservice.Result, 1)
 	errc := make(chan error, 2)
 	go func() {
 		v, err := sc.Call(ctx, dc.DeviceID(), "sum", map[string]interface{}{
@@ -381,8 +381,11 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 
 	select {
 	case v := <-resc:
-		w := map[string]interface{}{
-			"result": 4.5,
+		w := &iotservice.Result{
+			Status: 200,
+			Payload: map[string]interface{}{
+				"result": 4.5,
+			},
 		}
 		if !reflect.DeepEqual(v, w) {
 			t.Errorf("direct-method result = %v, want %v", v, w)

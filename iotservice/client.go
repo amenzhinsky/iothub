@@ -450,13 +450,9 @@ func (c *Client) Call(
 			return nil, err
 		}
 	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
 
 	r := &Result{}
-	if err = c.call(ctx, http.MethodPost, "twins/"+url.PathEscape(deviceID)+"/methods", nil, b, r); err != nil {
+	if err := c.call(ctx, http.MethodPost, "twins/"+url.PathEscape(deviceID)+"/methods", nil, v, r); err != nil {
 		return nil, err
 	}
 	return r, nil
