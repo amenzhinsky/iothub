@@ -2,54 +2,54 @@ package iotservice
 
 // Result is a direct-method call result.
 type Result struct {
-	Status  int                    `json:"status"`
-	Payload map[string]interface{} `json:"payload"`
+	Status  int                    `json:"status,omitempty"`
+	Payload map[string]interface{} `json:"payload,omitempty"`
 }
 
 type Device struct {
-	DeviceID                   string                 `json:"deviceId"`
-	GenerationID               string                 `json:"generationId"`
-	ETag                       string                 `json:"etag"`
-	ConnectionState            string                 `json:"connectionState"`
-	Status                     string                 `json:"status"`
-	StatusReason               string                 `json:"statusReason"`
-	ConnectionStateUpdatedTime string                 `json:"connectionStateUpdatedTime"`
-	StatusUpdatedTime          string                 `json:"statusUpdatedTime"`
-	LastActivityTime           string                 `json:"lastActivityTime"`
-	CloudToDeviceMessageCount  int                    `json:"cloudToDeviceMessageCount"`
-	Authentication             Authentication         `json:"authentication"`
-	Capabilities               map[string]interface{} `json:"capabilities"`
+	DeviceID                   string                 `json:"deviceId,omitempty"`
+	GenerationID               string                 `json:"generationId,omitempty"`
+	ETag                       string                 `json:"etag,omitempty"`
+	ConnectionState            string                 `json:"connectionState,omitempty"`
+	Status                     string                 `json:"status,omitempty"`
+	StatusReason               string                 `json:"statusReason,omitempty"`
+	ConnectionStateUpdatedTime string                 `json:"connectionStateUpdatedTime,omitempty"`
+	StatusUpdatedTime          string                 `json:"statusUpdatedTime,omitempty"`
+	LastActivityTime           string                 `json:"lastActivityTime,omitempty"`
+	CloudToDeviceMessageCount  int                    `json:"cloudToDeviceMessageCount,omitempty"`
+	Authentication             *Authentication        `json:"authentication,omitempty"`
+	Capabilities               map[string]interface{} `json:"capabilities,omitempty"`
 }
 
 type Authentication struct {
-	SymmetricKey   SymmetricKey   `json:"symmetricKey"`
-	X509Thumbprint X509Thumbprint `json:"x509Thumbprint"`
-	Type           string         `json:"type"`
+	SymmetricKey   *SymmetricKey   `json:"symmetricKey,omitempty"`
+	X509Thumbprint *X509Thumbprint `json:"x509Thumbprint,omitempty"`
+	Type           string          `json:"type,omitempty"`
 }
 
 type X509Thumbprint struct {
-	PrimaryThumbprint   string `json:"primaryThumbprint"`
-	SecondaryThumbprint string `json:"secondaryThumbprint"`
+	PrimaryThumbprint   string `json:"primaryThumbprint,omitempty"`
+	SecondaryThumbprint string `json:"secondaryThumbprint,omitempty"`
 }
 
 type SymmetricKey struct {
-	PrimaryKey   string `json:"primaryKey"`
-	SecondaryKey string `json:"secondaryKey"`
+	PrimaryKey   string `json:"primaryKey,omitempty"`
+	SecondaryKey string `json:"secondaryKey,omitempty"`
 }
 
 type Twin struct {
-	DeviceID                  string         `json:"deviceId"`
-	ETag                      string         `json:"etag"`
-	DeviceETag                string         `json:"deviceEtag"`
-	Status                    string         `json:"status"`
-	StatusReason              string         `json:"statusReason"`
-	StatusUpdateTime          string         `json:"statusUpdateTime"`
-	ConnectionState           string         `json:"connectionState"`
-	LastActivityTime          string         `json:"lastActivityTime"`
-	CloudToDeviceMessageCount int            `json:"cloudToDeviceMessageCount"`
-	AuthenticationType        string         `json:"authenticationType"`
-	X509Thumbprint            X509Thumbprint `json:"x509Thumbprint"`
-	Version                   int            `json:"version"`
+	DeviceID                  string          `json:"deviceId,omitempty"`
+	ETag                      string          `json:"etag,omitempty"`
+	DeviceETag                string          `json:"deviceEtag,omitempty"`
+	Status                    string          `json:"status,omitempty"`
+	StatusReason              string          `json:"statusReason,omitempty"`
+	StatusUpdateTime          string          `json:"statusUpdateTime,omitempty"`
+	ConnectionState           string          `json:"connectionState,omitempty"`
+	LastActivityTime          string          `json:"lastActivityTime,omitempty"`
+	CloudToDeviceMessageCount int             `json:"cloudToDeviceMessageCount,omitempty"`
+	AuthenticationType        string          `json:"authenticationType,omitempty"`
+	X509Thumbprint            *X509Thumbprint `json:"x509Thumbprint,omitempty"`
+	Version                   int             `json:"version,omitempty"`
 	// TODO: "tags": {
 	//        "$etag": "123",
 	//        "deploymentLocation": {
@@ -57,8 +57,8 @@ type Twin struct {
 	//            "floor": "1"
 	//        }
 	//    },
-	Properties   Properties             `json:"properties"`
-	Capabilities map[string]interface{} `json:"capabilities"`
+	Properties   *Properties            `json:"properties,omitempty"`
+	Capabilities map[string]interface{} `json:"capabilities,omitempty"`
 }
 
 type Properties struct {
@@ -67,7 +67,7 @@ type Properties struct {
 }
 
 type Stats struct {
-	DisabledDeviceCount int `json:"disabledDeviceCount"`
-	EnabledDeviceCount  int `json:"enabledDeviceCount"`
-	TotalDeviceCount    int `json:"totalDeviceCount"`
+	DisabledDeviceCount int `json:"disabledDeviceCount,omitempty"`
+	EnabledDeviceCount  int `json:"enabledDeviceCount,omitempty"`
+	TotalDeviceCount    int `json:"totalDeviceCount,omitempty"`
 }

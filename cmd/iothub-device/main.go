@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-
 	"sync"
 
 	"github.com/amenzhinsky/golang-iothub/cmd/internal"
@@ -65,17 +64,17 @@ func run() error {
 			"PAYLOAD [KEY VALUE]...",
 			"send a message to the cloud (D2C)",
 			wrap(send),
-			func(fs *flag.FlagSet) {
-				fs.StringVar(&midFlag, "mid", midFlag, "identifier for the message")
-				fs.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
+			func(f *flag.FlagSet) {
+				f.StringVar(&midFlag, "mid", midFlag, "identifier for the message")
+				f.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
 			},
 		},
 		"watch-events": {
 			"",
 			"subscribe to messages sent from the cloud (C2D)",
 			wrap(watchEvents),
-			func(fs *flag.FlagSet) {
-				fs.Var(formatFlag, "format", "output format <simple|json>")
+			func(f *flag.FlagSet) {
+				f.Var(formatFlag, "format", "output format <simple|json>")
 			},
 		},
 		"watch-twin": {
@@ -88,8 +87,8 @@ func run() error {
 			"NAME",
 			"handle the named direct method, reads responses from STDIN",
 			wrap(directMethod),
-			func(fs *flag.FlagSet) {
-				fs.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
+			func(f *flag.FlagSet) {
+				f.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
 			},
 		},
 		"twin-state": {
@@ -104,18 +103,18 @@ func run() error {
 			wrap(updateTwin),
 			nil,
 		},
-	}, os.Args, func(fs *flag.FlagSet) {
-		fs.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
-		fs.StringVar(&transportFlag, "transport", transportFlag, "transport to use <mqtt|amqp|http>")
-		fs.StringVar(&tlsCertFlag, "tls-cert", tlsCertFlag, "path to x509 cert file")
-		fs.StringVar(&tlsKeyFlag, "tls-key", tlsKeyFlag, "path to x509 key file")
-		fs.StringVar(&deviceIDFlag, "device-id", deviceIDFlag, "device id, required for x509")
-		fs.StringVar(&hostnameFlag, "hostname", hostnameFlag, "hostname to connect to, required for x509")
+	}, os.Args, func(f *flag.FlagSet) {
+		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
+		f.StringVar(&transportFlag, "transport", transportFlag, "transport to use <mqtt|amqp|http>")
+		f.StringVar(&tlsCertFlag, "tls-cert", tlsCertFlag, "path to x509 cert file")
+		f.StringVar(&tlsKeyFlag, "tls-key", tlsKeyFlag, "path to x509 key file")
+		f.StringVar(&deviceIDFlag, "device-id", deviceIDFlag, "device id, required for x509")
+		f.StringVar(&hostnameFlag, "hostname", hostnameFlag, "hostname to connect to, required for x509")
 	})
 }
 
 func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) internal.HandlerFunc {
-	return func(ctx context.Context, fs *flag.FlagSet) error {
+	return func(ctx context.Context, f *flag.FlagSet) error {
 		var opts []iotdevice.ClientOption
 		if tlsCertFlag != "" {
 			if tlsKeyFlag == "" {
@@ -141,11 +140,11 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 			opts = append(opts, iotdevice.WithConnectionString(cs))
 		}
 
-		f, ok := transports[transportFlag]
+		mk, ok := transports[transportFlag]
 		if !ok {
 			return fmt.Errorf("unknown transport %q", transportFlag)
 		}
-		t, err := f()
+		t, err := mk()
 		if err != nil {
 			return err
 		}
@@ -160,7 +159,7 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		if err := c.ConnectInBackground(ctx); err != nil {
 			return err
 		}
-		return fn(ctx, fs, c)
+		return fn(ctx, f, c)
 	}
 }
 
@@ -172,27 +171,27 @@ func mklog(prefix string) *log.Logger {
 	return log.New(os.Stderr, prefix, 0)
 }
 
-func send(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
-	if fs.NArg() < 1 {
+func send(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
+	if f.NArg() < 1 {
 		return internal.ErrInvalidUsage
 	}
 	var props map[string]string
-	if fs.NArg() > 1 {
+	if f.NArg() > 1 {
 		var err error
-		props, err = internal.ArgsToMap(fs.Args()[1:])
+		props, err = internal.ArgsToMap(f.Args()[1:])
 		if err != nil {
 			return err
 		}
 	}
-	return c.SendEvent(ctx, []byte(fs.Arg(0)),
+	return c.SendEvent(ctx, []byte(f.Arg(0)),
 		iotdevice.WithSendProperties(props),
 		iotdevice.WithSendMessageID(midFlag),
 		iotdevice.WithSendCorrelationID(cidFlag),
 	)
 }
 
-func watchEvents(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
-	if fs.NArg() != 0 {
+func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
+	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
 	return c.SubscribeEvents(ctx, func(msg *common.Message) {
@@ -211,8 +210,8 @@ func watchEvents(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) err
 	})
 }
 
-func watchTwin(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
-	if fs.NArg() != 0 {
+func watchTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
+	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
 
@@ -229,8 +228,8 @@ func watchTwin(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error
 	return <-errc
 }
 
-func directMethod(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
-	if fs.NArg() != 1 {
+func directMethod(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
+	if f.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
 
@@ -241,7 +240,7 @@ func directMethod(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) er
 	in := bufio.NewReader(os.Stdin)
 	mu := &sync.Mutex{}
 
-	if err := c.RegisterMethod(ctx, fs.Arg(0),
+	if err := c.RegisterMethod(ctx, f.Arg(0),
 		func(p map[string]interface{}) (map[string]interface{}, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -296,12 +295,12 @@ func twin(ctx context.Context, _ *flag.FlagSet, c *iotdevice.Client) error {
 	return nil
 }
 
-func updateTwin(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
-	if fs.NArg() == 0 {
+func updateTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
+	if f.NArg() == 0 {
 		return internal.ErrInvalidUsage
 	}
 
-	s, err := internal.ArgsToMap(fs.Args())
+	s, err := internal.ArgsToMap(f.Args())
 	if err != nil {
 		return err
 	}

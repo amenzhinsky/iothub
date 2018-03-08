@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -540,7 +539,7 @@ func (c *Client) UpdateTwin(
 	}
 	t := &Twin{}
 	if err := c.call(ctx, http.MethodPatch, "twins/"+url.PathEscape(deviceID), nil, &Twin{
-		Properties: Properties{
+		Properties: &Properties{
 			Desired: desired,
 		},
 	}, t); err != nil {
@@ -569,17 +568,17 @@ func (c *Client) call(
 	headers http.Header,
 	r, v interface{}, // request and response objects
 ) error {
-	var body io.Reader
+	var b []byte
 	if r != nil {
-		b, err := json.Marshal(r)
+		var err error
+		b, err = json.Marshal(r)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(b)
 	}
 
 	uri := "https://" + c.creds.HostName + "/" + path + "?api-version=" + common.APIVersion
-	req, err := http.NewRequest(method, uri, body)
+	req, err := http.NewRequest(method, uri, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
@@ -613,18 +612,30 @@ func (c *Client) call(
 	}
 	defer res.Body.Close()
 
-	b, err := ioutil.ReadAll(res.Body)
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return err
 	}
-	c.logf("%s %s %d: %s", method, uri, res.StatusCode, string(b))
+	c.debugf("%s %s %d:\n%s\n%s", method, uri, res.StatusCode, prefix(b, "> "), prefix(body, "< "))
 	if v == nil && res.StatusCode == http.StatusNoContent {
 		return nil
 	}
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("code = %d, desc = %q", res.StatusCode, string(b))
+		return fmt.Errorf("code = %d, desc = %q", res.StatusCode, string(body))
 	}
-	return json.Unmarshal(b, v)
+	return json.Unmarshal(body, v)
+}
+
+func prefix(s []byte, prefix string) string {
+	if len(s) == 0 {
+		return prefix + "[EMPTY]"
+	}
+	b := &bytes.Buffer{}
+	b.WriteString(prefix)
+	if err := json.Indent(b, s, prefix, "\t"); err != nil {
+		return string(s)
+	}
+	return b.String()
 }
 
 func (c *Client) logf(format string, v ...interface{}) {
