@@ -152,6 +152,7 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		c, err := iotdevice.NewClient(append(opts,
 			iotdevice.WithLogger(mklog("[iothub] ")),
 			iotdevice.WithTransport(t),
+			iotdevice.WithDebug(debugFlag),
 		)...)
 		if err != nil {
 			return err

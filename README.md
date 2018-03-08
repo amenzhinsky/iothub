@@ -104,8 +104,8 @@ To enable end-to-end testing in the `tests` directory you need to set the follow
 1. AMQP transport.
 1. AMQP-WS transport.
 1. Retry policies.
-1. Complete set of subcommands for iothub-device and iothub-service.
-1. Add missing iotservice functionality.
+1. Complete list of subcommands and api call for iothub-device and iothub-service.
 1. Grammar check.
-1. Automated testing.
+1. Automated testing, manual now.
 1. Simplify testing by using only one access policy to create required devices.
+1. Rework debugging logs.

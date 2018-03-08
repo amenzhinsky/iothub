@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -24,6 +25,9 @@ var (
 	formatFlag          = internal.NewChoiceFlag("simple", "json")
 	connectTimeoutFlag  = 0
 	responseTimeoutFlag = 30
+
+	// common flags
+	debugFlag = false
 )
 
 func main() {
@@ -50,41 +54,68 @@ func run() error {
 			},
 		},
 		"watch-events": {
-			"",
-			"subscribe to device messages (D2C)",
+			"", "subscribe to device messages (D2C)",
 			wrap(watchEvents),
 			func(fs *flag.FlagSet) {
 				fs.Var(formatFlag, "format", "output format <simple|json>")
 			},
 		},
 		"watch-feedback": {
-			"",
-			"monitor message feedback send by devices",
+			"", "monitor message feedback send by devices",
 			wrap(watchFeedback),
 			nil,
 		},
 		"call": {
-			"DEVICE METHOD PAYLOAD",
-			"call a direct method on the named device (DM)",
+			"DEVICE METHOD PAYLOAD", "call a direct method on the named device (DM)",
 			wrap(call),
 			func(fs *flag.FlagSet) {
 				fs.IntVar(&connectTimeoutFlag, "c", connectTimeoutFlag, "connect timeout in seconds")
 				fs.IntVar(&responseTimeoutFlag, "r", responseTimeoutFlag, "response timeout in seconds")
 			},
 		},
-		"update-twin": {
-			"DEVICE [KEY VALUE]...",
-			"update twin device",
-			wrap(updateTwin),
-			nil,
-		},
 		"device": {
-			"DEVICE",
-			"get device information",
+			"DEVICE", "get device information",
 			wrap(device),
 			nil,
 		},
-	}, os.Args, nil)
+		"devices": {
+			"", "list all available devices",
+			wrap(devices),
+			nil,
+		},
+		"create-device": {
+			"DEVICE", "creates a new device",
+			wrap(createDevice),
+			nil,
+		},
+		"update-device": {
+			"DEVICE", "updates the named device",
+			wrap(updateDevice),
+			nil,
+		},
+		"delete-device": {
+			"DEVICE", "delete the named device",
+			wrap(deleteDevice),
+			nil,
+		},
+		"twin": {
+			"", "inspect the named twin device",
+			wrap(twin),
+			nil,
+		},
+		"update-twin": {
+			"DEVICE [KEY VALUE]...", "update the named twin device",
+			wrap(updateTwin),
+			nil,
+		},
+		"stats": {
+			"", "get statistics about the devices",
+			wrap(stats),
+			nil,
+		},
+	}, os.Args, func(fs *flag.FlagSet) {
+		fs.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
+	})
 }
 
 func wrap(fn func(context.Context, *flag.FlagSet, *iotservice.Client) error) internal.HandlerFunc {
@@ -95,9 +126,16 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotservice.Client) error) int
 			return errors.New("SERVICE_CONNECTION_STRING is blank")
 		}
 
+		var logger *log.Logger
+		if debugFlag {
+			logger = log.New(os.Stderr, "[iotservice] ", 0)
+		}
+
 		c, err := iotservice.NewClient(
 			iotservice.WithLogger(nil), // disable logging
 			iotservice.WithConnectionString(cs),
+			iotservice.WithLogger(logger),
+			iotservice.WithDebug(debugFlag),
 		)
 		if err != nil {
 			return err
@@ -111,17 +149,77 @@ func device(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
 	if fs.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
-
 	d, err := c.GetDevice(ctx, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(d, "", "\t")
+	return outputJSON(d)
+}
+
+func devices(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
+	if fs.NArg() != 0 {
+		return internal.ErrInvalidUsage
+	}
+	d, err := c.ListDevices(ctx)
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(b))
-	return nil
+	return outputJSON(d)
+}
+
+func createDevice(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
+	if fs.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	d, err := c.CreateDevice(ctx, &iotservice.Device{
+		DeviceID: fs.Arg(0),
+	})
+	if err != nil {
+		return err
+	}
+	return outputJSON(d)
+}
+
+func updateDevice(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
+	if fs.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	d, err := c.UpdateDevice(ctx, &iotservice.Device{
+		DeviceID: fs.Arg(0),
+	})
+	if err != nil {
+		return err
+	}
+	return outputJSON(d)
+}
+
+func deleteDevice(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
+	if fs.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	return c.DeleteDevice(ctx, fs.Arg(0))
+}
+
+func stats(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
+	if fs.NArg() != 0 {
+		return internal.ErrInvalidUsage
+	}
+	s, err := c.Stats(ctx)
+	if err != nil {
+		return err
+	}
+	return outputJSON(s)
+}
+
+func twin(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
+	if fs.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	t, err := c.GetTwin(ctx, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	return outputJSON(t)
 }
 
 func updateTwin(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
@@ -159,19 +257,14 @@ func call(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
 	if err := json.Unmarshal([]byte(fs.Arg(2)), &v); err != nil {
 		return err
 	}
-	v, err := c.Call(ctx, fs.Arg(0), fs.Arg(1), v,
+	r, err := c.Call(ctx, fs.Arg(0), fs.Arg(1), v,
 		iotservice.WithCallConnectTimeout(connectTimeoutFlag),
 		iotservice.WithCallResponseTimeout(responseTimeoutFlag),
 	)
 	if err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(v, "", "\t")
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(b))
-	return nil
+	return outputJSON(r)
 }
 
 func send(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) error {
@@ -211,11 +304,9 @@ func watchEvents(ctx context.Context, _ *flag.FlagSet, c *iotservice.Client) err
 	return c.SubscribeEvents(ctx, func(msg *common.Message) {
 		switch formatFlag.String() {
 		case "json":
-			b, err := json.MarshalIndent(msg, "", "\t")
-			if err != nil {
+			if err := outputJSON(msg); err != nil {
 				panic(err)
 			}
-			fmt.Println(string(b))
 		case "simple":
 			fmt.Println(msg.Inspect())
 		default:
@@ -230,10 +321,17 @@ func watchFeedback(ctx context.Context, fs *flag.FlagSet, c *iotservice.Client) 
 		return err
 	}
 	return c.SubscribeFeedback(ctx, func(f *iotservice.Feedback) {
-		b, err := json.MarshalIndent(f, "", "  ")
-		if err != nil {
+		if err := outputJSON(f); err != nil {
 			panic(err)
 		}
-		fmt.Println(string(b))
 	})
+}
+
+func outputJSON(v interface{}) error {
+	b, err := json.MarshalIndent(v, "", "\t")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+	return nil
 }

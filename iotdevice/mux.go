@@ -14,11 +14,11 @@ import (
 type messageMux struct {
 	on bool
 	mu sync.RWMutex
-	s  []MessagesHandler
+	s  []MessageHandler
 }
 
 // add adds the given handler to the handlers list.
-func (m *messageMux) add(fn MessagesHandler) {
+func (m *messageMux) add(fn MessageHandler) {
 	if fn == nil {
 		panic("fn is nil")
 	}
@@ -28,7 +28,7 @@ func (m *messageMux) add(fn MessagesHandler) {
 }
 
 // remove removes all matched handlers from the handlers list.
-func (m *messageMux) remove(fn MessagesHandler) {
+func (m *messageMux) remove(fn MessageHandler) {
 	m.mu.RLock()
 	for i := len(m.s) - 1; i >= 0; i-- {
 		if ptreq(m.s[i], fn) {

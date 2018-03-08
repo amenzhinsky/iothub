@@ -169,8 +169,8 @@ type Client struct {
 	tr transport.Transport
 }
 
-// MessagesHandler handles cloud-to-device events.
-type MessagesHandler func(msg *common.Message)
+// MessageHandler handles cloud-to-device events.
+type MessageHandler func(msg *common.Message)
 
 // DirectMethodHandler handles direct method invocations.
 type DirectMethodHandler func(p map[string]interface{}) (map[string]interface{}, error)
@@ -280,7 +280,7 @@ func (c *Client) ConnectionError(ctx context.Context) error {
 }
 
 // SubscribeEvents subscribes to cloud-to-device events and blocks until ctx is canceled.
-func (c *Client) SubscribeEvents(ctx context.Context, fn MessagesHandler) error {
+func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
@@ -297,7 +297,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, fn MessagesHandler) error 
 	return nil
 }
 
-func (c *Client) UnsubscribeEvents(fn MessagesHandler) {
+func (c *Client) UnsubscribeEvents(fn MessageHandler) {
 	c.cmMux.remove(fn)
 }
 

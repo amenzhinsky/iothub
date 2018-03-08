@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -203,13 +204,13 @@ func (c *Client) isConnected() bool {
 
 var errNotConnected = errors.New("not connected")
 
-// SubscribeFunc handles incoming cloud-to-device events.
-type SubscribeFunc func(e *common.Message)
+// MessageHandler handles incoming cloud-to-device events.
+type MessageHandler func(e *common.Message)
 
 // SubscribeEvents subscribes to device events.
 // No need to call Connect first, because this method different connect
 // method that dials an eventhub instance first opposed to SendEvent func.
-func (c *Client) SubscribeEvents(ctx context.Context, f SubscribeFunc) error {
+func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
 	conn, group, err := c.connectToEventHub(ctx)
 	if err != nil {
 		return err
@@ -223,7 +224,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, f SubscribeFunc) error {
 	defer sess.Close()
 
 	return eventhub.SubscribePartitions(ctx, sess, group, "$Default", func(msg *amqp.Message) {
-		go f(commonamqp.FromAMQPMessage(msg))
+		go fn(commonamqp.FromAMQPMessage(msg))
 	})
 }
 
@@ -353,11 +354,11 @@ func (c *Client) SendEvent(
 	return send.Send(ctx, commonamqp.ToAMQPMessage(msg))
 }
 
-// FeedbackFunc handles message feedback.
-type FeedbackFunc func(f *Feedback)
+// FeedbackHandler handles message feedback.
+type FeedbackHandler func(f *Feedback)
 
 // SubscribeFeedback subscribes to feedback of messages that ack was requested.
-func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackFunc) error {
+func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) error {
 	if !c.isConnected() {
 		return errNotConnected
 	}
@@ -429,7 +430,7 @@ func (c *Client) Call(
 	methodName string,
 	payload map[string]interface{},
 	opts ...CallOption,
-) (map[string]interface{}, error) {
+) (*Result, error) {
 	if deviceID == "" {
 		return nil, errors.New("deviceID is empty")
 	}
@@ -454,169 +455,180 @@ func (c *Client) Call(
 		return nil, err
 	}
 
-	b, err = c.request(ctx, http.MethodPost, "twins/%s/methods", deviceID, b)
-	if err != nil {
+	r := &Result{}
+	if err = c.call(ctx, http.MethodPost, "twins/"+url.PathEscape(deviceID)+"/methods", nil, b, r); err != nil {
 		return nil, err
 	}
-
-	var ir struct {
-		Status  int
-		Payload map[string]interface{}
-	}
-	return ir.Payload, json.Unmarshal(b, &ir)
+	return r, nil
 }
 
-// https://github.com/Azure/azure-iot-sdk-node/blob/master/service/src/registry.ts
-// https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-device-twins
-type Twin struct {
-	DeviceID                  string         `json:"deviceId"`
-	ETag                      string         `json:"etag"`
-	DeviceETag                string         `json:"deviceEtag"`
-	Status                    string         `json:"status"`
-	StatusReason              string         `json:"statusReason"`
-	StatusUpdateTime          string         `json:"statusUpdateTime"`
-	ConnectionState           string         `json:"connectionState"`
-	LastActivityTime          string         `json:"lastActivityTime"`
-	CloudToDeviceMessageCount int            `json:"cloudToDeviceMessageCount"`
-	AuthenticationType        string         `json:"authenticationType"`
-	X509Thumbprint            X509Thumbprint `json:"x509Thumbprint"`
-	Version                   int            `json:"version"`
-	// TODO: "tags": {
-	//        "$etag": "123",
-	//        "deploymentLocation": {
-	//            "building": "43",
-	//            "floor": "1"
-	//        }
-	//    },
-	Properties   Properties             `json:"properties"`
-	Capabilities map[string]interface{} `json:"capabilities"`
-
-	RawJSON []byte `json:"-"`
-}
-
-type Properties struct {
-	Desired  map[string]interface{} `json:"desired,omitempty"`
-	Reported map[string]interface{} `json:"reported,omitempty"`
-}
-
-type X509Thumbprint struct {
-	PrimaryThumbprint   string `json:"primaryThumbprint"`
-	SecondaryThumbprint string `json:"secondaryThumbprint"`
-}
-
-type SymmetricKey struct {
-	PrimaryKey   string `json:"primaryKey"`
-	SecondaryKey string `json:"secondaryKey"`
-}
-
-type Device struct {
-	DeviceID                   string `json:"deviceId"`
-	GenerationID               string `json:"generationId"`
-	ETag                       string `json:"etag"`
-	ConnectionState            string `json:"connectionState"`
-	Status                     string `json:"status"`
-	StatusReason               string `json:"statusReason"`
-	ConnectionStateUpdatedTime string `json:"connectionStateUpdatedTime"`
-	StatusUpdatedTime          string `json:"statusUpdatedTime"`
-	LastActivityTime           string `json:"lastActivityTime"`
-	CloudToDeviceMessageCount  int    `json:"cloudToDeviceMessageCount"`
-	Authentication             struct {
-		X509Thumbprint X509Thumbprint `json:"x509Thumbprint"`
-		Type           string         `json:"type"`
-	} `json:"authentication"`
-	Capabilities map[string]interface{} `json:"capabilities"`
-
-	RawJSON []byte `json:"-"`
-}
-
-func (c *Client) UpdateTwin(
-	ctx context.Context,
-	deviceID string,
-	desired map[string]interface{},
-) (*Twin, error) {
-	b, err := json.Marshal(&Twin{
-		Properties: Properties{
-			Desired: desired,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	b, err = c.request(ctx, http.MethodPatch, "twins/%s", deviceID, b)
-	if err != nil {
-		return nil, err
-	}
-	res := &Twin{RawJSON: b}
-	if err := json.Unmarshal(b, res); err != nil {
-		return nil, err
-	}
-	return res, nil
-}
-
-// TODO:
-//   createDevice
-//   updateDevice
-//   listDevices
-//   deleteDevice
-//   add/delete/update devices (bulk)
-//   import/export devices from/to blob
-//   listJobs
-//   getJob
-//   cancelJob
-//   getTwin
-//   updateTwin
-//   registryStats
+// GetDevice retrieves the named device.
 func (c *Client) GetDevice(ctx context.Context, deviceID string) (*Device, error) {
-	b, err := c.request(ctx, http.MethodGet, "devices/%s", deviceID, nil)
-	if err != nil {
-		return nil, err
+	if deviceID == "" {
+		return nil, errors.New("deviceID is empty")
 	}
-	d := &Device{RawJSON: b}
-	if json.Unmarshal(b, d); err != nil {
+	d := &Device{}
+	if err := c.call(ctx, http.MethodGet, "devices/"+url.PathEscape(deviceID), nil, nil, d); err != nil {
 		return nil, err
 	}
 	return d, nil
 }
 
-func (c *Client) request(ctx context.Context, method, path, deviceID string, b []byte) ([]byte, error) {
-	r, err := http.NewRequest(method,
-		fmt.Sprintf("https://%s/"+path+"?api-version=%s",
-			c.creds.HostName, url.PathEscape(deviceID), common.APIVersion),
-		bytes.NewReader(b),
-	)
-	if err != nil {
+// CreateDevice creates a new device.
+func (c *Client) CreateDevice(ctx context.Context, device *Device) (*Device, error) {
+	if device == nil {
+		panic("device is nil")
+	}
+	if device.DeviceID == "" {
+		return nil, errors.New("deviceID is empty")
+	}
+	d := &Device{}
+	if err := c.call(ctx, http.MethodPut, "devices/"+url.PathEscape(device.DeviceID), nil, device, d); err != nil {
 		return nil, err
+	}
+	return d, nil
+}
+
+// UpdateDevice updates the named device.
+func (c *Client) UpdateDevice(ctx context.Context, device *Device) (*Device, error) {
+	if device == nil {
+		panic("device is nil")
+	}
+	if device.DeviceID == "" {
+		return nil, errors.New("deviceID is empty")
+	}
+	d := &Device{}
+	if err := c.call(ctx, http.MethodPut, "devices/"+url.PathEscape(device.DeviceID), http.Header{
+		"If-Match": {"*"},
+	}, device, d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+func (c *Client) DeleteDevice(ctx context.Context, deviceID string) error {
+	if deviceID == "" {
+		return errors.New("deviceID is empty")
+	}
+	return c.call(ctx, http.MethodDelete, "devices/"+url.PathEscape(deviceID), http.Header{
+		"If-Match": {"*"},
+	}, nil, nil)
+}
+
+// ListDevices lists all registered devices.
+func (c *Client) ListDevices(ctx context.Context) ([]*Device, error) {
+	l := make([]*Device, 0)
+	if err := c.call(ctx, http.MethodGet, "devices", nil, nil, &l); err != nil {
+		return nil, err
+	}
+	return l, nil
+}
+
+// GetTwin retrieves the named twin device from the registry.
+func (c *Client) GetTwin(ctx context.Context, deviceID string) (*Twin, error) {
+	t := &Twin{}
+	if err := c.call(ctx, http.MethodGet, "twins/"+url.PathEscape(deviceID), nil, nil, t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// UpdateTwin updates the named twin desired properties.
+func (c *Client) UpdateTwin(
+	ctx context.Context,
+	deviceID string,
+	desired map[string]interface{},
+) (*Twin, error) {
+	if deviceID == "" {
+		return nil, errors.New("deviceID is empty")
+	}
+	t := &Twin{}
+	if err := c.call(ctx, http.MethodPatch, "twins/"+url.PathEscape(deviceID), nil, &Twin{
+		Properties: Properties{
+			Desired: desired,
+		},
+	}, t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// Stats retrieves the device registry statistic.
+func (c *Client) Stats(ctx context.Context) (*Stats, error) {
+	v := &Stats{}
+	if err := c.call(ctx, http.MethodGet, "statistics/devices", nil, nil, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+// TODO: add the following registry operations:
+//   add/delete/update devices (bulk)
+//   import/export devices from/to blob
+//   get/list/cancel jobs
+//
+// see: https://github.com/Azure/azure-iot-sdk-node/blob/master/service/src/registry.ts
+func (c *Client) call(
+	ctx context.Context, method, path string,
+	headers http.Header,
+	r, v interface{}, // request and response objects
+) error {
+	var body io.Reader
+	if r != nil {
+		b, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(b)
+	}
+
+	uri := "https://" + c.creds.HostName + "/" + path + "?api-version=" + common.APIVersion
+	req, err := http.NewRequest(method, uri, body)
+	if err != nil {
+		return err
 	}
 
 	// TODO: cache sas
 	sas, err := c.creds.SAS(c.creds.HostName, time.Hour)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	rid, err := eventhub.RandString()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	r.Header.Set("Content-Type", "application/json; charset=utf-8")
-	r.Header.Set("Authorization", sas)
-	r.Header.Set("Request-Id", rid)
-	r.WithContext(ctx)
+	req.WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Authorization", sas)
+	req.Header.Set("Request-Id", rid)
+	if headers != nil {
+		for k, v := range headers {
+			if len(v) != 1 {
+				panic("only one value per key allowed")
+			}
+			req.Header.Set(k, v[0])
+		}
+	}
 
-	res, err := c.http.Do(r)
+	res, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer res.Body.Close()
 
-	b, err = ioutil.ReadAll(res.Body)
+	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	c.logf("%s %s %d: %s", method, uri, res.StatusCode, string(b))
+	if v == nil && res.StatusCode == http.StatusNoContent {
+		return nil
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("code = %d, body = %q", res.StatusCode, string(b))
+		return fmt.Errorf("code = %d, desc = %q", res.StatusCode, string(b))
 	}
-	return b, nil
+	return json.Unmarshal(b, v)
 }
 
 func (c *Client) logf(format string, v ...interface{}) {
