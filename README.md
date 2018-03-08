@@ -1,6 +1,6 @@
 # golang-iothub
 
-This repository provides both SDK and command line tools for both device-to-cloud (`iotdevice`) and cloud-to-device (`iotservice`) functionality.
+This repository provides SDK for golang and command line tools for both device-to-cloud (`iotdevice`) and cloud-to-device (`iotservice`) functionality.
 
 This project in the active development state and if you decided to use it anyway, please vendor the source code.
 
