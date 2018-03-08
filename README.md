@@ -108,3 +108,4 @@ To enable end-to-end testing in the `tests` directory you need to set the follow
 1. Add missing iotservice functionality.
 1. Grammar check.
 1. Automated testing.
+1. Simplify testing by using only one access policy to create required devices.

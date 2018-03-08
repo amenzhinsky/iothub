@@ -10,11 +10,12 @@ import (
 	"log"
 	"os"
 
+	"sync"
+
 	"github.com/amenzhinsky/golang-iothub/cmd/internal"
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/amqp"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
 )
 
@@ -23,7 +24,8 @@ var transports = map[string]func() (transport.Transport, error){
 		return mqtt.New(mqtt.WithLogger(mklog("[mqtt]   "))), nil
 	},
 	"amqp": func() (transport.Transport, error) {
-		return amqp.New(amqp.WithLogger(mklog("[amqp]   "))), nil
+		//return amqp.New(amqp.WithLogger(mklog("[amqp]   "))), nil
+		return nil, errors.New("not implemented")
 	},
 	"http": func() (transport.Transport, error) {
 		return nil, errors.New("not implemented")
@@ -62,7 +64,7 @@ func run() error {
 		"send": {
 			"PAYLOAD [KEY VALUE]...",
 			"send a message to the cloud (D2C)",
-			conn(send),
+			wrap(send),
 			func(fs *flag.FlagSet) {
 				fs.StringVar(&midFlag, "mid", midFlag, "identifier for the message")
 				fs.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
@@ -71,7 +73,7 @@ func run() error {
 		"watch-events": {
 			"",
 			"subscribe to messages sent from the cloud (C2D)",
-			conn(watchEvents),
+			wrap(watchEvents),
 			func(fs *flag.FlagSet) {
 				fs.Var(formatFlag, "format", "output format <simple|json>")
 			},
@@ -79,13 +81,13 @@ func run() error {
 		"watch-twin": {
 			"",
 			"subscribe to desired twin state updates",
-			conn(watchTwin),
+			wrap(watchTwin),
 			nil,
 		},
 		"direct-method": {
 			"NAME",
 			"handle the named direct method, reads responses from STDIN",
-			conn(directMethod),
+			wrap(directMethod),
 			func(fs *flag.FlagSet) {
 				fs.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
 			},
@@ -93,13 +95,13 @@ func run() error {
 		"twin-state": {
 			"",
 			"retrieve desired and reported states",
-			conn(twin),
+			wrap(twin),
 			nil,
 		},
 		"update-twin": {
 			"[KEY VALUE]...",
 			"updates the twin device deported state, null means delete the key",
-			conn(updateTwin),
+			wrap(updateTwin),
 			nil,
 		},
 	}, os.Args, func(fs *flag.FlagSet) {
@@ -112,7 +114,7 @@ func run() error {
 	})
 }
 
-func conn(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) internal.HandlerFunc {
+func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) internal.HandlerFunc {
 	return func(ctx context.Context, fs *flag.FlagSet) error {
 		var opts []iotdevice.ClientOption
 		if tlsCertFlag != "" {
@@ -212,13 +214,18 @@ func watchTwin(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error
 	if fs.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-	return c.SubscribeTwinStateChanges(ctx, func(s iotdevice.TwinState) {
+
+	errc := make(chan error, 1)
+	if err := c.SubscribeTwinUpdates(ctx, func(s iotdevice.TwinState) {
 		b, err := json.MarshalIndent(s, "", "  ")
 		if err != nil {
-			panic(err)
+			errc <- err
 		}
 		fmt.Println(string(b))
-	})
+	}); err != nil {
+		return err
+	}
+	return <-errc
 }
 
 func directMethod(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) error {
@@ -226,38 +233,43 @@ func directMethod(ctx context.Context, fs *flag.FlagSet, c *iotdevice.Client) er
 		return internal.ErrInvalidUsage
 	}
 
-	// if an error occurs during a method invocation,
-	// immediately return and display the error
+	// if an error occurs during the method invocation,
+	// immediately return and display the error.
 	errc := make(chan error, 1)
 
-	go func() {
-		read := bufio.NewReader(os.Stdin)
-		errc <- c.HandleMethod(ctx, fs.Arg(0),
-			func(p map[string]interface{}) (map[string]interface{}, error) {
-				b, err := json.Marshal(p)
-				if err != nil {
-					errc <- err
-					return nil, err
-				}
-				if quiteFlag {
-					fmt.Println(string(b))
-				} else {
-					fmt.Printf("Payload: %s\n", string(b))
-					fmt.Printf("Enter json response: ")
-				}
-				b, _, err = read.ReadLine()
-				if err != nil {
-					errc <- err
-					return nil, err
-				}
-				var v map[string]interface{}
-				if err = json.Unmarshal(b, &v); err != nil {
-					errc <- errors.New("unable to parse json input")
-					return nil, err
-				}
-				return v, nil
-			})
-	}()
+	in := bufio.NewReader(os.Stdin)
+	mu := &sync.Mutex{}
+
+	if err := c.RegisterMethod(ctx, fs.Arg(0),
+		func(p map[string]interface{}) (map[string]interface{}, error) {
+			mu.Lock()
+			defer mu.Unlock()
+
+			b, err := json.Marshal(p)
+			if err != nil {
+				errc <- err
+				return nil, err
+			}
+			if quiteFlag {
+				fmt.Println(string(b))
+			} else {
+				fmt.Printf("Payload: %s\n", string(b))
+				fmt.Printf("Enter json response: ")
+			}
+			b, _, err = in.ReadLine()
+			if err != nil {
+				errc <- err
+				return nil, err
+			}
+			var v map[string]interface{}
+			if err = json.Unmarshal(b, &v); err != nil {
+				errc <- errors.New("unable to parse json input")
+				return nil, err
+			}
+			return v, nil
+		}); err != nil {
+		return err
+	}
 
 	return <-errc
 }

@@ -33,7 +33,6 @@ func New(opts ...TransportOption) transport.Transport {
 	tr := &Transport{
 		c2ds: make(chan *transport.Message, 10),
 		dmis: make(chan *transport.Invocation, 10),
-		tscs: make(chan *transport.TwinState, 10),
 		done: make(chan struct{}),
 	}
 	for _, opt := range opts {
@@ -52,7 +51,6 @@ type Transport struct {
 
 	c2ds chan *transport.Message
 	dmis chan *transport.Invocation
-	tscs chan *transport.TwinState
 	done chan struct{}
 
 	d2cSend *amqp.Sender
@@ -72,11 +70,11 @@ func (tr *Transport) Connect(
 	tlsConfig *tls.Config,
 	deviceID string,
 	auth transport.AuthFunc,
-) (chan *transport.Message, chan *transport.Invocation, chan *transport.TwinState, error) {
+) (chan *transport.Message, chan *transport.Invocation, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
-		return nil, nil, nil, errors.New("already connected")
+		return nil, nil, errors.New("already connected")
 	}
 	tr.did = deviceID
 
@@ -88,13 +86,13 @@ func (tr *Transport) Connect(
 		// SAS uri for amqp has to be: hostname + "/devices/" + deviceID
 		host, token, err = auth(ctx, "/devices/"+deviceID)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 	}
 
 	tr.conn, err = eventhub.Dial(host, tlsConfig)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	defer func() {
 		if err != nil {
@@ -106,7 +104,7 @@ func (tr *Transport) Connect(
 	// put token in the background when sas authentication is on
 	if token != "" {
 		if err := tr.conn.PutTokenContinuously(ctx, host+"/devices/"+deviceID, token, tr.done); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -125,7 +123,7 @@ func (tr *Transport) Connect(
 		amqp.LinkProperty(propClientVersion, clientVersion),
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	dmiRecv, err := tr.conn.Sess().NewReceiver(
@@ -136,7 +134,7 @@ func (tr *Transport) Connect(
 		amqp.LinkCredit(100),
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	go func() {
@@ -160,7 +158,7 @@ func (tr *Transport) Connect(
 		amqp.LinkSourceAddress("/devices/" + deviceID + "/messages/devicebound"),
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	go func() {
@@ -186,54 +184,58 @@ func (tr *Transport) Connect(
 		}
 	}()
 
-	twinSend, twinRecv, err := tr.twinSendRecv()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	go func() {
-		defer close(tr.tscs)
-
-		if err = twinSend.Send(ctx, tr.twinRequest(
-			"PUT",
-			"/notifications/twin/properties/desired",
-			nil,
-		)); err != nil {
-			tr.tscs <- &transport.TwinState{Err: err}
-			return
-		}
-
-		msg, err := twinRecv.Receive(ctx)
-		if err != nil {
-			tr.tscs <- &transport.TwinState{Err: err}
-			return
-		}
-
-		if err = checkTwinResponse(msg); err != nil {
-			tr.tscs <- &transport.TwinState{Err: err}
-			return
-		}
-
-		for {
-			msg, err := twinRecv.Receive(ctx)
-			if err != nil {
-				tr.tscs <- &transport.TwinState{Err: err}
-				return
-			}
-			tr.tscs <- &transport.TwinState{
-				Payload: msg.Data[0],
-			}
-		}
-	}()
-
-	return tr.c2ds, tr.dmis, tr.tscs, nil
+	return tr.c2ds, tr.dmis, nil
 }
 
 func (tr *Transport) IsNetworkError(err error) bool {
 	return false
 }
 
-func (tr *Transport) Send(ctx context.Context, deviceID string, msg *common.Message) error {
+func (tr *Transport) SubscribeTwinUpdates(ctx context.Context, fn func([]byte)) error {
+	//twinSend, twinRecv, err := tr.twinSendRecv()
+	//if err != nil {
+	//	return nil, nil, err
+	//}
+	//
+	//go func() {
+	//	defer close(tr.tscs)
+	//
+	//	if err = twinSend.Send(ctx, tr.twinRequest(
+	//		"PUT",
+	//		"/notifications/twin/properties/desired",
+	//		nil,
+	//	)); err != nil {
+	//		tr.tscs <- &transport.TwinState{Err: err}
+	//		return
+	//	}
+	//
+	//	msg, err := twinRecv.Receive(ctx)
+	//	if err != nil {
+	//		tr.tscs <- &transport.TwinState{Err: err}
+	//		return
+	//	}
+	//
+	//	if err = checkTwinResponse(msg); err != nil {
+	//		tr.tscs <- &transport.TwinState{Err: err}
+	//		return
+	//	}
+	//
+	//	for {
+	//		msg, err := twinRecv.Receive(ctx)
+	//		if err != nil {
+	//			tr.tscs <- &transport.TwinState{Err: err}
+	//			return
+	//		}
+	//		tr.tscs <- &transport.TwinState{
+	//			Payload: msg.Data[0],
+	//		}
+	//	}
+	//}()
+
+	return errors.New("not implemented")
+}
+
+func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
 	var err error
 	if err = tr.checkConnection(); err != nil {
 		return err

@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -453,17 +454,142 @@ func (c *Client) Call(
 		return nil, err
 	}
 
-	r, err := http.NewRequest(
-		http.MethodPost,
-		fmt.Sprintf("https://%s/twins/%s/methods?api-version=%s",
-			c.creds.HostName, deviceID, common.APIVersion),
+	b, err = c.request(ctx, http.MethodPost, "twins/%s/methods", deviceID, b)
+	if err != nil {
+		return nil, err
+	}
+
+	var ir struct {
+		Status  int
+		Payload map[string]interface{}
+	}
+	return ir.Payload, json.Unmarshal(b, &ir)
+}
+
+// https://github.com/Azure/azure-iot-sdk-node/blob/master/service/src/registry.ts
+// https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-device-twins
+type Twin struct {
+	DeviceID                  string         `json:"deviceId"`
+	ETag                      string         `json:"etag"`
+	DeviceETag                string         `json:"deviceEtag"`
+	Status                    string         `json:"status"`
+	StatusReason              string         `json:"statusReason"`
+	StatusUpdateTime          string         `json:"statusUpdateTime"`
+	ConnectionState           string         `json:"connectionState"`
+	LastActivityTime          string         `json:"lastActivityTime"`
+	CloudToDeviceMessageCount int            `json:"cloudToDeviceMessageCount"`
+	AuthenticationType        string         `json:"authenticationType"`
+	X509Thumbprint            X509Thumbprint `json:"x509Thumbprint"`
+	Version                   int            `json:"version"`
+	// TODO: "tags": {
+	//        "$etag": "123",
+	//        "deploymentLocation": {
+	//            "building": "43",
+	//            "floor": "1"
+	//        }
+	//    },
+	Properties   Properties             `json:"properties"`
+	Capabilities map[string]interface{} `json:"capabilities"`
+
+	RawJSON []byte `json:"-"`
+}
+
+type Properties struct {
+	Desired  map[string]interface{} `json:"desired,omitempty"`
+	Reported map[string]interface{} `json:"reported,omitempty"`
+}
+
+type X509Thumbprint struct {
+	PrimaryThumbprint   string `json:"primaryThumbprint"`
+	SecondaryThumbprint string `json:"secondaryThumbprint"`
+}
+
+type SymmetricKey struct {
+	PrimaryKey   string `json:"primaryKey"`
+	SecondaryKey string `json:"secondaryKey"`
+}
+
+type Device struct {
+	DeviceID                   string `json:"deviceId"`
+	GenerationID               string `json:"generationId"`
+	ETag                       string `json:"etag"`
+	ConnectionState            string `json:"connectionState"`
+	Status                     string `json:"status"`
+	StatusReason               string `json:"statusReason"`
+	ConnectionStateUpdatedTime string `json:"connectionStateUpdatedTime"`
+	StatusUpdatedTime          string `json:"statusUpdatedTime"`
+	LastActivityTime           string `json:"lastActivityTime"`
+	CloudToDeviceMessageCount  int    `json:"cloudToDeviceMessageCount"`
+	Authentication             struct {
+		X509Thumbprint X509Thumbprint `json:"x509Thumbprint"`
+		Type           string         `json:"type"`
+	} `json:"authentication"`
+	Capabilities map[string]interface{} `json:"capabilities"`
+
+	RawJSON []byte `json:"-"`
+}
+
+func (c *Client) UpdateTwin(
+	ctx context.Context,
+	deviceID string,
+	desired map[string]interface{},
+) (*Twin, error) {
+	b, err := json.Marshal(&Twin{
+		Properties: Properties{
+			Desired: desired,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	b, err = c.request(ctx, http.MethodPatch, "twins/%s", deviceID, b)
+	if err != nil {
+		return nil, err
+	}
+	res := &Twin{RawJSON: b}
+	if err := json.Unmarshal(b, res); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// TODO:
+//   createDevice
+//   updateDevice
+//   listDevices
+//   deleteDevice
+//   add/delete/update devices (bulk)
+//   import/export devices from/to blob
+//   listJobs
+//   getJob
+//   cancelJob
+//   getTwin
+//   updateTwin
+//   registryStats
+func (c *Client) GetDevice(ctx context.Context, deviceID string) (*Device, error) {
+	b, err := c.request(ctx, http.MethodGet, "devices/%s", deviceID, nil)
+	if err != nil {
+		return nil, err
+	}
+	d := &Device{RawJSON: b}
+	if json.Unmarshal(b, d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+func (c *Client) request(ctx context.Context, method, path, deviceID string, b []byte) ([]byte, error) {
+	r, err := http.NewRequest(method,
+		fmt.Sprintf("https://%s/"+path+"?api-version=%s",
+			c.creds.HostName, url.PathEscape(deviceID), common.APIVersion),
 		bytes.NewReader(b),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	auth, err := c.creds.SAS(c.creds.HostName, time.Hour)
+	// TODO: cache sas
+	sas, err := c.creds.SAS(c.creds.HostName, time.Hour)
 	if err != nil {
 		return nil, err
 	}
@@ -472,8 +598,8 @@ func (c *Client) Call(
 		return nil, err
 	}
 
-	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("Authorization", auth)
+	r.Header.Set("Content-Type", "application/json; charset=utf-8")
+	r.Header.Set("Authorization", sas)
 	r.Header.Set("Request-Id", rid)
 	r.WithContext(ctx)
 
@@ -490,12 +616,7 @@ func (c *Client) Call(
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("code = %d, body = %q", res.StatusCode, string(b))
 	}
-
-	var ir struct {
-		Status  int
-		Payload map[string]interface{}
-	}
-	return ir.Payload, json.Unmarshal(b, &ir)
+	return b, nil
 }
 
 func (c *Client) logf(format string, v ...interface{}) {

@@ -35,13 +35,7 @@ func WithLogger(l *log.Logger) TransportOption {
 // New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 func New(opts ...TransportOption) transport.Transport {
-	tr := &Transport{
-		done: make(chan struct{}),
-		c2ds: make(chan *transport.Message, 10),
-		dmis: make(chan *transport.Invocation, 10),
-		tscs: make(chan *transport.TwinState, 10),
-		resp: make(map[string]chan *resp),
-	}
+	tr := &Transport{done: make(chan struct{})}
 	for _, opt := range opts {
 		opt(tr)
 	}
@@ -52,13 +46,11 @@ type Transport struct {
 	mu   sync.RWMutex
 	conn mqtt.Client
 
-	rid uint32
+	did string // device id
+	rid uint32 // request id, incremented each request
 
-	done chan struct{}              // closed when Close() invoked
-	c2ds chan *transport.Message    // cloud-to-device messages
-	dmis chan *transport.Invocation // direct method invocations
-	tscs chan *transport.TwinState  // desired state changes
-	resp map[string]chan *resp      // responses from iothub
+	done chan struct{}         // closed when the transport is closed
+	resp map[string]chan *resp // responses from iothub
 
 	logger *log.Logger
 }
@@ -74,11 +66,11 @@ func (tr *Transport) Connect(
 	tlsConfig *tls.Config,
 	deviceID string,
 	auth transport.AuthFunc,
-) (chan *transport.Message, chan *transport.Invocation, chan *transport.TwinState, error) {
+) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
-		return nil, nil, nil, errors.New("already connected")
+		return errors.New("already connected")
 	}
 
 	host := tlsConfig.ServerName
@@ -87,7 +79,7 @@ func (tr *Transport) Connect(
 		var err error
 		host, pass, err = auth(ctx, "")
 		if err != nil {
-			return nil, nil, nil, err
+			return err
 		}
 	}
 
@@ -107,24 +99,37 @@ func (tr *Transport) Connect(
 
 	c := mqtt.NewClient(o)
 	if t := c.Connect(); t.Wait() && t.Error() != nil {
-		return nil, nil, nil, t.Error()
+		return t.Error()
 	}
 
-	// TODO: on-demand subscriptions
-	for topic, handler := range map[string]mqtt.MessageHandler{
-		"devices/" + deviceID + "/messages/devicebound/#": tr.cloudToDeviceHandler,
-		"$iothub/methods/POST/#":                          tr.directMethodHandler,
-		"$iothub/twin/res/#":                              tr.twinResponseHandler,
-		"$iothub/twin/PATCH/properties/desired/#":         tr.desiredStateChangesHandler,
-	} {
-		if t := c.Subscribe(topic, defaultQoS, handler); t.Wait() && t.Error() != nil {
-			c.Disconnect(250)
-			return nil, nil, nil, t.Error()
-		}
-	}
-
+	tr.did = deviceID
 	tr.conn = c
-	return tr.c2ds, tr.dmis, tr.tscs, nil
+	return nil
+}
+
+func (tr *Transport) SubscribeEvents(ctx context.Context, mux transport.MessageDispatcher) error {
+	t := tr.conn.Subscribe(
+		"devices/"+tr.did+"/messages/devicebound/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+			msg, err := parseEventMessage(m)
+			if err != nil {
+				tr.logf("parse error: %s", err)
+				return
+			}
+			mux.Dispatch(msg)
+		},
+	)
+	t.Wait()
+	return t.Error()
+}
+
+func (tr *Transport) SubscribeTwinUpdates(ctx context.Context, mux transport.TwinStateDispatcher) error {
+	t := tr.conn.Subscribe(
+		"$iothub/twin/PATCH/properties/desired/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+			mux.Dispatch(m.Payload())
+		},
+	)
+	t.Wait()
+	return t.Error()
 }
 
 // mqtt library wraps errors with fmt.Errorf.
@@ -133,18 +138,6 @@ func (tr *Transport) IsNetworkError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "Network Error")
-}
-
-func (tr *Transport) cloudToDeviceHandler(_ mqtt.Client, msg mqtt.Message) {
-	m, err := parseEventMessage(msg)
-	if err != nil {
-		tr.c2ds <- &transport.Message{Err: err}
-		return
-	}
-	select {
-	case tr.c2ds <- &transport.Message{Msg: m}:
-	case <-tr.done:
-	}
 }
 
 func parseEventMessage(m mqtt.Message) (*common.Message, error) {
@@ -207,24 +200,27 @@ func parseCloudToDeviceTopic(s string) (map[string]string, error) {
 	return p, nil
 }
 
-func (tr *Transport) directMethodHandler(_ mqtt.Client, m mqtt.Message) {
-	method, rid, err := parseDirectMethodTopic(m.Topic())
-	if err != nil {
-		tr.dmis <- &transport.Invocation{Err: err}
-		return
-	}
-	select {
-	case tr.dmis <- &transport.Invocation{
-		RID:     rid,
-		Method:  method,
-		Payload: m.Payload(),
-	}:
-	case <-tr.done:
-	}
-}
-
-func (tr *Transport) RespondDirectMethod(ctx context.Context, rid string, code int, b []byte) error {
-	return tr.send(ctx, fmt.Sprintf("$iothub/methods/res/%d/?$rid=%s", code, rid), b)
+func (tr *Transport) RegisterDirectMethods(ctx context.Context, mux transport.MethodDispatcher) error {
+	t := tr.conn.Subscribe(
+		"$iothub/methods/POST/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+			method, rid, err := parseDirectMethodTopic(m.Topic())
+			if err != nil {
+				tr.logf("parse error: %s", err)
+				return
+			}
+			rc, b, err := mux.Dispatch(method, m.Payload())
+			if err != nil {
+				tr.logf("dispatch error: %s", err)
+				return
+			}
+			if err = tr.send(ctx, fmt.Sprintf("$iothub/methods/res/%d/?$rid=%s", rc, rid), b); err != nil {
+				tr.logf("method response error: %s", err)
+				return
+			}
+		},
+	)
+	t.Wait()
+	return t.Error()
 }
 
 // returns method name and rid
@@ -238,31 +234,6 @@ func parseDirectMethodTopic(s string) (string, string, error) {
 		return "", "", errors.New("malformed direct-method topic name")
 	}
 	return ss[3], ss[4][6:], nil
-}
-
-func (tr *Transport) twinResponseHandler(_ mqtt.Client, m mqtt.Message) {
-	rc, rid, ver, err := parseTwinPropsTopic(m.Topic())
-	if err != nil {
-		tr.c2ds <- &transport.Message{Err: err}
-		return
-	}
-
-	tr.mu.RLock()
-	defer tr.mu.RUnlock()
-	for r, rch := range tr.resp {
-		if r != rid {
-			continue
-		}
-		select {
-		case rch <- &resp{code: rc, ver: ver, body: m.Payload()}:
-		default:
-			// we cannot allow blocking here,
-			// buffered channel should solve it.
-			panic("response sending blocked")
-		}
-		return
-	}
-	tr.logf("unknown rid: %q", rid)
 }
 
 type resp struct {
@@ -288,6 +259,9 @@ func (tr *Transport) UpdateTwinProperties(ctx context.Context, b []byte) (int, e
 }
 
 func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp, error) {
+	if err := tr.enableTwinResponses(); err != nil {
+		return nil, err
+	}
 	rid := fmt.Sprintf("%d", atomic.AddUint32(&tr.rid, 1)) // increment rid counter
 	dst := fmt.Sprintf(topic, rid)
 	rch := make(chan *resp, 1)
@@ -317,6 +291,49 @@ func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp
 	}
 }
 
+func (tr *Transport) enableTwinResponses() error {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	// already subscribed
+	if tr.resp != nil {
+		return nil
+	}
+
+	if t := tr.conn.Subscribe(
+		"$iothub/twin/res/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+			rc, rid, ver, err := parseTwinPropsTopic(m.Topic())
+			if err != nil {
+				// TODO
+				fmt.Printf("error: %s", err)
+				return
+			}
+
+			tr.mu.RLock()
+			defer tr.mu.RUnlock()
+			for r, rch := range tr.resp {
+				if r != rid {
+					continue
+				}
+				select {
+				case rch <- &resp{code: rc, ver: ver, body: m.Payload()}:
+				default:
+					// we cannot allow blocking here,
+					// buffered channel should solve it.
+					panic("response sending blocked")
+				}
+				return
+			}
+			tr.logf("unknown rid: %q", rid)
+		},
+	); t.Wait() && t.Error() != nil {
+		return t.Error()
+	}
+
+	tr.resp = make(map[string]chan *resp)
+	return nil
+}
+
 var twinResponseRegexp = regexp.MustCompile(
 	`\$iothub/twin/res/(\d+)/\?\$rid=(\w+)(?:&\$version=(\d+))?`,
 )
@@ -336,16 +353,7 @@ func parseTwinPropsTopic(s string) (int, string, int, error) {
 	return rc, ss[2], ver, nil
 }
 
-func (tr *Transport) desiredStateChangesHandler(_ mqtt.Client, m mqtt.Message) {
-	select {
-	case tr.tscs <- &transport.TwinState{
-		Payload: m.Payload(),
-	}:
-	case <-tr.done:
-	}
-}
-
-func (tr *Transport) Send(ctx context.Context, deviceID string, m *common.Message) error {
+func (tr *Transport) Send(ctx context.Context, m *common.Message) error {
 	// this is just copying functionality from the nodejs sdk, but
 	// seems like adding meta attributes does nothing or in some cases,
 	// e.g. when $.exp is set the cloud just disconnects.
@@ -368,7 +376,7 @@ func (tr *Transport) Send(ctx context.Context, deviceID string, m *common.Messag
 	for k, v := range m.Properties {
 		u[k] = []string{v}
 	}
-	return tr.send(ctx, "devices/"+deviceID+"/messages/events/"+u.Encode(), m.Payload)
+	return tr.send(ctx, "devices/"+tr.did+"/messages/events/"+u.Encode(), m.Payload)
 }
 
 func (tr *Transport) send(ctx context.Context, topic string, b []byte) error {
@@ -377,7 +385,6 @@ func (tr *Transport) send(ctx context.Context, topic string, b []byte) error {
 	if tr.conn == nil {
 		return errors.New("not connected")
 	}
-
 	t := tr.conn.Publish(topic, defaultQoS, false, b)
 	t.Wait()
 	return t.Error()
@@ -392,13 +399,9 @@ func (tr *Transport) Close() error {
 	default:
 		close(tr.done)
 	}
-	if tr.conn == nil {
-		return errors.New("not connected")
-	}
-	if tr.conn.IsConnected() {
+	if tr.conn != nil && tr.conn.IsConnected() {
 		tr.conn.Disconnect(250)
 		tr.logf("disconnected")
 	}
-	tr.conn = nil
 	return nil
 }

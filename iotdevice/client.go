@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -96,7 +95,7 @@ func WithAuthFunc(fn transport.AuthFunc) ClientOption {
 // WithHostname changes hostname required when using x509 authentication.
 func WithHostname(hostname string) ClientOption {
 	return func(c *Client) error {
-		c.tls.ServerName = hostname
+		c.tlsConfig.ServerName = hostname
 		return nil
 	}
 }
@@ -104,7 +103,7 @@ func WithHostname(hostname string) ClientOption {
 // WithX509FromCert uses the given TLS certificate for x509 authentication.
 func WithX509FromCert(crt *tls.Certificate) ClientOption {
 	return func(c *Client) error {
-		c.tls.Certificates = []tls.Certificate{*crt}
+		c.tlsConfig.Certificates = []tls.Certificate{*crt}
 		return nil
 	}
 }
@@ -116,7 +115,7 @@ func WithX509FromFile(certFile, keyFile string) ClientOption {
 		if err != nil {
 			return err
 		}
-		c.tls.Certificates = []tls.Certificate{crt}
+		c.tlsConfig.Certificates = []tls.Certificate{crt}
 		return nil
 	}
 }
@@ -127,13 +126,10 @@ var errNotConnected = errors.New("not connected")
 // NewClient returns new iothub client.
 func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		tls:     &tls.Config{RootCAs: common.RootCAs()},
-		subs:    make([]chan *transport.Message, 0, 10),
-		changes: make([]chan *transport.TwinState, 0, 10),
-		methods: make(map[string]chan *transport.Invocation, 10),
-		done:    make(chan struct{}),
-		debug:   os.Getenv("DEBUG") != "",
-		connErr: errNotConnected,
+		tlsConfig: &tls.Config{RootCAs: common.RootCAs()},
+		done:      make(chan struct{}),
+		debug:     os.Getenv("DEBUG") != "",
+		connErr:   errNotConnected,
 	}
 
 	for _, opt := range opts {
@@ -152,38 +148,35 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 
 // Client is iothub device client.
 type Client struct {
-	deviceID string
-	authFunc transport.AuthFunc
-	tls      *tls.Config
+	deviceID  string
+	authFunc  transport.AuthFunc
+	tlsConfig *tls.Config
 
 	logger *log.Logger
 	debug  bool
 
-	mu      sync.RWMutex
-	subs    []chan *transport.Message
-	changes []chan *transport.TwinState
-	methods map[string]chan *transport.Invocation
-	done    chan struct{}
+	mu   sync.RWMutex
+	done chan struct{}
 
 	connCh  chan struct{}
 	connMu  sync.RWMutex
 	connErr error // nil means successfully connected
 
-	c2ds chan *transport.Message    // cloud-to-device events
-	dmis chan *transport.Invocation // direct method invocations
-	tscs chan *transport.TwinState  // twin state changes
+	cmMux messageMux
+	dmMux methodMux
+	tuMux stateMux
 
 	tr transport.Transport
 }
 
-// CloudToDeviceFunc handles cloud-to-device events.
-type CloudToDeviceFunc func(msg *common.Message)
+// MessagesHandler handles cloud-to-device events.
+type MessagesHandler func(msg *common.Message)
 
-// DirectMethodFunc handles direct method invocations.
-type DirectMethodFunc func(p map[string]interface{}) (map[string]interface{}, error)
+// DirectMethodHandler handles direct method invocations.
+type DirectMethodHandler func(p map[string]interface{}) (map[string]interface{}, error)
 
-// DesiredStateChangeFunc handler desired state changes.
-type DesiredStateChangeFunc func(TwinState)
+// TwinUpdateHandler handles twin desired state changes.
+type TwinUpdateHandler func(state TwinState)
 
 // DeviceID returns iothub device id.
 func (c *Client) DeviceID() string {
@@ -216,18 +209,15 @@ func (c *Client) Connect(ctx context.Context, opts ...ConnOption) error {
 	}
 
 Retry:
-	c.c2ds, c.dmis, c.tscs, c.connErr = c.tr.Connect(
+	c.connErr = c.tr.Connect(
 		ctx,
-		c.tls.Clone(),
+		c.tlsConfig.Clone(),
 		c.deviceID,
 		transport.AuthFunc(c.authFunc),
 	)
 	if conn.ignoreNetErrors && c.tr.IsNetworkError(c.connErr) {
 		c.logf("couldn't connect, reconnecting")
 		goto Retry
-	}
-	if c.connErr == nil {
-		go c.recv()
 	}
 	return c.connErr
 }
@@ -289,226 +279,61 @@ func (c *Client) ConnectionError(ctx context.Context) error {
 	}
 }
 
-func (c *Client) recv() {
-Loop:
-	for {
-		select {
-		case ev, ok := <-c.c2ds:
-			if !ok {
-				break Loop
-			}
-			if ev.Err != nil {
-				c.logf("cloud-to-device error: %s", ev.Err)
-				continue
-			} else {
-				if c.debug {
-					c.logf("cloud-to-device received\n%s", ev.Msg.Inspect())
-				} else {
-					c.logf("cloud-to-device received %s", ev.Msg.MessageID)
-				}
-			}
-
-			c.mu.RLock()
-			for _, w := range c.subs {
-				select {
-				case w <- ev:
-				default:
-					panic("c2d jam")
-				}
-			}
-			c.mu.RUnlock()
-		case call, ok := <-c.dmis:
-			if !ok {
-				break Loop
-			}
-
-			if call.Err != nil {
-				c.logf("direct-method error: %s", call.Err)
-				continue
-			}
-
-			c.mu.RLock()
-			w, ok := c.methods[call.Method]
-			if !ok {
-				c.logf("direct-method %q is missing", call.Method)
-			}
-			c.mu.RUnlock()
-
-			select {
-			case w <- call:
-			default:
-				panic("dmi jam")
-			}
-		case s, ok := <-c.tscs:
-			if !ok {
-				break Loop
-			}
-
-			// TODO: double json parsing here and all by all subscribers
-			var v TwinState
-			if err := json.Unmarshal(s.Payload, &v); err != nil {
-				s.Err = err
-			}
-
-			if s.Err == nil {
-				if c.debug {
-					c.logf("twin-desired-state ver=%d:\n--------------\n%s\n--------------",
-						v.Version(),
-						s.Payload,
-					)
-					continue
-				} else {
-					c.logf("twin-desired-state ver=%d", v.Version())
-				}
-			} else {
-				c.logf("twin-desired-state error: %s", s.Err)
-			}
-
-			c.mu.RLock()
-			for _, w := range c.changes {
-				select {
-				case w <- s:
-				default:
-					panic("dsc jam")
-				}
-			}
-			c.mu.RUnlock()
-		case <-c.done:
-			return
-		}
-	}
-
-	// if the loop exits we consider client closed
-	// TODO: add error describing what causes it
-	c.mu.Lock()
-	close(c.done)
-	c.mu.Unlock()
-}
-
 // SubscribeEvents subscribes to cloud-to-device events and blocks until ctx is canceled.
-func (c *Client) SubscribeEvents(ctx context.Context, f CloudToDeviceFunc) error {
+func (c *Client) SubscribeEvents(ctx context.Context, fn MessagesHandler) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
-
-	w := make(chan *transport.Message, 1)
 	c.mu.Lock()
-	c.subs = append(c.subs, w)
-	c.mu.Unlock()
-	defer func() {
-		c.mu.Lock()
-		for i, x := range c.subs {
-			if w == x {
-				c.subs = append(c.subs[:i], c.subs[i+1:]...)
-				break
-			}
+	if !c.cmMux.on {
+		if err := c.tr.SubscribeEvents(ctx, &c.cmMux); err != nil {
+			c.mu.Unlock()
+			return err
 		}
-		c.mu.Unlock()
-	}()
-
-	for {
-		select {
-		case m := <-w:
-			if m.Err != nil {
-				return m.Err
-			}
-			go f(m.Msg)
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-c.done:
-			return ErrClosed
-		}
+		c.cmMux.on = true
 	}
+	c.mu.Unlock()
+	c.cmMux.add(fn)
+	return nil
 }
 
-// HandleMethod registers the given direct method handler,
+func (c *Client) UnsubscribeEvents(fn MessagesHandler) {
+	c.cmMux.remove(fn)
+}
+
+// RegisterMethod registers the given direct method handler,
 // returns an error when method is already registered.
 // If f returns an error and empty body its error string
 // used as value of the error attribute in the result json.
-// Blocks until context is done and deregisters it.
-func (c *Client) HandleMethod(ctx context.Context, name string, handler DirectMethodFunc) error {
+func (c *Client) RegisterMethod(ctx context.Context, name string, fn DirectMethodHandler) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
 	if name == "" {
 		return errors.New("name cannot be blank")
 	}
-	if handler == nil {
-		panic("handler is nil")
-	}
 
-	w := make(chan *transport.Invocation, 1)
+	// register methods router just once
 	c.mu.Lock()
-	if _, ok := c.methods[name]; ok {
-		return fmt.Errorf("method %q is already registered", name)
-		c.mu.Unlock()
-	}
-	c.methods[name] = w
-	c.mu.Unlock()
-	c.logf("direct-method %q registered", name)
-	defer func() {
-		c.mu.Lock()
-		delete(c.methods, name)
-		c.mu.Unlock()
-		c.logf("direct-method %q deregistered", name)
-	}()
-
-	for {
-		select {
-		case call := <-w:
-			if call.Err != nil {
-				return call.Err
-			}
-			var v map[string]interface{}
-			if err := json.Unmarshal(call.Payload, &v); err != nil {
-				return err
-			}
-			if c.debug {
-				c.logf("direct-method %q rid=%s\n---- body ----\n%s\n--------------",
-					call.Method, call.RID, call.Payload,
-				)
-			} else {
-				c.logf("direct-method %q rid=%s len=%d", call.Method, call.RID, len(call.Payload))
-			}
-			go c.handleDirectMethod(handler, v, call.Method, call.RID)
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-c.done:
-			return ErrClosed
+	if !c.dmMux.on {
+		if err := c.tr.RegisterDirectMethods(ctx, &c.dmMux); err != nil {
+			c.mu.Unlock()
+			return err
 		}
+		c.dmMux.on = true
 	}
+	c.mu.Unlock()
+
+	return c.dmMux.handle(name, fn)
+}
+
+// UnregisterMethod unregisters the named method.
+func (c *Client) UnregisterMethod(name string) {
+	c.dmMux.remove(name)
 }
 
 // ErrClosed returned by methods when client closes.
 var ErrClosed = errors.New("iotdevice: closed")
-
-func (c *Client) handleDirectMethod(f DirectMethodFunc, p map[string]interface{}, name, rid string) {
-	code := 200
-	body, err := f(p)
-	if err != nil {
-		code = 500
-		if body == nil {
-			body = map[string]interface{}{
-				"error": err.Error(),
-			}
-		}
-	}
-	b, err := json.Marshal(body)
-	if err != nil {
-		c.logf("error marshalling payload: %s", err)
-		return
-	}
-	if c.debug {
-		c.logf("direct-method %q rid=%s code=%d\n---- body ----\n%s\n--------------",
-			name, rid, code, body,
-		)
-	} else {
-		c.logf("direct-method %q rid=%s code=%d len=%d", name, rid, code, len(b))
-	}
-	if err = c.tr.RespondDirectMethod(context.Background(), rid, code, b); err != nil {
-		c.logf("error sending direct-method %q result: %s", name, err)
-	}
-}
 
 // TwinState is both desired and reported twin device's state.
 type TwinState map[string]interface{}
@@ -554,41 +379,26 @@ func (c *Client) UpdateTwinState(ctx context.Context, s TwinState) (int, error) 
 	return c.tr.UpdateTwinProperties(ctx, b)
 }
 
-// SubscribeDesiredStateChanges watches twin device desired state changes until ctx canceled.
-func (c *Client) SubscribeTwinStateChanges(ctx context.Context, f DesiredStateChangeFunc) error {
+// SubscribeDesiredStateChanges registers fn as a desired state changes handler.
+func (c *Client) SubscribeTwinUpdates(ctx context.Context, fn TwinUpdateHandler) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
-
-	w := make(chan *transport.TwinState, 1)
 	c.mu.Lock()
-	c.changes = append(c.changes, w)
-	c.mu.Unlock()
-	defer func() {
-		c.mu.Lock()
-		for i, x := range c.changes {
-			if w == x {
-				c.changes = append(c.changes[:i], c.changes[i+1:]...)
-				break
-			}
+	if !c.tuMux.on {
+		if err := c.tr.SubscribeTwinUpdates(ctx, &c.tuMux); err != nil {
+			c.mu.Unlock()
+			return err
 		}
-		c.mu.Unlock()
-	}()
-
-	for {
-		select {
-		case s := <-w:
-			var v TwinState
-			if err := json.Unmarshal(s.Payload, &v); err != nil {
-				return err
-			}
-			go f(v)
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-c.done:
-			return ErrClosed
-		}
+		c.tuMux.on = true
 	}
+	c.mu.Unlock()
+	c.tuMux.add(fn)
+	return nil
+}
+
+func (c *Client) UnsubscribeTwinUpdates(fn TwinUpdateHandler) {
+	c.tuMux.remove(fn)
 }
 
 // SendOption is a send event options.
@@ -673,7 +483,7 @@ func (c *Client) SendEvent(ctx context.Context, payload []byte, opts ...SendOpti
 			return err
 		}
 	}
-	if err := c.tr.Send(ctx, c.deviceID, msg); err != nil {
+	if err := c.tr.Send(ctx, msg); err != nil {
 		return err
 	}
 	if c.debug {

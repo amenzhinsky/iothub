@@ -14,7 +14,6 @@ import (
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/amqp"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
 	"github.com/amenzhinsky/golang-iothub/iotservice"
 )
@@ -39,7 +38,7 @@ func TestEnd2End(t *testing.T) {
 
 	for name, tr := range map[string]func() transport.Transport{
 		"mqtt": func() transport.Transport { return mqtt.New() },
-		"amqp": func() transport.Transport { return amqp.New() },
+		//"amqp": func() transport.Transport { return amqp.New() },
 	} {
 		t.Run(name, func(t *testing.T) {
 			for auth, suite := range map[string]struct {
@@ -68,7 +67,8 @@ func TestEnd2End(t *testing.T) {
 						"DeviceToCloud": testDeviceToCloud,
 						"CloudToDevice": testCloudToDevice,
 						"DirectMethod":  testDirectMethod,
-						"TwinDevice":    testTwinDevice,
+						"UpdateTwin":    testUpdateTwin,
+						"SubscribeTwin": testSubscribeTwin,
 					} {
 						if suite.test != "*" && suite.test != name {
 							continue
@@ -190,13 +190,12 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	msgc := make(chan *common.Message, 1)
 	fbsc := make(chan *iotservice.Feedback, 1)
 	errc := make(chan error, 3)
-	go func() {
-		if err := dc.SubscribeEvents(ctx, func(msg *common.Message) {
-			msgc <- msg
-		}); err != nil {
-			errc <- err
-		}
-	}()
+
+	if err := dc.SubscribeEvents(ctx, func(msg *common.Message) {
+		msgc <- msg
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	// track send message ids
 	mu := sync.Mutex{}
@@ -287,7 +286,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 }
 
-func testTwinDevice(t *testing.T, opts ...iotdevice.ClientOption) {
+func testUpdateTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -315,6 +314,40 @@ func testTwinDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 }
 
+func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	dc, sc := mkDeviceAndService(t, ctx, opts...)
+	defer closeDeviceService(t, dc, sc)
+
+	sch := make(chan iotdevice.TwinState)
+	if err := dc.SubscribeTwinUpdates(ctx, func(s iotdevice.TwinState) {
+		sch <- s
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	twin, err := sc.UpdateTwin(ctx, dc.DeviceID(), map[string]interface{}{
+		"test-prop": time.Now().UnixNano() / 1000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case state := <-sch:
+		if state["$version"] != twin.Properties.Desired["$version"] {
+			t.Errorf("version = %d, want %d", state["$version"], twin.Properties.Desired["$version"])
+		}
+		if state["test-prop"] != twin.Properties.Desired["test-prop"] {
+			t.Errorf("test-prop = %q, want %q", state["test-prop"], twin.Properties.Desired["test-prop"])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("SubscribeTwinUpdates twin timed out")
+	}
+}
+
 func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -322,18 +355,16 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 	dc, sc := mkDeviceAndService(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
-	errc := make(chan error, 2)
-	go func() {
-		if err := dc.HandleMethod(ctx, "sum", func(v map[string]interface{}) (map[string]interface{}, error) {
-			return map[string]interface{}{
-				"result": v["a"].(float64) + v["b"].(float64),
-			}, nil
-		}); err != nil {
-			errc <- err
-		}
-	}()
+	if err := dc.RegisterMethod(ctx, "sum", func(v map[string]interface{}) (map[string]interface{}, error) {
+		return map[string]interface{}{
+			"result": v["a"].(float64) + v["b"].(float64),
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	resc := make(chan map[string]interface{}, 1)
+	errc := make(chan error, 2)
 	go func() {
 		v, err := sc.Call(ctx, dc.DeviceID(), "sum", map[string]interface{}{
 			"a": 1.5,

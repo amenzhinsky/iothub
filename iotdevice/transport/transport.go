@@ -9,36 +9,27 @@ import (
 
 // Transport interface.
 type Transport interface {
-	Connect(
-		ctx context.Context, tlsConfig *tls.Config, deviceID string, auth AuthFunc,
-	) (c2ds chan *Message, dmis chan *Invocation, tscs chan *TwinState, err error)
-
+	Connect(ctx context.Context, tlsConfig *tls.Config, deviceID string, auth AuthFunc) error
 	IsNetworkError(err error) bool
-	Send(ctx context.Context, deviceID string, msg *common.Message) error
-	RespondDirectMethod(ctx context.Context, rid string, code int, payload []byte) error
+	Send(ctx context.Context, msg *common.Message) error
+	RegisterDirectMethods(ctx context.Context, mux MethodDispatcher) error
+	SubscribeEvents(ctx context.Context, mux MessageDispatcher) error
+	SubscribeTwinUpdates(ctx context.Context, mux TwinStateDispatcher) error
 	RetrieveTwinProperties(ctx context.Context) (payload []byte, err error)
 	UpdateTwinProperties(ctx context.Context, payload []byte) (version int, err error)
 	Close() error
 }
 
-// Message can be both D2C or C2D event message.
-type Message struct {
-	Msg *common.Message
-	Err error
+type MethodDispatcher interface {
+	Dispatch(methodName string, b []byte) (rc int, data []byte, err error)
 }
 
-// TwinState is desired twin state update message.
-type TwinState struct {
-	Payload []byte
-	Err     error
+type MessageDispatcher interface {
+	Dispatch(msg *common.Message)
 }
 
-// Invocation is a direct method invocation message.
-type Invocation struct {
-	RID     string
-	Method  string
-	Payload []byte
-	Err     error
+type TwinStateDispatcher interface {
+	Dispatch(b []byte)
 }
 
 // AuthFunc is used to obtain hostname and sas token before authenticating.
