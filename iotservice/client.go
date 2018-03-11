@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,8 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"encoding/base64"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/common/commonamqp"
@@ -577,10 +576,64 @@ func (c *Client) Stats(ctx context.Context) (*Stats, error) {
 	return v, nil
 }
 
+func (c *Client) ImportDevicesFromBlob(
+	ctx context.Context,
+	inputBlobURL string,
+	outputBlobURL string,
+) (map[string]interface{}, error) {
+	var v map[string]interface{}
+	if err := c.call(ctx, http.MethodGet, "jobs/create", nil, map[string]interface{}{
+		"type":                   "import",
+		"inputBlobContainerUri":  inputBlobURL,
+		"outputBlobContainerUri": outputBlobURL,
+	}, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func (c *Client) ExportDevicesToBlob(
+	ctx context.Context,
+	outputBlobURL string,
+	excludeKeys bool,
+) (map[string]interface{}, error) {
+	var v map[string]interface{}
+	if err := c.call(ctx, http.MethodGet, "jobs/create", nil, map[string]interface{}{
+		"type": "export",
+		"outputBlobContainerUri": outputBlobURL,
+		"excludeKeysInExport":    excludeKeys,
+	}, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func (c *Client) ListJobs(ctx context.Context) ([]map[string]interface{}, error) {
+	var v []map[string]interface{}
+	if err := c.call(ctx, http.MethodGet, "jobs", nil, nil, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func (c *Client) GetJob(ctx context.Context, jobID string) (map[string]interface{}, error) {
+	var v map[string]interface{}
+	if err := c.call(ctx, http.MethodGet, "jobs/"+url.PathEscape(jobID), nil, nil, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func (c *Client) CancelJob(ctx context.Context, jobID string) (map[string]interface{}, error) {
+	var v map[string]interface{}
+	if err := c.call(ctx, http.MethodDelete, "jobs/"+url.PathEscape(jobID), nil, nil, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
 // TODO: add the following registry operations:
 //   add/delete/update devices (bulk)
-//   import/export devices from/to blob
-//   get/list/cancel jobs
 //
 // see: https://github.com/Azure/azure-iot-sdk-node/blob/master/service/src/registry.ts
 func (c *Client) call(
@@ -603,7 +656,6 @@ func (c *Client) call(
 		return err
 	}
 
-	// TODO: cache sas
 	sas, err := c.creds.SAS(c.creds.HostName, time.Hour)
 	if err != nil {
 		return err

@@ -133,6 +133,21 @@ func run() error {
 			wrap(stats),
 			nil,
 		},
+		"jobs": {
+			"", "list the last import/export jobs",
+			wrap(jobs),
+			nil,
+		},
+		"job": {
+			"ID", "get the status of a import/export job",
+			wrap(job),
+			nil,
+		},
+		"cancel-job": {
+			"", "cancel a import/export job",
+			wrap(cancelJob),
+			nil,
+		},
 	}, os.Args, func(f *flag.FlagSet) {
 		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
 	})
@@ -347,9 +362,6 @@ func send(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 			return err
 		}
 	}
-	if err = c.Connect(ctx); err != nil {
-		return err
-	}
 	expiryTime := time.Time{}
 	if expFlag != 0 {
 		expiryTime = time.Now().Add(expFlag)
@@ -384,14 +396,47 @@ func watchEvents(ctx context.Context, _ *flag.FlagSet, c *iotservice.Client) err
 
 // TODO: different formats
 func watchFeedback(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
-	if err := c.Connect(context.Background()); err != nil {
-		return err
+	if f.NArg() != 0 {
+		return internal.ErrInvalidUsage
 	}
 	return c.SubscribeFeedback(ctx, func(f *iotservice.Feedback) {
 		if err := outputJSON(f); err != nil {
 			panic(err)
 		}
 	})
+}
+
+func jobs(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 0 {
+		return internal.ErrInvalidUsage
+	}
+	v, err := c.ListJobs(ctx)
+	if err != nil {
+		return err
+	}
+	return outputJSON(v)
+}
+
+func job(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	v, err := c.GetJob(ctx, f.Arg(0))
+	if err != nil {
+		return err
+	}
+	return outputJSON(v)
+}
+
+func cancelJob(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	v, err := c.CancelJob(ctx, f.Arg(0))
+	if err != nil {
+		return err
+	}
+	return outputJSON(v)
 }
 
 func outputJSON(v interface{}) error {
