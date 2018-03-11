@@ -282,7 +282,7 @@ func WithSendAck(typ string) SendOption {
 // WithSentExpiryTime sets message expiration time.
 func WithSentExpiryTime(t time.Time) SendOption {
 	return func(msg *common.Message) error {
-		msg.ExpiryTime = t
+		msg.ExpiryTime = &t
 		return nil
 	}
 }
@@ -331,7 +331,7 @@ func (c *Client) SendEvent(
 	}
 
 	msg := &common.Message{
-		Payload: payload,
+		Payload: string(payload),
 		To:      "/devices/" + deviceID + "/messages/devicebound",
 	}
 	for _, opt := range opts {
@@ -399,20 +399,44 @@ func (c Client) HostName() string {
 	return c.creds.HostName
 }
 
-// ConnectionStringForDevice builds up a connection string for the given device.
-func (c *Client) ConnectionStringForDevice(device *Device, secondary bool) (string, error) {
+// DeviceConnectionString builds up a connection string for the given device.
+func (c *Client) DeviceConnectionString(device *Device, secondary bool) (string, error) {
 	if device == nil {
 		panic("device is nil")
 	}
-	if device.Authentication == nil || device.Authentication.SymmetricKey == nil {
-		return "", errors.New("invalid device")
-	}
-	key := device.Authentication.SymmetricKey.PrimaryKey
-	if secondary {
-		key = device.Authentication.SymmetricKey.SecondaryKey
+	key, err := deviceKey(device, secondary)
+	if err != nil {
+		return "", err
 	}
 	return fmt.Sprintf("HostName=%s;DeviceId=%s;SharedAccessKey=%s",
 		c.creds.HostName, device.DeviceID, key), nil
+}
+
+// DeviceSAS generates a SAS token for the named device.
+func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary bool) (string, error) {
+	if device == nil {
+		panic("device is nil")
+	}
+	key, err := deviceKey(device, secondary)
+	if err != nil {
+		return "", err
+	}
+	creds := common.Credentials{
+		HostName:        c.creds.HostName,
+		DeviceID:        device.DeviceID,
+		SharedAccessKey: key,
+	}
+	return creds.SAS(creds.HostName, duration)
+}
+
+func deviceKey(device *Device, secondary bool) (string, error) {
+	if device.Authentication == nil || device.Authentication.SymmetricKey == nil {
+		return "", errors.New("symmetric key is not available")
+	}
+	if secondary {
+		return device.Authentication.SymmetricKey.SecondaryKey, nil
+	}
+	return device.Authentication.SymmetricKey.PrimaryKey, nil
 }
 
 type call struct {

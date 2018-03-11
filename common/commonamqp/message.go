@@ -11,7 +11,7 @@ import (
 // FromAMQPMessage converts a amqp.Message into common.Message.
 func FromAMQPMessage(msg *amqp.Message) *common.Message {
 	m := &common.Message{
-		Payload:    msg.Data[0],
+		Payload:    string(msg.Data[0]),
 		Properties: make(map[string]string, len(msg.ApplicationProperties)+5),
 	}
 	if msg.Properties != nil {
@@ -19,12 +19,13 @@ func FromAMQPMessage(msg *amqp.Message) *common.Message {
 		m.MessageID = msg.Properties.MessageID.(string)
 		m.CorrelationID = msg.Properties.CorrelationID.(string)
 		m.To = msg.Properties.To
-		m.ExpiryTime = msg.Properties.AbsoluteExpiryTime
+		m.ExpiryTime = &msg.Properties.AbsoluteExpiryTime
 	}
 	for k, v := range msg.Annotations {
 		switch k {
 		case "iothub-enqueuedtime":
-			m.EnqueuedTime = v.(time.Time)
+			t, _ := v.(time.Time)
+			m.EnqueuedTime = &t
 		case "iothub-connection-device-id":
 			m.ConnectionDeviceID = v.(string)
 		case "iothub-connection-auth-generation-id":
@@ -50,13 +51,13 @@ func ToAMQPMessage(msg *common.Message) *amqp.Message {
 		props[k] = v
 	}
 	return &amqp.Message{
-		Data: [][]byte{msg.Payload},
+		Data: [][]byte{[]byte(msg.Payload)},
 		Properties: &amqp.MessageProperties{
 			To:                 msg.To,
 			UserID:             []byte(msg.UserID),
 			MessageID:          msg.MessageID,
 			CorrelationID:      msg.CorrelationID,
-			AbsoluteExpiryTime: msg.ExpiryTime,
+			AbsoluteExpiryTime: *msg.ExpiryTime,
 		},
 		ApplicationProperties: props,
 	}

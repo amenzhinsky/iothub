@@ -35,7 +35,6 @@ var (
 	debugFlag     = false
 	quiteFlag     = false
 	transportFlag = "mqtt"
-	formatFlag    = internal.NewChoiceFlag("simple", "json")
 	midFlag       = ""
 	cidFlag       = ""
 
@@ -73,9 +72,7 @@ func run() error {
 			"",
 			"subscribe to messages sent from the cloud (C2D)",
 			wrap(watchEvents),
-			func(f *flag.FlagSet) {
-				f.Var(formatFlag, "format", "output format <simple|json>")
-			},
+			nil,
 		},
 		"watch-twin": {
 			"",
@@ -194,20 +191,15 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) erro
 	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-	return c.SubscribeEvents(ctx, func(msg *common.Message) {
-		switch formatFlag.String() {
-		case "json":
-			b, err := json.Marshal(msg)
-			if err != nil {
-				panic(err)
-			}
-			fmt.Println(string(b))
-		case "simple":
-			fmt.Println(msg.Inspect())
-		default:
-			panic("unknown output format")
+	errc := make(chan error, 1)
+	if err := c.SubscribeEvents(ctx, func(msg *common.Message) {
+		if err := internal.OutputJSON(msg); err != nil {
+			errc <- err
 		}
-	})
+	}); err != nil {
+		return err
+	}
+	return <-errc
 }
 
 func watchTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
@@ -217,11 +209,9 @@ func watchTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error 
 
 	errc := make(chan error, 1)
 	if err := c.SubscribeTwinUpdates(ctx, func(s iotdevice.TwinState) {
-		b, err := json.MarshalIndent(s, "", "  ")
-		if err != nil {
+		if err := internal.OutputJSON(s); err != nil {
 			errc <- err
 		}
-		fmt.Println(string(b))
 	}); err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -110,4 +111,18 @@ func ArgsToMap(s []string) (map[string]string, error) {
 		m[s[i]] = s[i+1]
 	}
 	return m, nil
+}
+
+func OutputLine(format string) error {
+	_, err := fmt.Println(format)
+	return err
+}
+
+func OutputJSON(v interface{}) error {
+	b, err := json.MarshalIndent(v, "", "\t")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+	return nil
 }

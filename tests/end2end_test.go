@@ -38,7 +38,7 @@ func TestEnd2End(t *testing.T) {
 				PrimaryKey:   pk,
 				SecondaryKey: pk,
 			},
-			Type: "sas",
+			Type: iotservice.AuthSAS,
 		},
 	})
 
@@ -50,14 +50,14 @@ func TestEnd2End(t *testing.T) {
 				PrimaryThumbprint:   "443ABB6DEA8F93D5987D31D2607BE2931217752C",
 				SecondaryThumbprint: "443ABB6DEA8F93D5987D31D2607BE2931217752C",
 			},
-			Type: "selfSigned",
+			Type: iotservice.AuthSelfSigned,
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	dcs, err := sc.ConnectionStringForDevice(sasDevice, false)
+	dcs, err := sc.DeviceConnectionString(sasDevice, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 		if msg.EnqueuedTime.IsZero() {
 			t.Error("EnqueuedTime is zero")
 		}
-		if !bytes.Equal(msg.Payload, payload) {
+		if !bytes.Equal([]byte(msg.Payload), payload) {
 			t.Errorf("Payload = %v, want %v", msg.Payload, payload)
 		}
 		testProperties(t, msg.Properties, props)
@@ -294,8 +294,8 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 		if msg.UserID != uid {
 			t.Errorf("UserID = %q, want %q", msg.UserID, uid)
 		}
-		if !bytes.Equal(msg.Payload, payload) {
-			t.Errorf("Payload = %v, want %v", msg.Payload, payload)
+		if !bytes.Equal([]byte(msg.Payload), payload) {
+			t.Errorf("Payload = %v, want %v", []byte(msg.Payload), payload)
 		}
 		if msg.MessageID == "" {
 			t.Error("MessageID is empty")

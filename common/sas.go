@@ -81,10 +81,9 @@ func (c *Credentials) SAS(uri string, duration time.Duration) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("SharedAccessSignature sr=%s&sig=%s&se=%s&skn=%s",
-		sr,
-		url.QueryEscape(base64.StdEncoding.EncodeToString(h.Sum(nil))),
-		url.QueryEscape(strconv.FormatInt(se, 10)),
-		url.QueryEscape(c.SharedAccessKeyName),
-	), nil
+	return "SharedAccessSignature " +
+		"sr=" + sr +
+		"&sig=" + url.QueryEscape(base64.StdEncoding.EncodeToString(h.Sum(nil))) +
+		"&se=" + url.QueryEscape(strconv.FormatInt(se, 10)) +
+		"&skn=" + url.QueryEscape(c.SharedAccessKeyName), nil
 }

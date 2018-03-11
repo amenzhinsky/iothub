@@ -24,8 +24,22 @@ type Device struct {
 type Authentication struct {
 	SymmetricKey   *SymmetricKey   `json:"symmetricKey,omitempty"`
 	X509Thumbprint *X509Thumbprint `json:"x509Thumbprint,omitempty"`
-	Type           string          `json:"type,omitempty"`
+	Type           AuthType        `json:"type,omitempty"`
 }
+
+// AuthType device authentication type.
+type AuthType string
+
+const (
+	// AuthSAS uses symmetric keys to sign requests.
+	AuthSAS = "sas"
+
+	// AuthSelfSigned self signed certificate with a thumbprint.
+	AuthSelfSigned = "selfSigned"
+
+	// AuthCA certificate signed by a registered certificate authority.
+	AuthCA = "certificateAuthority"
+)
 
 type X509Thumbprint struct {
 	PrimaryThumbprint   string `json:"primaryThumbprint,omitempty"`

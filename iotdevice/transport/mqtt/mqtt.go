@@ -146,7 +146,7 @@ func parseEventMessage(m mqtt.Message) (*common.Message, error) {
 		return nil, err
 	}
 	e := &common.Message{
-		Payload:    m.Payload(),
+		Payload:    string(m.Payload()),
 		Properties: make(map[string]string, len(p)),
 	}
 	for k, v := range p {
@@ -164,7 +164,7 @@ func parseEventMessage(m mqtt.Message) (*common.Message, error) {
 			if err != nil {
 				return nil, err
 			}
-			e.ExpiryTime = t
+			e.ExpiryTime = &t
 		default:
 			e.Properties[k] = v
 		}
@@ -371,7 +371,7 @@ func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
 	if msg.To != "" {
 		u["$.to"] = []string{msg.To}
 	}
-	if !msg.ExpiryTime.IsZero() {
+	if msg.ExpiryTime != nil && !msg.ExpiryTime.IsZero() {
 		u["$.exp"] = []string{msg.ExpiryTime.UTC().Format(time.RFC3339)}
 	}
 	for k, v := range msg.Properties {
@@ -383,7 +383,7 @@ func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
 	if q, ok := msg.TransportOptions["qos"]; ok {
 		qos = q.(int)
 	}
-	return tr.send(ctx, dst, qos, msg.Payload)
+	return tr.send(ctx, dst, qos, []byte(msg.Payload))
 }
 
 func (tr *Transport) send(ctx context.Context, topic string, qos int, b []byte) error {

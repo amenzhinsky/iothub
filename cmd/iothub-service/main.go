@@ -22,7 +22,6 @@ var (
 	cidFlag             = ""
 	expFlag             = time.Duration(0)
 	ackFlag             = internal.NewChoiceFlag("none", "positive", "negative", "full")
-	formatFlag          = internal.NewChoiceFlag("simple", "json")
 	connectTimeoutFlag  = 0
 	responseTimeoutFlag = 30
 
@@ -37,6 +36,13 @@ var (
 
 	// common flags
 	debugFlag = false
+
+	// sas and connection string
+	secondaryFlag = false
+
+	// sas
+	uriFlag      = ""
+	durationFlag = time.Hour
 )
 
 func main() {
@@ -65,9 +71,7 @@ func run() error {
 		"watch-events": {
 			"", "subscribe to device messages (D2C)",
 			wrap(watchEvents),
-			func(f *flag.FlagSet) {
-				f.Var(formatFlag, "format", "output format <simple|json>")
-			},
+			nil,
 		},
 		"watch-feedback": {
 			"", "monitor message feedback send by devices",
@@ -148,6 +152,22 @@ func run() error {
 			wrap(cancelJob),
 			nil,
 		},
+		"cs": {
+			"DEVICE", "get a device's connection string",
+			wrap(connectionString),
+			func(f *flag.FlagSet) {
+				f.BoolVar(&secondaryFlag, "secondary", secondaryFlag, "use the secondary key instead")
+			},
+		},
+		"sas": {
+			"DEVICE", "generate a SAS token for the named device",
+			wrap(sas),
+			func(f *flag.FlagSet) {
+				f.StringVar(&uriFlag, "uri", uriFlag, "storage resource uri")
+				f.DurationVar(&durationFlag, "duration", durationFlag, "token validity time")
+				f.BoolVar(&secondaryFlag, "secondary", secondaryFlag, "use the secondary key instead")
+			},
+		},
 	}, os.Args, func(f *flag.FlagSet) {
 		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
 	})
@@ -188,7 +208,7 @@ func device(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return outputJSON(d)
+	return internal.OutputJSON(d)
 }
 
 func devices(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -199,7 +219,7 @@ func devices(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return outputJSON(d)
+	return internal.OutputJSON(d)
 }
 
 func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -221,7 +241,7 @@ func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 	}
 	if primaryKeyFlag != "" || secondaryKeyFlag != "" {
 		device.Authentication = &iotservice.Authentication{
-			Type: "sas",
+			Type: iotservice.AuthSAS,
 			SymmetricKey: &iotservice.SymmetricKey{
 				PrimaryKey:   primaryKeyFlag,
 				SecondaryKey: secondaryKeyFlag,
@@ -230,7 +250,7 @@ func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 	}
 	if primaryThumbprintFlag != "" || secondaryThumbprintFlag != "" {
 		device.Authentication = &iotservice.Authentication{
-			Type: "selfSigned",
+			Type: iotservice.AuthSelfSigned,
 			X509Thumbprint: &iotservice.X509Thumbprint{
 				PrimaryThumbprint:   primaryThumbprintFlag,
 				SecondaryThumbprint: secondaryThumbprintFlag,
@@ -242,7 +262,7 @@ func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 	if err != nil {
 		return err
 	}
-	return outputJSON(d)
+	return internal.OutputJSON(d)
 }
 
 func updateDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -272,7 +292,7 @@ func updateDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 	if err != nil {
 		return err
 	}
-	return outputJSON(d)
+	return internal.OutputJSON(d)
 }
 
 func deleteDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -290,7 +310,7 @@ func stats(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return outputJSON(s)
+	return internal.OutputJSON(s)
 }
 
 func twin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -301,7 +321,7 @@ func twin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return outputJSON(t)
+	return internal.OutputJSON(t)
 }
 
 func updateTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -327,8 +347,7 @@ func updateTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) erro
 	if err != nil {
 		return err
 	}
-	fmt.Printf("version: %v\n", twin.Properties.Desired["$version"])
-	return nil
+	return internal.OutputJSON(twin)
 }
 
 func call(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -346,7 +365,7 @@ func call(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return outputJSON(r)
+	return internal.OutputJSON(r)
 }
 
 func send(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -379,31 +398,34 @@ func send(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	return nil
 }
 
-func watchEvents(ctx context.Context, _ *flag.FlagSet, c *iotservice.Client) error {
-	return c.SubscribeEvents(ctx, func(msg *common.Message) {
-		switch formatFlag.String() {
-		case "json":
-			if err := outputJSON(msg); err != nil {
-				panic(err)
-			}
-		case "simple":
-			fmt.Println(msg.Inspect())
-		default:
-			panic("unknown output format")
+func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 0 {
+		return internal.ErrInvalidUsage
+	}
+	errc := make(chan error, 1)
+	if err := c.SubscribeEvents(ctx, func(msg *common.Message) {
+		if err := internal.OutputJSON(msg); err != nil {
+			errc <- err
 		}
-	})
+	}); err != nil {
+		return err
+	}
+	return <-errc
 }
 
-// TODO: different formats
 func watchFeedback(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-	return c.SubscribeFeedback(ctx, func(f *iotservice.Feedback) {
-		if err := outputJSON(f); err != nil {
-			panic(err)
+	errc := make(chan error, 1)
+	if err := c.SubscribeFeedback(ctx, func(f *iotservice.Feedback) {
+		if err := internal.OutputJSON(f); err != nil {
+			errc <- err
 		}
-	})
+	}); err != nil {
+		return err
+	}
+	return <-errc
 }
 
 func jobs(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -414,7 +436,7 @@ func jobs(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return outputJSON(v)
+	return internal.OutputJSON(v)
 }
 
 func job(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -425,7 +447,7 @@ func job(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return outputJSON(v)
+	return internal.OutputJSON(v)
 }
 
 func cancelJob(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -436,14 +458,36 @@ func cancelJob(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error
 	if err != nil {
 		return err
 	}
-	return outputJSON(v)
+	return internal.OutputJSON(v)
 }
 
-func outputJSON(v interface{}) error {
-	b, err := json.MarshalIndent(v, "", "\t")
+func connectionString(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+
+	d, err := c.GetDevice(ctx, f.Arg(0))
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(b))
-	return nil
+	cs, err := c.DeviceConnectionString(d, secondaryFlag)
+	if err != nil {
+		return err
+	}
+	return internal.OutputLine(cs)
+}
+
+func sas(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	d, err := c.GetDevice(ctx, f.Arg(0))
+	if err != nil {
+		return err
+	}
+	sas, err := c.DeviceSAS(d, durationFlag, secondaryFlag)
+	if err != nil {
+		return err
+	}
+	return internal.OutputLine(sas)
 }
