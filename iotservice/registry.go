@@ -52,27 +52,21 @@ type SymmetricKey struct {
 }
 
 type Twin struct {
-	DeviceID                  string          `json:"deviceId,omitempty"`
-	ETag                      string          `json:"etag,omitempty"`
-	DeviceETag                string          `json:"deviceEtag,omitempty"`
-	Status                    string          `json:"status,omitempty"`
-	StatusReason              string          `json:"statusReason,omitempty"`
-	StatusUpdateTime          string          `json:"statusUpdateTime,omitempty"`
-	ConnectionState           string          `json:"connectionState,omitempty"`
-	LastActivityTime          string          `json:"lastActivityTime,omitempty"`
-	CloudToDeviceMessageCount int             `json:"cloudToDeviceMessageCount,omitempty"`
-	AuthenticationType        string          `json:"authenticationType,omitempty"`
-	X509Thumbprint            *X509Thumbprint `json:"x509Thumbprint,omitempty"`
-	Version                   int             `json:"version,omitempty"`
-	// TODO: "tags": {
-	//        "$etag": "123",
-	//        "deploymentLocation": {
-	//            "building": "43",
-	//            "floor": "1"
-	//        }
-	//    },
-	Properties   *Properties            `json:"properties,omitempty"`
-	Capabilities map[string]interface{} `json:"capabilities,omitempty"`
+	DeviceID                  string                 `json:"deviceId,omitempty"`
+	ETag                      string                 `json:"etag,omitempty"`
+	DeviceETag                string                 `json:"deviceEtag,omitempty"`
+	Status                    string                 `json:"status,omitempty"`
+	StatusReason              string                 `json:"statusReason,omitempty"`
+	StatusUpdateTime          string                 `json:"statusUpdateTime,omitempty"`
+	ConnectionState           string                 `json:"connectionState,omitempty"`
+	LastActivityTime          string                 `json:"lastActivityTime,omitempty"`
+	CloudToDeviceMessageCount int                    `json:"cloudToDeviceMessageCount,omitempty"`
+	AuthenticationType        string                 `json:"authenticationType,omitempty"`
+	X509Thumbprint            *X509Thumbprint        `json:"x509Thumbprint,omitempty"`
+	Version                   int                    `json:"version,omitempty"`
+	Tags                      map[string]interface{} `json:"tags,omitempty"`
+	Properties                *Properties            `json:"properties,omitempty"`
+	Capabilities              map[string]interface{} `json:"capabilities,omitempty"`
 }
 
 type Properties struct {

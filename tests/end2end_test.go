@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -186,8 +185,8 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 		if msg.EnqueuedTime.IsZero() {
 			t.Error("EnqueuedTime is zero")
 		}
-		if !bytes.Equal([]byte(msg.Payload), payload) {
-			t.Errorf("Payload = %v, want %v", msg.Payload, payload)
+		if msg.Payload != string(payload) {
+			t.Errorf("Payload = %q, want %q", msg.Payload, payload)
 		}
 		testProperties(t, msg.Properties, props)
 	case err := <-errc:
@@ -294,8 +293,8 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 		if msg.UserID != uid {
 			t.Errorf("UserID = %q, want %q", msg.UserID, uid)
 		}
-		if !bytes.Equal([]byte(msg.Payload), payload) {
-			t.Errorf("Payload = %v, want %v", []byte(msg.Payload), payload)
+		if msg.Payload != string(payload) {
+			t.Errorf("Payload = %q, want %q", msg.Payload, payload)
 		}
 		if msg.MessageID == "" {
 			t.Error("MessageID is empty")

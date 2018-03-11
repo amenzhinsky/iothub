@@ -21,7 +21,7 @@ var (
 	midFlag             = ""
 	cidFlag             = ""
 	expFlag             = time.Duration(0)
-	ackFlag             = internal.NewChoiceFlag("none", "positive", "negative", "full")
+	ackFlag             = ""
 	connectTimeoutFlag  = 0
 	responseTimeoutFlag = 30
 
@@ -61,7 +61,7 @@ func run() error {
 			"send a message to the named device (C2D)",
 			wrap(send),
 			func(f *flag.FlagSet) {
-				f.Var(ackFlag, "ack", "type of ack feedback")
+				f.StringVar(&ackFlag, "ack", ackFlag, "type of ack feedback")
 				f.StringVar(&uidFlag, "uid", uidFlag, "origin of the message")
 				f.StringVar(&midFlag, "mid", midFlag, "identifier for the message")
 				f.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
@@ -334,16 +334,20 @@ func updateTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) erro
 		return err
 	}
 
-	props := make(map[string]interface{}, len(m))
+	twin := &iotservice.Twin{
+		Properties: &iotservice.Properties{
+			Desired: make(map[string]interface{}, len(m)),
+		},
+	}
 	for k, v := range m {
 		if v == "null" {
-			props[k] = nil
+			twin.Properties.Desired[k] = nil
 		} else {
-			props[k] = v
+			twin.Properties.Desired[k] = v
 		}
 	}
 
-	twin, err := c.UpdateTwin(ctx, f.Arg(0), props)
+	twin, err = c.UpdateTwin(ctx, f.Arg(0), twin, "*")
 	if err != nil {
 		return err
 	}
@@ -387,7 +391,7 @@ func send(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	}
 	if err := c.SendEvent(ctx, f.Arg(0), []byte(f.Arg(1)),
 		iotservice.WithSendMessageID(midFlag),
-		iotservice.WithSendAck(ackFlag.String()),
+		iotservice.WithSendAck(ackFlag),
 		iotservice.WithSendProperties(props),
 		iotservice.WithSendUserID(uidFlag),
 		iotservice.WithSendCorrelationID(cidFlag),

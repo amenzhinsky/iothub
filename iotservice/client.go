@@ -575,17 +575,19 @@ func (c *Client) GetTwin(ctx context.Context, deviceID string) (*Twin, error) {
 func (c *Client) UpdateTwin(
 	ctx context.Context,
 	deviceID string,
-	desired map[string]interface{},
+	twin *Twin,
+	etag string,
 ) (*Twin, error) {
 	if deviceID == "" {
 		return nil, errors.New("deviceID is empty")
 	}
+	if twin == nil {
+		panic("twin is nil")
+	}
 	t := &Twin{}
-	if err := c.call(ctx, http.MethodPatch, "twins/"+url.PathEscape(deviceID), nil, &Twin{
-		Properties: &Properties{
-			Desired: desired,
-		},
-	}, t); err != nil {
+	if err := c.call(ctx, http.MethodPatch, "twins/"+url.PathEscape(deviceID), http.Header{
+		"If-Match": []string{etag},
+	}, twin, t); err != nil {
 		return nil, err
 	}
 	return t, nil
