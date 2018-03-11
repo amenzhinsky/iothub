@@ -213,7 +213,8 @@ func (tr *Transport) RegisterDirectMethods(ctx context.Context, mux transport.Me
 				tr.logf("dispatch error: %s", err)
 				return
 			}
-			if err = tr.send(ctx, fmt.Sprintf("$iothub/methods/res/%d/?$rid=%s", rc, rid), b); err != nil {
+			dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%s", rc, rid)
+			if err = tr.send(ctx, dst, defaultQoS, b); err != nil {
 				tr.logf("method response error: %s", err)
 				return
 			}
@@ -274,7 +275,7 @@ func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp
 		tr.mu.Unlock()
 	}()
 
-	if err := tr.send(ctx, dst, b); err != nil {
+	if err := tr.send(ctx, dst, defaultQoS, b); err != nil {
 		return nil, err
 	}
 
@@ -353,33 +354,39 @@ func parseTwinPropsTopic(s string) (int, string, int, error) {
 	return rc, ss[2], ver, nil
 }
 
-func (tr *Transport) Send(ctx context.Context, m *common.Message) error {
+func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
 	// this is just copying functionality from the nodejs sdk, but
 	// seems like adding meta attributes does nothing or in some cases,
 	// e.g. when $.exp is set the cloud just disconnects.
-	u := make(url.Values, len(m.Properties)+5)
-	if m.MessageID != "" {
-		u["$.mid"] = []string{m.MessageID}
+	u := make(url.Values, len(msg.Properties)+5)
+	if msg.MessageID != "" {
+		u["$.mid"] = []string{msg.MessageID}
 	}
-	if m.CorrelationID != "" {
-		u["$.cid"] = []string{m.CorrelationID}
+	if msg.CorrelationID != "" {
+		u["$.cid"] = []string{msg.CorrelationID}
 	}
-	if m.UserID != "" {
-		u["$.uid"] = []string{m.UserID}
+	if msg.UserID != "" {
+		u["$.uid"] = []string{msg.UserID}
 	}
-	if m.To != "" {
-		u["$.to"] = []string{m.To}
+	if msg.To != "" {
+		u["$.to"] = []string{msg.To}
 	}
-	if !m.ExpiryTime.IsZero() {
-		u["$.exp"] = []string{m.ExpiryTime.UTC().Format(time.RFC3339)}
+	if !msg.ExpiryTime.IsZero() {
+		u["$.exp"] = []string{msg.ExpiryTime.UTC().Format(time.RFC3339)}
 	}
-	for k, v := range m.Properties {
+	for k, v := range msg.Properties {
 		u[k] = []string{v}
 	}
-	return tr.send(ctx, "devices/"+tr.did+"/messages/events/"+u.Encode(), m.Payload)
+
+	dst := "devices/" + tr.did + "/messages/events/" + u.Encode()
+	qos := defaultQoS
+	if q, ok := msg.TransportOptions["qos"]; ok {
+		qos = q.(int)
+	}
+	return tr.send(ctx, dst, qos, msg.Payload)
 }
 
-func (tr *Transport) send(ctx context.Context, topic string, b []byte) error {
+func (tr *Transport) send(ctx context.Context, topic string, qos int, b []byte) error {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 	if tr.conn == nil {

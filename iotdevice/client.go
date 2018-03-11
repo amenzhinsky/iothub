@@ -115,8 +115,7 @@ func WithX509FromFile(certFile, keyFile string) ClientOption {
 		if err != nil {
 			return err
 		}
-		c.tlsConfig.Certificates = []tls.Certificate{crt}
-		return nil
+		return WithX509FromCert(&crt)(c)
 	}
 }
 
@@ -403,6 +402,18 @@ func (c *Client) UnsubscribeTwinUpdates(fn TwinUpdateHandler) {
 
 // SendOption is a send event options.
 type SendOption func(msg *common.Message) error
+
+// WithSendQoS sets the quality of service (MQTT only).
+// Only 0 and 1 values are supported, defaults to 1.
+func WithSendQoS(qos int) SendOption {
+	return func(msg *common.Message) error {
+		if msg.TransportOptions == nil {
+			msg.TransportOptions = map[string]interface{}{}
+		}
+		msg.TransportOptions["qos"] = qos
+		return nil
+	}
+}
 
 // WithSendMessageID sets message id.
 func WithSendMessageID(mid string) SendOption {

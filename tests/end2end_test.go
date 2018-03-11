@@ -19,21 +19,47 @@ import (
 )
 
 func TestEnd2End(t *testing.T) {
-	dcs := os.Getenv("TEST_DEVICE_CONNECTION_STRING")
-	if dcs == "" {
-		t.Fatal("TEST_DEVICE_CONNECTION_STRING is empty")
+	sc := newServiceClient(t)
+	pk, err := iotservice.NewSymmetricKey()
+	if err != nil {
+		t.Fatal(err)
 	}
-	ddcs := os.Getenv("TEST_DISABLED_DEVICE_CONNECTION_STRING")
-	if ddcs == "" {
-		t.Fatal("TEST_DISABLED_DEVICE_CONNECTION_STRING is empty")
+
+	// delete previously created devices that weren't cleaned up
+	for _, did := range []string{"golang-iothub-sas", "golang-iothub-x509"} {
+		sc.DeleteDevice(context.Background(), did)
 	}
-	x509DeviceID := os.Getenv("TEST_X509_DEVICE")
-	if x509DeviceID == "" {
-		t.Fatal("TEST_X509_DEVICE is empty")
+
+	// create a device with sas authentication
+	sasDevice, err := sc.CreateDevice(context.Background(), &iotservice.Device{
+		DeviceID: "golang-iothub-sas",
+		Authentication: &iotservice.Authentication{
+			SymmetricKey: &iotservice.SymmetricKey{
+				PrimaryKey:   pk,
+				SecondaryKey: pk,
+			},
+			Type: "sas",
+		},
+	})
+
+	// create a x509 self signed device
+	x509Device, err := sc.CreateDevice(context.Background(), &iotservice.Device{
+		DeviceID: "golang-iothub-x509",
+		Authentication: &iotservice.Authentication{
+			X509Thumbprint: &iotservice.X509Thumbprint{
+				PrimaryThumbprint:   "443ABB6DEA8F93D5987D31D2607BE2931217752C",
+				SecondaryThumbprint: "443ABB6DEA8F93D5987D31D2607BE2931217752C",
+			},
+			Type: "selfSigned",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	hostname := os.Getenv("TEST_HOSTNAME")
-	if hostname == "" {
-		t.Fatal("TEST_HOSTNAME is empty")
+
+	dcs, err := sc.ConnectionStringForDevice(sasDevice, false)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	for name, tr := range map[string]func() transport.Transport{
@@ -47,8 +73,8 @@ func TestEnd2End(t *testing.T) {
 			}{
 				"x509": {
 					[]iotdevice.ClientOption{
-						iotdevice.WithDeviceID(x509DeviceID),
-						iotdevice.WithHostname(hostname),
+						iotdevice.WithDeviceID(x509Device.DeviceID),
+						iotdevice.WithHostname(sc.HostName()),
 						iotdevice.WithX509FromFile("testdata/device.crt", "testdata/device.key"),
 					},
 
@@ -79,11 +105,13 @@ func TestEnd2End(t *testing.T) {
 					}
 				})
 			}
-
-			// TODO: add test
-			t.Run("DisabledDevice", func(t *testing.T) {
-			})
 		})
+	}
+
+	for _, did := range []string{sasDevice.DeviceID, x509Device.DeviceID} {
+		if err = sc.DeleteDevice(context.Background(), did); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -99,7 +127,7 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dc, sc := mkDeviceAndService(t, ctx, opts...)
+	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
 	msgc := make(chan *common.Message, 1)
@@ -184,7 +212,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dc, sc := mkDeviceAndService(t, ctx, opts...)
+	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
 	msgc := make(chan *common.Message, 1)
@@ -290,7 +318,7 @@ func testUpdateTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dc, sc := mkDeviceAndService(t, ctx, opts...)
+	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
 	// update state and keep track of version
@@ -318,7 +346,7 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dc, sc := mkDeviceAndService(t, ctx, opts...)
+	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
 	sch := make(chan iotdevice.TwinState)
@@ -352,7 +380,7 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dc, sc := mkDeviceAndService(t, ctx, opts...)
+	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
 	if err := dc.RegisterMethod(ctx, "sum", func(v map[string]interface{}) (map[string]interface{}, error) {
@@ -395,15 +423,12 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 }
 
-func mkDeviceAndService(
+func newDeviceAndServiceClient(
 	t *testing.T,
 	ctx context.Context,
 	opts ...iotdevice.ClientOption,
 ) (*iotdevice.Client, *iotservice.Client) {
-	ccs := os.Getenv("TEST_SERVICE_CONNECTION_STRING")
-	if ccs == "" {
-		t.Fatal("TEST_SERVICE_CONNECTION_STRING is empty")
-	}
+	sc := newServiceClient(t)
 
 	dc, err := iotdevice.NewClient(opts...)
 	if err != nil {
@@ -412,17 +437,21 @@ func mkDeviceAndService(
 	if err = dc.ConnectInBackground(ctx, iotdevice.WithConnIgnoreNetErrors(true)); err != nil {
 		t.Fatal(err)
 	}
+	return dc, sc
+}
 
-	sc, err := iotservice.NewClient(
-		iotservice.WithConnectionString(ccs),
+func newServiceClient(t *testing.T) *iotservice.Client {
+	cs := os.Getenv("TEST_SERVICE_CONNECTION_STRING")
+	if cs == "" {
+		t.Fatal("TEST_SERVICE_CONNECTION_STRING is empty")
+	}
+	c, err := iotservice.NewClient(
+		iotservice.WithConnectionString(cs),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = sc.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	return dc, sc
+	return c
 }
 
 func closeDeviceService(t *testing.T, dc *iotdevice.Client, sc *iotservice.Client) {

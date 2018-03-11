@@ -85,15 +85,7 @@ See `-help` for more details.
 
 ## Testing
 
-To enable end-to-end testing in the `tests` directory you need to set the following environment variables:
-
-| Name | Description |
-| --- | --- |
-| `TEST_HOSTNAME`                 | *.azure-devices.net |
-| `TEST_DEVICE_CONNECTION_STRING` | enabled device connection string |
-| `TEST_DISABLED_DEVICE_CONNECTION_STRING` | disabled device connection string |
-| `TEST_SERVICE_CONNECTION_STRING` | access policy with `service connect` permission |
-| `TEST_X509_DEVICE` | enabled device with x509 self signed certificate, thumbprint:  [443ABB6DEA8F93D5987D31D2607BE2931217752C](https://github.com/amenzhinsky/golang-iothub/blob/master/tests/testdata/device.crt) |
+To enable end-to-end testing in the `tests` directory you need to provide `TEST_SERVICE_CONNECTION_STRING` which is a shared access policy connection string.
 
 ## TODO
 
@@ -107,5 +99,4 @@ To enable end-to-end testing in the `tests` directory you need to set the follow
 1. Complete list of subcommands and api call for iothub-device and iothub-service.
 1. Grammar check.
 1. Automated testing, manual now.
-1. Simplify testing by using only one access policy to create required devices.
 1. Rework debugging logs.

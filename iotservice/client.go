@@ -3,6 +3,7 @@ package iotservice
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"encoding/base64"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/common/commonamqp"
@@ -108,11 +111,16 @@ type Client struct {
 	http   *http.Client // REST client
 }
 
-// Connect connects to AMQP broker, has to be done before publishing events.
+// Connect connects to AMQP broker, it's done automatically before
+// publishing events or subscribing to the feedback topic.
 func (c *Client) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.conn != nil {
+		return nil // already connected
+	}
 
+	c.debugf("connecting to %s", c.creds.HostName)
 	eh, err := eventhub.Dial(c.creds.HostName, &tls.Config{
 		ServerName: c.creds.HostName,
 		RootCAs:    common.RootCAs(),
@@ -137,10 +145,9 @@ func (c *Client) Connect(ctx context.Context) error {
 	return nil
 }
 
-// C2D used two absolutely different ways of authentication for sending
-// messages and subscribing to events stream.
-//
-// In this case we connect to an eventhub instance to listen to events.
+// Subscribing to C2D events requires connection to an eventhub instance,
+// that's hostname and authentication mechanism is absolutely different
+// from raw connection to an AMQP broker.
 func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, error) {
 	user := c.creds.SharedAccessKeyName + "@sas.root." + c.creds.HostName
 	user = user[:len(user)-18] // sub .azure-devices.net"
@@ -194,14 +201,6 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	}
 	return conn, group, nil
 }
-
-func (c *Client) isConnected() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.conn != nil
-}
-
-var errNotConnected = errors.New("not connected")
 
 // MessageHandler handles incoming cloud-to-device events.
 type MessageHandler func(e *common.Message)
@@ -328,8 +327,8 @@ func (c *Client) SendEvent(
 		return errors.New("payload is nil")
 	}
 
-	if !c.isConnected() {
-		return errNotConnected
+	if err := c.Connect(ctx); err != nil {
+		return err
 	}
 
 	msg := &common.Message{
@@ -358,8 +357,8 @@ type FeedbackHandler func(f *Feedback)
 
 // SubscribeFeedback subscribes to feedback of messages that ack was requested.
 func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) error {
-	if !c.isConnected() {
-		return errNotConnected
+	if err := c.Connect(ctx); err != nil {
+		return err
 	}
 	recv, err := c.conn.Sess().NewReceiver(
 		amqp.LinkSourceAddress("/messages/servicebound/feedback"),
@@ -394,6 +393,27 @@ type Feedback struct {
 	DeviceID           string    `json:"deviceId"`
 	EnqueuedTimeUTC    time.Time `json:"enqueuedTimeUtc"`
 	StatusCode         string    `json:"statusCode"`
+}
+
+// HostName returns service's hostname.
+func (c Client) HostName() string {
+	return c.creds.HostName
+}
+
+// ConnectionStringForDevice builds up a connection string for the given device.
+func (c *Client) ConnectionStringForDevice(device *Device, secondary bool) (string, error) {
+	if device == nil {
+		panic("device is nil")
+	}
+	if device.Authentication == nil || device.Authentication.SymmetricKey == nil {
+		return "", errors.New("invalid device")
+	}
+	key := device.Authentication.SymmetricKey.PrimaryKey
+	if secondary {
+		key = device.Authentication.SymmetricKey.SecondaryKey
+	}
+	return fmt.Sprintf("HostName=%s;DeviceId=%s;SharedAccessKey=%s",
+		c.creds.HostName, device.DeviceID, key), nil
 }
 
 type call struct {
@@ -664,4 +684,13 @@ func (c *Client) Close() error {
 		return nil
 	}
 	return c.conn.Close()
+}
+
+// NewSymmetricKey generates a random symmetric key.
+func NewSymmetricKey() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
 }

@@ -10,9 +10,6 @@ import (
 	"os"
 	"time"
 
-	"crypto/rand"
-	"encoding/base64"
-
 	"github.com/amenzhinsky/golang-iothub/cmd/internal"
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotservice"
@@ -197,8 +194,15 @@ func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 
 	device := &iotservice.Device{DeviceID: f.Arg(0)}
 	if autoGenerateFlag {
-		primaryKeyFlag = genKey()
-		secondaryKeyFlag = genKey()
+		var err error
+		primaryKeyFlag, err = iotservice.NewSymmetricKey()
+		if err != nil {
+			return err
+		}
+		secondaryKeyFlag, err = iotservice.NewSymmetricKey()
+		if err != nil {
+			return err
+		}
 	}
 	if primaryKeyFlag != "" || secondaryKeyFlag != "" {
 		device.Authentication = &iotservice.Authentication{
@@ -224,14 +228,6 @@ func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 		return err
 	}
 	return outputJSON(d)
-}
-
-func genKey() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return base64.StdEncoding.EncodeToString(b)
 }
 
 func updateDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {

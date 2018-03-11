@@ -7,15 +7,9 @@ import (
 )
 
 // NewChoiceFlag creates new flag.Value instance that's
-// value is limited to the given options list.
-// Default value is the first from the list.
-//
-// Panics when opts are blank.
-func NewChoiceFlag(opts ...string) flag.Value {
-	if len(opts) == 0 {
-		panic("values are empty")
-	}
-	return &choiceFlag{opts: opts, curr: opts[0]}
+// value must be one of in the given ones.
+func NewChoiceFlag(current string, other ...string) flag.Value {
+	return &choiceFlag{opts: append(other, current), curr: current}
 }
 
 type choiceFlag struct {

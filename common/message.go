@@ -53,6 +53,9 @@ type Message struct {
 
 	// Properties are custom message properties (property bags).
 	Properties map[string]string `json:"Properties,omitempty"`
+
+	// TransportOptions transport specific options.
+	TransportOptions map[string]interface{}
 }
 
 // Inspect is a human-readable message format.
