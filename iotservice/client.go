@@ -271,7 +271,9 @@ const (
 func WithSendAck(typ string) SendOption {
 	return func(msg *common.Message) error {
 		switch typ {
-		case "", AckNone, AckPositive, AckNegative, AckFull:
+		case "":
+			return nil // empty value breaks message sending
+		case AckNone, AckPositive, AckNegative, AckFull:
 		default:
 			return fmt.Errorf("unknown ack type: %q", typ)
 		}

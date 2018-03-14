@@ -44,8 +44,9 @@ type Message struct {
 	// MessageSource determines a device-to-cloud message transport.
 	MessageSource string `json:"MessageSource,omitempty"`
 
-	// Payload is arbitrary data.
-	Payload string
+	// Payload is message data.
+	// Has to be a string otherwise it's base64 encoded.
+	Payload string `json:"Payload,omitempty"`
 
 	// Properties are custom message properties (property bags).
 	Properties map[string]string `json:"Properties,omitempty"`

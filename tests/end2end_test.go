@@ -355,9 +355,16 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 		t.Fatal(err)
 	}
 
-	twin, err := sc.UpdateTwin(ctx, dc.DeviceID(), map[string]interface{}{
-		"test-prop": time.Now().UnixNano() / 1000,
-	})
+	twin, err := sc.UpdateTwin(ctx, dc.DeviceID(), &iotservice.Twin{
+		Tags: map[string]interface{}{
+			"test-device": true,
+		},
+		Properties: &iotservice.Properties{
+			Desired: map[string]interface{}{
+				"test-prop": time.Now().UnixNano() / 1000,
+			},
+		},
+	}, "*")
 	if err != nil {
 		t.Fatal(err)
 	}

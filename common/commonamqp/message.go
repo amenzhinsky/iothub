@@ -16,8 +16,12 @@ func FromAMQPMessage(msg *amqp.Message) *common.Message {
 	}
 	if msg.Properties != nil {
 		m.UserID = string(msg.Properties.UserID)
-		m.MessageID = msg.Properties.MessageID.(string)
-		m.CorrelationID = msg.Properties.CorrelationID.(string)
+		if msg.Properties.MessageID != nil {
+			m.MessageID = msg.Properties.MessageID.(string)
+		}
+		if msg.Properties.CorrelationID != nil {
+			m.CorrelationID = msg.Properties.CorrelationID.(string)
+		}
 		m.To = msg.Properties.To
 		m.ExpiryTime = &msg.Properties.AbsoluteExpiryTime
 	}
