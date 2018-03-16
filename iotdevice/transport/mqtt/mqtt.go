@@ -150,7 +150,7 @@ func parseEventMessage(m mqtt.Message) (*common.Message, error) {
 		return nil, err
 	}
 	e := &common.Message{
-		Payload:    string(m.Payload()),
+		Payload:    m.Payload(),
 		Properties: make(map[string]string, len(p)),
 	}
 	for k, v := range p {

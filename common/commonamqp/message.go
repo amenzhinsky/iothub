@@ -11,7 +11,7 @@ import (
 // FromAMQPMessage converts a amqp.Message into common.Message.
 func FromAMQPMessage(msg *amqp.Message) *common.Message {
 	m := &common.Message{
-		Payload:    string(msg.Data[0]),
+		Payload:    msg.Data[0],
 		Properties: make(map[string]string, len(msg.ApplicationProperties)+5),
 	}
 	if msg.Properties != nil {

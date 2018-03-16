@@ -488,7 +488,7 @@ func (c *Client) SendEvent(ctx context.Context, payload []byte, opts ...SendOpti
 	if payload == nil {
 		return errors.New("payload is nil")
 	}
-	msg := &common.Message{Payload: string(payload)}
+	msg := &common.Message{Payload: payload}
 	for _, opt := range opts {
 		if err := opt(msg); err != nil {
 			return err

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"bytes"
+
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
@@ -185,8 +187,8 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 		if msg.EnqueuedTime.IsZero() {
 			t.Error("EnqueuedTime is zero")
 		}
-		if msg.Payload != string(payload) {
-			t.Errorf("Payload = %q, want %q", msg.Payload, payload)
+		if !bytes.Equal(msg.Payload, payload) {
+			t.Errorf("Payload = %v, want %v", msg.Payload, payload)
 		}
 		testProperties(t, msg.Properties, props)
 	case err := <-errc:
@@ -293,8 +295,8 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 		if msg.UserID != uid {
 			t.Errorf("UserID = %q, want %q", msg.UserID, uid)
 		}
-		if msg.Payload != string(payload) {
-			t.Errorf("Payload = %q, want %q", msg.Payload, payload)
+		if !bytes.Equal(msg.Payload, payload) {
+			t.Errorf("Payload = %v, want %v", msg.Payload, payload)
 		}
 		if msg.MessageID == "" {
 			t.Error("MessageID is empty")

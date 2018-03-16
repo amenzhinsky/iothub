@@ -45,8 +45,7 @@ type Message struct {
 	MessageSource string `json:"MessageSource,omitempty"`
 
 	// Payload is message data.
-	// Has to be a string otherwise it's base64 encoded.
-	Payload string `json:"Payload,omitempty"`
+	Payload []byte `json:"Payload,omitempty"`
 
 	// Properties are custom message properties (property bags).
 	Properties map[string]string `json:"Properties,omitempty"`

@@ -333,7 +333,7 @@ func (c *Client) SendEvent(
 	}
 
 	msg := &common.Message{
-		Payload: string(payload),
+		Payload: payload,
 		To:      "/devices/" + deviceID + "/messages/devicebound",
 	}
 	for _, opt := range opts {
