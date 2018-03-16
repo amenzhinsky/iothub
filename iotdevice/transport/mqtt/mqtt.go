@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,11 +18,9 @@ import (
 	"github.com/eclipse/paho.mqtt.golang"
 )
 
-const (
-	// existing SDKs use QoS 1
-	defaultQoS = 1
-)
+const defaultQoS = 1
 
+// TransportOption is a transport configuration option.
 type TransportOption func(tr *Transport)
 
 func WithLogger(l *log.Logger) TransportOption {
@@ -50,9 +47,16 @@ type Transport struct {
 	rid uint32 // request id, incremented each request
 
 	done chan struct{}         // closed when the transport is closed
-	resp map[string]chan *resp // responses from iothub
+	resp map[uint32]chan *resp // responses from iothub
 
 	logger *log.Logger
+}
+
+type resp struct {
+	code int
+	body []byte
+
+	ver int // twin response only
 }
 
 func (tr *Transport) logf(format string, v ...interface{}) {
@@ -174,28 +178,28 @@ func parseEventMessage(m mqtt.Message) (*common.Message, error) {
 
 // devices/{device}/messages/devicebound/%24.to=%2Fdevices%2F{device}%2Fmessages%2FdeviceBound&a=b&b=c
 func parseCloudToDeviceTopic(s string) (map[string]string, error) {
-	q, err := url.QueryUnescape(s)
+	s, err := url.QueryUnescape(s)
 	if err != nil {
 		return nil, err
 	}
 
 	// attributes prefixed with $.,
 	// e.g. `messageId` becomes `$.mid`, `to` becomes `$.to`, etc.
-	i := strings.Index(q, "$.")
+	i := strings.Index(s, "$.")
 	if i == -1 {
 		return nil, errors.New("malformed cloud-to-device topic name")
 	}
-	v, err := url.ParseQuery(q[i:])
+	q, err := url.ParseQuery(s[i:])
 	if err != nil {
 		return nil, err
 	}
 
-	p := make(map[string]string, len(v))
-	for k, x := range v {
-		if len(x) != 1 {
-			return nil, fmt.Errorf("unexpected number of property values: %d", len(v))
+	p := make(map[string]string, len(q))
+	for k, v := range q {
+		if len(v) != 1 {
+			return nil, fmt.Errorf("unexpected number of property values: %d", len(q))
 		}
-		p[k] = x[0]
+		p[k] = v[0]
 	}
 	return p, nil
 }
@@ -213,7 +217,7 @@ func (tr *Transport) RegisterDirectMethods(ctx context.Context, mux transport.Me
 				tr.logf("dispatch error: %s", err)
 				return
 			}
-			dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%s", rc, rid)
+			dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%d", rc, rid)
 			if err = tr.send(ctx, dst, defaultQoS, b); err != nil {
 				tr.logf("method response error: %s", err)
 				return
@@ -226,25 +230,36 @@ func (tr *Transport) RegisterDirectMethods(ctx context.Context, mux transport.Me
 
 // returns method name and rid
 // format: $iothub/methods/POST/{method}/?$rid={rid}
-func parseDirectMethodTopic(s string) (string, string, error) {
-	ss := strings.Split(s, "/")
-	if len(ss) != 5 {
-		return "", "", errors.New("malformed direct-method topic name")
-	}
-	if !strings.HasPrefix(ss[4], "?$rid=") {
-		return "", "", errors.New("malformed direct-method topic name")
-	}
-	return ss[3], ss[4][6:], nil
-}
+func parseDirectMethodTopic(s string) (string, int, error) {
+	const prefix = "$iothub/methods/POST/"
 
-type resp struct {
-	code int
-	ver  int // twin response only
-	body []byte
+	s, err := url.QueryUnescape(s)
+	if err != nil {
+		return "", 0, err
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", 0, err
+	}
+
+	p := strings.TrimRight(u.Path, "/")
+	if !strings.HasPrefix(p, prefix) {
+		return "", 0, errors.New("malformed direct method topic")
+	}
+
+	q := u.Query()
+	if len(q["$rid"]) != 1 {
+		return "", 0, errors.New("$rid is not available")
+	}
+	rid, err := strconv.Atoi(q["$rid"][0])
+	if err != nil {
+		return "", 0, fmt.Errorf("$rid parse error: %s", err)
+	}
+	return p[len(prefix):], rid, nil
 }
 
 func (tr *Transport) RetrieveTwinProperties(ctx context.Context) ([]byte, error) {
-	r, err := tr.request(ctx, "$iothub/twin/GET/?$rid=%s", nil)
+	r, err := tr.request(ctx, "$iothub/twin/GET/?$rid=%d", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +267,7 @@ func (tr *Transport) RetrieveTwinProperties(ctx context.Context) ([]byte, error)
 }
 
 func (tr *Transport) UpdateTwinProperties(ctx context.Context, b []byte) (int, error) {
-	r, err := tr.request(ctx, "$iothub/twin/PATCH/properties/reported/?$rid=%s", b)
+	r, err := tr.request(ctx, "$iothub/twin/PATCH/properties/reported/?$rid=%d", b)
 	if err != nil {
 		return 0, err
 	}
@@ -263,7 +278,7 @@ func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp
 	if err := tr.enableTwinResponses(); err != nil {
 		return nil, err
 	}
-	rid := fmt.Sprintf("%d", atomic.AddUint32(&tr.rid, 1)) // increment rid counter
+	rid := atomic.AddUint32(&tr.rid, 1) // increment rid counter
 	dst := fmt.Sprintf(topic, rid)
 	rch := make(chan *resp, 1)
 	tr.mu.Lock()
@@ -313,7 +328,7 @@ func (tr *Transport) enableTwinResponses() error {
 			tr.mu.RLock()
 			defer tr.mu.RUnlock()
 			for r, rch := range tr.resp {
-				if r != rid {
+				if int(r) != rid {
 					continue
 				}
 				select {
@@ -331,27 +346,46 @@ func (tr *Transport) enableTwinResponses() error {
 		return t.Error()
 	}
 
-	tr.resp = make(map[string]chan *resp)
+	tr.resp = make(map[uint32]chan *resp)
 	return nil
 }
 
-var twinResponseRegexp = regexp.MustCompile(
-	`\$iothub/twin/res/(\d+)/\?\$rid=(\w+)(?:&\$version=(\d+))?`,
-)
-
 // parseTwinPropsTopic parses the given topic name into rc, rid and ver.
 // $iothub/twin/res/{rc}/?$rid={rid}(&$version={ver})?
-func parseTwinPropsTopic(s string) (int, string, int, error) {
-	ss := twinResponseRegexp.FindStringSubmatch(s)
-	if ss == nil {
-		return 0, "", 0, errors.New("malformed topic name")
+func parseTwinPropsTopic(s string) (int, int, int, error) {
+	const prefix = "$iothub/twin/res/"
+
+	u, err := url.Parse(s)
+	if err != nil {
+		return 0, 0, 0, err
 	}
 
-	// regexp already returns valid strings of digits.
-	rc, _ := strconv.Atoi(ss[1])
-	ver, _ := strconv.Atoi(ss[3])
+	p := strings.Trim(u.Path, "/")
+	if !strings.HasPrefix(p, prefix) {
+		return 0, 0, 0, errors.New("malformed twin response topic")
+	}
+	rc, err := strconv.Atoi(p[len(prefix):])
+	if err != nil {
+		return 0, 0, 0, err
+	}
 
-	return rc, ss[2], ver, nil
+	q := u.Query()
+	if len(q["$rid"]) != 1 {
+		return 0, 0, 0, errors.New("$rid is not available")
+	}
+	rid, err := strconv.Atoi(q["$rid"][0])
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("$rid parse error: %s", err)
+	}
+
+	var ver int // version is available only for update responses
+	if len(q["$version"]) == 1 {
+		ver, err = strconv.Atoi(q["$version"][0])
+		if err != nil {
+			return 0, 0, 0, err
+		}
+	}
+	return rc, rid, ver, nil
 }
 
 func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {

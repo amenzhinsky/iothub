@@ -32,20 +32,20 @@ func TestParseDirectMethodTopic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m != "add" || r != "666" {
-		t.Errorf("parseDirectMethodTopic(%q) = %q, %q, want %q, %q", s, m, r, "add", "666")
+	if m != "add" || r != 666 {
+		t.Errorf("parseDirectMethodTopic(%q) = %q, %q, want %q, %q", s, m, r, "add", 666)
 	}
 }
 
 func TestParseTwinPropsTopic(t *testing.T) {
 	t.Parallel()
 
-	s := "$iothub/twin/res/200/?$rid=1a&$version=4"
+	s := "$iothub/twin/res/200/?$rid=12&$version=4"
 	c, r, v, err := parseTwinPropsTopic(s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c != 200 || r != "1a" || v != 4 {
-		t.Errorf("ParseTwinPropsTopic(%q) = %d, %q, %d, _, want %d, %q, %d, _", s, c, r, v, 200, "1a", 4)
+	if c != 200 || r != 12 || v != 4 {
+		t.Errorf("ParseTwinPropsTopic(%q) = %d, %q, %d, _, want %d, %q, %d, _", s, c, r, v, 200, 12, 4)
 	}
 }
