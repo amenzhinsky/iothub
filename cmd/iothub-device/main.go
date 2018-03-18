@@ -54,11 +54,14 @@ func main() {
 	}
 }
 
+const help = `iothub-device helps iothub devices to communicate with the cloud.
+The DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
+
 func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	return internal.Run(ctx, map[string]*internal.Command{
+	return internal.Run(ctx, help, map[string]*internal.Command{
 		"send": {
 			"PAYLOAD [KEY VALUE]...",
 			"send a message to the cloud (D2C)",

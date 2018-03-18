@@ -54,8 +54,11 @@ func main() {
 	}
 }
 
+const help = `Helps with interacting and managing your iothub devices. 
+The SERVICE_CONNECTION_STRING environment variable is required for authentication.`
+
 func run() error {
-	return internal.Run(context.Background(), map[string]*internal.Command{
+	return internal.Run(context.Background(), help, map[string]*internal.Command{
 		"send": {
 			"DEVICE PAYLOAD [KEY VALUE]...",
 			"send a message to the named device (C2D)",
