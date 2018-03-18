@@ -15,6 +15,8 @@ var ErrInvalidUsage = errors.New("invalid usage")
 
 // Command is a cli subcommand.
 type Command struct {
+	Name      string
+	Alias     string
 	Help      string
 	Desc      string
 	Handler   HandlerFunc
@@ -26,17 +28,15 @@ type HandlerFunc func(context.Context, *flag.FlagSet) error
 
 // Run runs one or the given commands based on argv.
 // If ErrInvalidUsage is returned there's no need to print it, usage message is already sent to STDERR.
-func Run(ctx context.Context, desc string, cmds map[string]*Command, argv []string, fn func(*flag.FlagSet)) error {
-	if len(argv) < 1 {
-		panic("len(argv) < 1")
+func Run(ctx context.Context, desc string, cmds []*Command, argv []string, fn func(*flag.FlagSet)) error {
+	if len(argv) == 0 {
+		panic("empty argv")
 	}
 
 	// sort subcommands alphabetically
-	names := make([]string, 0, len(cmds))
-	for k := range cmds {
-		names = append(names, k)
-	}
-	sort.Strings(names)
+	sort.Slice(cmds, func(i, j int) bool {
+		return cmds[i].Name < cmds[j].Name
+	})
 
 	sm := flag.NewFlagSet(argv[0], flag.ContinueOnError)
 	if fn != nil {
@@ -44,8 +44,8 @@ func Run(ctx context.Context, desc string, cmds map[string]*Command, argv []stri
 	}
 	sm.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: %s [FLAGS...] {COMMAND} [FLAGS...] [ARGS]...\n\n%s\n\ncommands:\n", argv[0], desc)
-		for _, name := range names {
-			fmt.Fprintf(os.Stderr, "  %-15s %s\n", name, cmds[name].Desc)
+		for _, cmd := range cmds {
+			fmt.Fprintf(os.Stderr, "  %-22s %s\n", cmd.Name+","+cmd.Alias, cmd.Desc)
 		}
 		fmt.Println()
 		fmt.Println("common flags: ")
@@ -63,7 +63,7 @@ func Run(ctx context.Context, desc string, cmds map[string]*Command, argv []stri
 		return ErrInvalidUsage
 	}
 
-	cmd := cmds[sm.Arg(0)]
+	cmd := findCommand(cmds, sm.Arg(0))
 	if cmd == nil {
 		sm.Usage()
 		return ErrInvalidUsage
@@ -96,6 +96,15 @@ func Run(ctx context.Context, desc string, cmds map[string]*Command, argv []stri
 			sc.Usage()
 		}
 		return err
+	}
+	return nil
+}
+
+func findCommand(cmds []*Command, k string) *Command {
+	for _, cmd := range cmds {
+		if cmd.Name == k || cmd.Alias == k {
+			return cmd
+		}
 	}
 	return nil
 }

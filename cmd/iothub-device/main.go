@@ -61,8 +61,9 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	return internal.Run(ctx, help, map[string]*internal.Command{
-		"send": {
+	return internal.Run(ctx, help, []*internal.Command{
+		{
+			"send", "s",
 			"PAYLOAD [KEY VALUE]...",
 			"send a message to the cloud (D2C)",
 			wrap(send),
@@ -71,19 +72,22 @@ func run() error {
 				f.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
 			},
 		},
-		"watch-events": {
+		{
+			"watch-events", "ws",
 			"",
 			"subscribe to messages sent from the cloud (C2D)",
 			wrap(watchEvents),
 			nil,
 		},
-		"watch-twin": {
+		{
+			"watch-twin", "wt",
 			"",
 			"subscribe to desired twin state updates",
 			wrap(watchTwin),
 			nil,
 		},
-		"direct-method": {
+		{
+			"direct-method", "dm",
 			"NAME",
 			"handle the named direct method, reads responses from STDIN",
 			wrap(directMethod),
@@ -91,13 +95,15 @@ func run() error {
 				f.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
 			},
 		},
-		"twin-state": {
+		{
+			"twin-state", "ts",
 			"",
 			"retrieve desired and reported states",
 			wrap(twin),
 			nil,
 		},
-		"update-twin": {
+		{
+			"update-twin", "ut",
 			"[KEY VALUE]...",
 			"updates the twin device deported state, null means delete the key",
 			wrap(updateTwin),

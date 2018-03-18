@@ -16,8 +16,10 @@ func TestRun(t *testing.T) {
 
 	if err := Run(
 		context.Background(),
-		map[string]*Command{
-			"test": {
+		"test desc",
+		[]*Command{
+			{
+				"test", "t",
 				"test A B",
 				"just a test",
 				func(_ context.Context, fs *flag.FlagSet) error {

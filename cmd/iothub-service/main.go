@@ -58,8 +58,9 @@ const help = `Helps with interacting and managing your iothub devices.
 The SERVICE_CONNECTION_STRING environment variable is required for authentication.`
 
 func run() error {
-	return internal.Run(context.Background(), help, map[string]*internal.Command{
-		"send": {
+	return internal.Run(context.Background(), help, []*internal.Command{
+		{
+			"send", "s",
 			"DEVICE PAYLOAD [KEY VALUE]...",
 			"send a message to the named device (C2D)",
 			wrap(send),
@@ -71,35 +72,41 @@ func run() error {
 				f.DurationVar(&expFlag, "exp", expFlag, "message lifetime")
 			},
 		},
-		"watch-events": {
+		{
+			"watch-events", "we",
 			"", "subscribe to device messages (D2C)",
 			wrap(watchEvents),
 			nil,
 		},
-		"watch-feedback": {
+		{
+			"watch-feedback", "wf",
 			"", "monitor message feedback send by devices",
 			wrap(watchFeedback),
 			nil,
 		},
-		"call": {
-			"DEVICE METHOD PAYLOAD", "call a direct method on the named device (DM)",
+		{
+			"call", "c",
+			"DEVICE METHOD PAYLOAD", "call a direct method on a device",
 			wrap(call),
 			func(f *flag.FlagSet) {
 				f.IntVar(&connectTimeoutFlag, "c", connectTimeoutFlag, "connect timeout in seconds")
 				f.IntVar(&responseTimeoutFlag, "r", responseTimeoutFlag, "response timeout in seconds")
 			},
 		},
-		"device": {
+		{
+			"device", "d",
 			"DEVICE", "get device information",
 			wrap(device),
 			nil,
 		},
-		"devices": {
+		{
+			"devices", "ds",
 			"", "list all available devices",
 			wrap(devices),
 			nil,
 		},
-		"create-device": {
+		{
+			"create-device", "cd",
 			"DEVICE", "creates a new device",
 			wrap(createDevice),
 			func(f *flag.FlagSet) {
@@ -110,7 +117,8 @@ func run() error {
 				f.StringVar(&secondaryThumbprintFlag, "secondary-thumbprint", "", "x509 secondary thumbprint")
 			},
 		},
-		"update-device": {
+		{
+			"update-device", "ud",
 			"DEVICE", "updates the named device",
 			wrap(updateDevice),
 			func(f *flag.FlagSet) {
@@ -120,50 +128,59 @@ func run() error {
 				f.StringVar(&secondaryThumbprintFlag, "secondary-thumbprint", "", "x509 secondary thumbprint")
 			},
 		},
-		"delete-device": {
+		{
+			"delete-device", "dd",
 			"DEVICE", "delete the named device",
 			wrap(deleteDevice),
 			nil,
 		},
-		"twin": {
+		{
+			"twin", "t",
 			"", "inspect the named twin device",
 			wrap(twin),
 			nil,
 		},
-		"update-twin": {
+		{
+			"update-twin", "ut",
 			"DEVICE [KEY VALUE]...", "update the named twin device",
 			wrap(updateTwin),
 			nil,
 		},
-		"stats": {
+		{
+			"stats", "st",
 			"", "get statistics about the devices",
 			wrap(stats),
 			nil,
 		},
-		"jobs": {
+		{
+			"jobs", "js",
 			"", "list the last import/export jobs",
 			wrap(jobs),
 			nil,
 		},
-		"job": {
+		{
+			"job", "j",
 			"ID", "get the status of a import/export job",
 			wrap(job),
 			nil,
 		},
-		"cancel-job": {
+		{
+			"cancel-job", "cj",
 			"", "cancel a import/export job",
 			wrap(cancelJob),
 			nil,
 		},
-		"cs": {
+		{
+			"connection-string", "cs",
 			"DEVICE", "get a device's connection string",
 			wrap(connectionString),
 			func(f *flag.FlagSet) {
 				f.BoolVar(&secondaryFlag, "secondary", secondaryFlag, "use the secondary key instead")
 			},
 		},
-		"sas": {
-			"DEVICE", "generate a SAS token for the named device",
+		{
+			"access-signature", "as",
+			"DEVICE", "generate a SAS token",
 			wrap(sas),
 			func(f *flag.FlagSet) {
 				f.StringVar(&uriFlag, "uri", uriFlag, "storage resource uri")
