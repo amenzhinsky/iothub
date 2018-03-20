@@ -426,9 +426,27 @@ func (tr *Transport) send(ctx context.Context, topic string, qos int, b []byte) 
 	if tr.conn == nil {
 		return errors.New("not connected")
 	}
+
+	// mqtt library doest support context, so there goes this hackfix
 	t := tr.conn.Publish(topic, defaultQoS, false, b)
-	t.Wait()
-	return t.Error()
+	done := make(chan struct{})
+	go func() {
+		for !t.WaitTimeout(time.Second) {
+			select {
+			case <-ctx.Done():
+				break
+			default:
+			}
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return t.Error()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (tr *Transport) Close() error {

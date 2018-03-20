@@ -23,7 +23,6 @@ var transports = map[string]func() (transport.Transport, error){
 		return mqtt.New(mqtt.WithLogger(mklog("[mqtt]   "))), nil
 	},
 	"amqp": func() (transport.Transport, error) {
-		//return amqp.New(amqp.WithLogger(mklog("[amqp]   "))), nil
 		return nil, errors.New("not implemented")
 	},
 	"http": func() (transport.Transport, error) {
@@ -55,13 +54,17 @@ func main() {
 }
 
 const help = `iothub-device helps iothub devices to communicate with the cloud.
-The DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
+The $DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
 
 func run() error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	return internal.Run(ctx, help, []*internal.Command{
+	cli, err := internal.New(help, func(f *flag.FlagSet) {
+		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
+		f.StringVar(&transportFlag, "transport", transportFlag, "transport to use <mqtt|amqp|http>")
+		f.StringVar(&tlsCertFlag, "tls-cert", tlsCertFlag, "path to x509 cert file")
+		f.StringVar(&tlsKeyFlag, "tls-key", tlsKeyFlag, "path to x509 key file")
+		f.StringVar(&deviceIDFlag, "device-id", deviceIDFlag, "device id, required for x509")
+		f.StringVar(&hostnameFlag, "hostname", hostnameFlag, "hostname to connect to, required for x509")
+	}, []*internal.Command{
 		{
 			"send", "s",
 			"PAYLOAD [KEY VALUE]...",
@@ -109,14 +112,11 @@ func run() error {
 			wrap(updateTwin),
 			nil,
 		},
-	}, os.Args, func(f *flag.FlagSet) {
-		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
-		f.StringVar(&transportFlag, "transport", transportFlag, "transport to use <mqtt|amqp|http>")
-		f.StringVar(&tlsCertFlag, "tls-cert", tlsCertFlag, "path to x509 cert file")
-		f.StringVar(&tlsKeyFlag, "tls-key", tlsKeyFlag, "path to x509 key file")
-		f.StringVar(&deviceIDFlag, "device-id", deviceIDFlag, "device id, required for x509")
-		f.StringVar(&hostnameFlag, "hostname", hostnameFlag, "hostname to connect to, required for x509")
 	})
+	if err != nil {
+		return err
+	}
+	return cli.Run(context.Background(), os.Args...)
 }
 
 func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) internal.HandlerFunc {

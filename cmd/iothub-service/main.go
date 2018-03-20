@@ -55,10 +55,12 @@ func main() {
 }
 
 const help = `Helps with interacting and managing your iothub devices. 
-The SERVICE_CONNECTION_STRING environment variable is required for authentication.`
+The $SERVICE_CONNECTION_STRING environment variable is required for authentication.`
 
 func run() error {
-	return internal.Run(context.Background(), help, []*internal.Command{
+	cli, err := internal.New(help, func(f *flag.FlagSet) {
+		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
+	}, []*internal.Command{
 		{
 			"send", "s",
 			"DEVICE PAYLOAD [KEY VALUE]...",
@@ -188,9 +190,11 @@ func run() error {
 				f.BoolVar(&secondaryFlag, "secondary", secondaryFlag, "use the secondary key instead")
 			},
 		},
-	}, os.Args, func(f *flag.FlagSet) {
-		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
 	})
+	if err != nil {
+		return err
+	}
+	return cli.Run(context.Background(), os.Args...)
 }
 
 func wrap(fn func(context.Context, *flag.FlagSet, *iotservice.Client) error) internal.HandlerFunc {

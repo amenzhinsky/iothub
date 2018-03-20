@@ -23,34 +23,65 @@ type Command struct {
 	ParseFunc func(*flag.FlagSet)
 }
 
-// HandlerFunc is a subcommand handler.
-type HandlerFunc func(context.Context, *flag.FlagSet) error
+// HandlerFunc is a subcommand handler, fs is already parsed.
+type HandlerFunc func(ctx context.Context, fs *flag.FlagSet) error
+
+// FlagFunc prepares fs for parsing, setting flags.
+type FlagFunc func(fs *flag.FlagSet)
+
+// CLI is a cli subcommands executor.
+type CLI struct {
+	desc string
+	cmds []*Command
+	main FlagFunc
+}
+
+// New creates new cli executor.
+func New(desc string, f FlagFunc, cmds []*Command) (*CLI, error) {
+	r := &CLI{
+		desc: desc,
+		cmds: make([]*Command, len(cmds)),
+		main: f,
+	}
+	copy(r.cmds, cmds)
+
+	// sort subcommands alphabetically
+	sort.Slice(r.cmds, func(i, j int) bool {
+		return r.cmds[i].Name < r.cmds[j].Name
+	})
+	return r, nil
+}
+
+const (
+	commonUsage  = "usage: %s [FLAGS...] {COMMAND} [FLAGS...] [ARGS]...\n\n%s\n\ncommands:\n"
+	commandUsage = "usage: %s [FLAGS...] %s [FLAGS....] %s\n\nflags:\n"
+)
 
 // Run runs one or the given commands based on argv.
-// If ErrInvalidUsage is returned there's no need to print it, usage message is already sent to STDERR.
-func Run(ctx context.Context, desc string, cmds []*Command, argv []string, fn func(*flag.FlagSet)) error {
+//
+// Panics if argv is empty.
+//
+// If ErrInvalidUsage is returned there's no need to print it,
+// the usage message is already sent to STDERR.
+func (r *CLI) Run(ctx context.Context, argv ...string) error {
 	if len(argv) == 0 {
 		panic("empty argv")
 	}
 
-	// sort subcommands alphabetically
-	sort.Slice(cmds, func(i, j int) bool {
-		return cmds[i].Name < cmds[j].Name
-	})
-
 	sm := flag.NewFlagSet(argv[0], flag.ContinueOnError)
-	if fn != nil {
-		fn(sm)
+	if r.main != nil {
+		r.main(sm)
 	}
 	sm.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s [FLAGS...] {COMMAND} [FLAGS...] [ARGS]...\n\n%s\n\ncommands:\n", argv[0], desc)
-		for _, cmd := range cmds {
+		fmt.Fprintf(os.Stderr, commonUsage, sm.Name(), r.desc)
+		for _, cmd := range r.cmds {
 			fmt.Fprintf(os.Stderr, "  %-22s %s\n", cmd.Name+","+cmd.Alias, cmd.Desc)
 		}
-		fmt.Println()
-		fmt.Println("common flags: ")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "common flags: ")
 		sm.PrintDefaults()
 	}
+
 	if err := sm.Parse(argv[1:]); err != nil {
 		if err == flag.ErrHelp {
 			return ErrInvalidUsage
@@ -63,29 +94,24 @@ func Run(ctx context.Context, desc string, cmds []*Command, argv []string, fn fu
 		return ErrInvalidUsage
 	}
 
-	cmd := findCommand(cmds, sm.Arg(0))
+	cmd := r.findCommand(sm.Arg(0))
 	if cmd == nil {
 		sm.Usage()
 		return ErrInvalidUsage
 	}
 
-	var args []string
-	if sm.NArg() > 1 {
-		args = sm.Args()[1:]
-	}
 	sc := flag.NewFlagSet(sm.Arg(0), flag.ContinueOnError)
 	sc.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s [FLAGS...] %s [FLAGS....] %s\n\nflags:\n",
-			argv[0], sm.Arg(0), cmd.Help)
+		fmt.Fprintf(os.Stderr, commandUsage, sm.Name(), sm.Arg(0), cmd.Help)
 		sc.PrintDefaults()
-		fmt.Println()
-		fmt.Println("common flags: ")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "common flags: ")
 		sm.PrintDefaults()
 	}
 	if cmd.ParseFunc != nil {
 		cmd.ParseFunc(sc)
 	}
-	if err := sc.Parse(args); err != nil {
+	if err := sc.Parse(sm.Args()[1:]); err != nil {
 		if err == flag.ErrHelp {
 			return ErrInvalidUsage
 		}
@@ -100,8 +126,8 @@ func Run(ctx context.Context, desc string, cmds []*Command, argv []string, fn fu
 	return nil
 }
 
-func findCommand(cmds []*Command, k string) *Command {
-	for _, cmd := range cmds {
+func (r *CLI) findCommand(k string) *Command {
+	for _, cmd := range r.cmds {
 		if cmd.Name == k || cmd.Alias == k {
 			return cmd
 		}
@@ -112,21 +138,23 @@ func findCommand(cmds []*Command, k string) *Command {
 // sliceToMap converts sequence of arguments into a key-value map.
 // [a, b, c, d] => {a: b, c: d} or errors when number of args is not even.
 func ArgsToMap(s []string) (map[string]string, error) {
-	m := map[string]string{}
 	if len(s)%2 != 0 {
 		return nil, errors.New("number of key-value arguments must be even")
 	}
+	m := make(map[string]string, len(s)%2)
 	for i := 0; i < len(s); i += 2 {
 		m[s[i]] = s[i+1]
 	}
 	return m, nil
 }
 
+// OutputLine prints the given string to stdout appending a new-line char.
 func OutputLine(format string) error {
 	_, err := fmt.Println(format)
 	return err
 }
 
+// OutputJSON prints indented json to stdout.
 func OutputJSON(v interface{}) error {
 	b, err := json.MarshalIndent(v, "", "\t")
 	if err != nil {
