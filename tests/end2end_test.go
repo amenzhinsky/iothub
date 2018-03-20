@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -9,8 +10,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"bytes"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice"
@@ -42,6 +41,9 @@ func TestEnd2End(t *testing.T) {
 			Type: iotservice.AuthSAS,
 		},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// create a x509 self signed device
 	x509Device, err := sc.CreateDevice(context.Background(), &iotservice.Device{
@@ -158,8 +160,8 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 			}
 			select {
 			case <-ctx.Done():
-				break
-			case <-time.After(250 * time.Millisecond):
+				return
+			case <-time.After(500 * time.Millisecond):
 			}
 		}
 	}()

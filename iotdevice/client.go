@@ -208,13 +208,8 @@ func (c *Client) Connect(ctx context.Context, opts ...ConnOption) error {
 	}
 
 Retry:
-	c.connErr = c.tr.Connect(
-		ctx,
-		c.tlsConfig.Clone(),
-		c.deviceID,
-		transport.AuthFunc(c.authFunc),
-	)
-	if conn.ignoreNetErrors && c.tr.IsNetworkError(c.connErr) {
+	c.connErr = c.tr.Connect(ctx, c.tlsConfig.Clone(), c.deviceID, c.authFunc)
+	if c.connErr != nil && conn.ignoreNetErrors && c.tr.IsNetworkError(c.connErr) {
 		c.logf("couldn't connect, reconnecting")
 		goto Retry
 	}

@@ -46,7 +46,7 @@ func ptreq(v1, v2 interface{}) bool {
 func (m *messageMux) Dispatch(msg *common.Message) {
 	m.mu.RLock()
 	for _, fn := range m.s {
-		go fn(msg)
+		fn(msg)
 	}
 	m.mu.RUnlock()
 }
@@ -150,8 +150,14 @@ func (m *stateMux) Dispatch(b []byte) {
 	}
 
 	m.mu.RLock()
+	w := sync.WaitGroup{}
+	w.Add(len(m.s))
 	for _, fn := range m.s {
-		go fn(v)
+		go func(f TwinUpdateHandler) {
+			f(v)
+			w.Done()
+		}(fn)
 	}
 	m.mu.RUnlock()
+	w.Wait()
 }

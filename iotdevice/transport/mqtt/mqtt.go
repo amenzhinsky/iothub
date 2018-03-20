@@ -417,7 +417,7 @@ func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
 	if q, ok := msg.TransportOptions["qos"]; ok {
 		qos = q.(int)
 	}
-	return tr.send(ctx, dst, qos, []byte(msg.Payload))
+	return tr.send(ctx, dst, qos, msg.Payload)
 }
 
 func (tr *Transport) send(ctx context.Context, topic string, qos int, b []byte) error {
@@ -431,10 +431,11 @@ func (tr *Transport) send(ctx context.Context, topic string, qos int, b []byte) 
 	t := tr.conn.Publish(topic, defaultQoS, false, b)
 	done := make(chan struct{})
 	go func() {
+	Loop:
 		for !t.WaitTimeout(time.Second) {
 			select {
 			case <-ctx.Done():
-				break
+				break Loop
 			default:
 			}
 		}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 )
@@ -34,12 +33,12 @@ func TestMessageMux(t *testing.T) {
 	testRecvNum(t, m, &i, 0)
 }
 
-func testRecvNum(t *testing.T, m *messageMux, i *uint32, num uint32) {
+func testRecvNum(t *testing.T, m *messageMux, i *uint32, w uint32) {
 	atomic.StoreUint32(i, 0) // zero counter
 	m.Dispatch(&common.Message{})
-	time.Sleep(time.Millisecond)
-	if *i != num {
-		t.Fatalf("recv num = %d, want %d", i, num)
+
+	if g := atomic.LoadUint32(i); g != w {
+		t.Fatalf("recv num = %d, want %d", g, w)
 	}
 }
 

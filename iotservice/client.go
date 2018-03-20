@@ -397,7 +397,7 @@ type Feedback struct {
 }
 
 // HostName returns service's hostname.
-func (c Client) HostName() string {
+func (c *Client) HostName() string {
 	return c.creds.HostName
 }
 
@@ -693,7 +693,7 @@ func (c *Client) call(
 		return err
 	}
 
-	req.WithContext(ctx)
+	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Authorization", sas)
 	req.Header.Set("Request-Id", rid)

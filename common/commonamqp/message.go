@@ -55,7 +55,7 @@ func ToAMQPMessage(msg *common.Message) *amqp.Message {
 		props[k] = v
 	}
 	return &amqp.Message{
-		Data: [][]byte{[]byte(msg.Payload)},
+		Data: [][]byte{msg.Payload},
 		Properties: &amqp.MessageProperties{
 			To:                 msg.To,
 			UserID:             []byte(msg.UserID),
