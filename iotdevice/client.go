@@ -278,15 +278,9 @@ func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
-	c.mu.Lock()
-	if !c.cmMux.on {
-		if err := c.tr.SubscribeEvents(ctx, &c.cmMux); err != nil {
-			c.mu.Unlock()
-			return err
-		}
-		c.cmMux.on = true
-	}
-	c.mu.Unlock()
+	c.cmMux.once(func() error {
+		return c.tr.SubscribeEvents(ctx, &c.cmMux)
+	})
 	c.cmMux.add(fn)
 	return nil
 }
@@ -307,17 +301,11 @@ func (c *Client) RegisterMethod(ctx context.Context, name string, fn DirectMetho
 		return errors.New("name cannot be blank")
 	}
 
-	// register methods router just once
-	c.mu.Lock()
-	if !c.dmMux.on {
-		if err := c.tr.RegisterDirectMethods(ctx, &c.dmMux); err != nil {
-			c.mu.Unlock()
-			return err
-		}
-		c.dmMux.on = true
+	if err := c.dmMux.once(func() error {
+		return c.tr.RegisterDirectMethods(ctx, &c.dmMux)
+	}); err != nil {
+		return err
 	}
-	c.mu.Unlock()
-
 	return c.dmMux.handle(name, fn)
 }
 
@@ -378,15 +366,11 @@ func (c *Client) SubscribeTwinUpdates(ctx context.Context, fn TwinUpdateHandler)
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
-	c.mu.Lock()
-	if !c.tuMux.on {
-		if err := c.tr.SubscribeTwinUpdates(ctx, &c.tuMux); err != nil {
-			c.mu.Unlock()
-			return err
-		}
-		c.tuMux.on = true
+	if err := c.tuMux.once(func() error {
+		return c.tr.SubscribeTwinUpdates(ctx, &c.tuMux)
+	}); err != nil {
+		return err
 	}
-	c.mu.Unlock()
 	c.tuMux.add(fn)
 	return nil
 }

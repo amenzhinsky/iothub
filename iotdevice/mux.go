@@ -6,15 +6,39 @@ import (
 	"log"
 	"reflect"
 	"sync"
+	"sync/atomic"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 )
 
 // messageMux messages router.
 type messageMux struct {
-	on bool
+	on uint32
 	mu sync.RWMutex
 	s  []MessageHandler
+}
+
+func (m *messageMux) once(fn func() error) error {
+	return once(&m.on, &m.mu, fn)
+}
+
+func once(i *uint32, mu *sync.RWMutex, fn func() error) error {
+	// make a quick check without locking the mutex
+	if atomic.LoadUint32(i) == 1 {
+		return nil
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	// someone can run the given func and change the value
+	// between atomic checking and lock acquiring
+	if *i == 1 {
+		return nil
+	}
+	if err := fn(); err != nil {
+		return err
+	}
+	atomic.StoreUint32(i, 1)
+	return nil
 }
 
 // add adds the given handler to the handlers list.
@@ -53,43 +77,47 @@ func (m *messageMux) Dispatch(msg *common.Message) {
 
 // methodMux is direct-methods dispatcher.
 type methodMux struct {
-	on bool
+	on uint32
 	mu sync.RWMutex
 	m  map[string]DirectMethodHandler
 }
 
+func (m *methodMux) once(fn func() error) error {
+	return once(&m.on, &m.mu, fn)
+}
+
 // handle registers the given direct-method handler.
-func (r *methodMux) handle(method string, fn DirectMethodHandler) error {
+func (m *methodMux) handle(method string, fn DirectMethodHandler) error {
 	if fn == nil {
 		panic("fn is nil")
 	}
-	r.mu.Lock()
-	if r.m == nil {
-		r.m = map[string]DirectMethodHandler{}
+	m.mu.Lock()
+	if m.m == nil {
+		m.m = map[string]DirectMethodHandler{}
 	}
-	if _, ok := r.m[method]; ok {
-		r.mu.Unlock()
+	if _, ok := m.m[method]; ok {
+		m.mu.Unlock()
 		return fmt.Errorf("method %q is already registered", method)
 	}
-	r.m[method] = fn
-	r.mu.Unlock()
+	m.m[method] = fn
+	m.mu.Unlock()
 	return nil
 }
 
 // remove deregisters the named method.
-func (r *methodMux) remove(method string) {
-	r.mu.Lock()
-	if r.m != nil {
-		delete(r.m, method)
+func (m *methodMux) remove(method string) {
+	m.mu.Lock()
+	if m.m != nil {
+		delete(m.m, method)
 	}
-	r.mu.Unlock()
+	m.mu.Unlock()
 }
 
 // Dispatch dispatches the named method, error is not nil only when dispatching fails.
-func (r *methodMux) Dispatch(method string, b []byte) (int, []byte, error) {
-	r.mu.RLock()
-	f, ok := r.m[method]
-	r.mu.RUnlock()
+func (m *methodMux) Dispatch(method string, b []byte) (int, []byte, error) {
+	m.mu.RLock()
+	f, ok := m.m[method]
+	m.mu.RUnlock()
 	if !ok {
 		return 0, nil, fmt.Errorf("method %q is not registered", method)
 	}
@@ -118,9 +146,13 @@ func jsonErr(err error) (int, []byte, error) {
 
 // mostly copy-paste of messageRouter
 type stateMux struct {
-	on bool
+	on uint32
 	mu sync.RWMutex
 	s  []TwinUpdateHandler
+}
+
+func (m *stateMux) once(fn func() error) error {
+	return once(&m.on, &m.mu, fn)
 }
 
 func (m *stateMux) add(fn TwinUpdateHandler) {
@@ -142,6 +174,7 @@ func (m *stateMux) remove(fn TwinUpdateHandler) {
 	m.mu.RUnlock()
 }
 
+// blocks until all handlers return
 func (m *stateMux) Dispatch(b []byte) {
 	var v TwinState
 	if err := json.Unmarshal(b, &v); err != nil {
@@ -149,8 +182,8 @@ func (m *stateMux) Dispatch(b []byte) {
 		return
 	}
 
-	m.mu.RLock()
 	w := sync.WaitGroup{}
+	m.mu.RLock()
 	w.Add(len(m.s))
 	for _, fn := range m.s {
 		go func(f TwinUpdateHandler) {

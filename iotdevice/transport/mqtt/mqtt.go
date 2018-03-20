@@ -102,8 +102,8 @@ func (tr *Transport) Connect(
 	})
 
 	c := mqtt.NewClient(o)
-	if t := c.Connect(); t.Wait() && t.Error() != nil {
-		return t.Error()
+	if err := contextToken(ctx, c.Connect()); err != nil {
+		return err
 	}
 
 	tr.did = deviceID
@@ -112,7 +112,7 @@ func (tr *Transport) Connect(
 }
 
 func (tr *Transport) SubscribeEvents(ctx context.Context, mux transport.MessageDispatcher) error {
-	t := tr.conn.Subscribe(
+	return contextToken(ctx, tr.conn.Subscribe(
 		"devices/"+tr.did+"/messages/devicebound/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 			msg, err := parseEventMessage(m)
 			if err != nil {
@@ -121,19 +121,15 @@ func (tr *Transport) SubscribeEvents(ctx context.Context, mux transport.MessageD
 			}
 			mux.Dispatch(msg)
 		},
-	)
-	t.Wait()
-	return t.Error()
+	))
 }
 
 func (tr *Transport) SubscribeTwinUpdates(ctx context.Context, mux transport.TwinStateDispatcher) error {
-	t := tr.conn.Subscribe(
+	return contextToken(ctx, tr.conn.Subscribe(
 		"$iothub/twin/PATCH/properties/desired/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 			mux.Dispatch(m.Payload())
 		},
-	)
-	t.Wait()
-	return t.Error()
+	))
 }
 
 // mqtt library wraps errors with fmt.Errorf.
@@ -205,7 +201,7 @@ func parseCloudToDeviceTopic(s string) (map[string]string, error) {
 }
 
 func (tr *Transport) RegisterDirectMethods(ctx context.Context, mux transport.MethodDispatcher) error {
-	t := tr.conn.Subscribe(
+	return contextToken(ctx, tr.conn.Subscribe(
 		"$iothub/methods/POST/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 			method, rid, err := parseDirectMethodTopic(m.Topic())
 			if err != nil {
@@ -223,9 +219,7 @@ func (tr *Transport) RegisterDirectMethods(ctx context.Context, mux transport.Me
 				return
 			}
 		},
-	)
-	t.Wait()
-	return t.Error()
+	))
 }
 
 // returns method name and rid
@@ -275,7 +269,7 @@ func (tr *Transport) UpdateTwinProperties(ctx context.Context, b []byte) (int, e
 }
 
 func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp, error) {
-	if err := tr.enableTwinResponses(); err != nil {
+	if err := tr.enableTwinResponses(ctx); err != nil {
 		return nil, err
 	}
 	rid := atomic.AddUint32(&tr.rid, 1) // increment rid counter
@@ -307,7 +301,7 @@ func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp
 	}
 }
 
-func (tr *Transport) enableTwinResponses() error {
+func (tr *Transport) enableTwinResponses(ctx context.Context) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
@@ -316,7 +310,7 @@ func (tr *Transport) enableTwinResponses() error {
 		return nil
 	}
 
-	if t := tr.conn.Subscribe(
+	if err := contextToken(ctx, tr.conn.Subscribe(
 		"$iothub/twin/res/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 			rc, rid, ver, err := parseTwinPropsTopic(m.Topic())
 			if err != nil {
@@ -342,8 +336,8 @@ func (tr *Transport) enableTwinResponses() error {
 			}
 			tr.logf("unknown rid: %q", rid)
 		},
-	); t.Wait() && t.Error() != nil {
-		return t.Error()
+	)); err != nil {
+		return err
 	}
 
 	tr.resp = make(map[uint32]chan *resp)
@@ -426,22 +420,22 @@ func (tr *Transport) send(ctx context.Context, topic string, qos int, b []byte) 
 	if tr.conn == nil {
 		return errors.New("not connected")
 	}
+	return contextToken(ctx, tr.conn.Publish(topic, defaultQoS, false, b))
+}
 
-	// mqtt library doest support context, so there goes this hackfix
-	t := tr.conn.Publish(topic, defaultQoS, false, b)
+// mqtt lib doesn't support contexts currently
+func contextToken(ctx context.Context, t mqtt.Token) error {
 	done := make(chan struct{})
 	go func() {
-	Loop:
 		for !t.WaitTimeout(time.Second) {
 			select {
 			case <-ctx.Done():
-				break Loop
+				return
 			default:
 			}
 		}
 		close(done)
 	}()
-
 	select {
 	case <-done:
 		return t.Error()

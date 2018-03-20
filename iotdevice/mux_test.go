@@ -2,6 +2,7 @@ package iotdevice
 
 import (
 	"bytes"
+	"errors"
 	"sync/atomic"
 	"testing"
 
@@ -31,6 +32,23 @@ func TestMessageMux(t *testing.T) {
 
 	m.remove(f2)
 	testRecvNum(t, m, &i, 0)
+}
+
+func TestMessageMux_Once(t *testing.T) {
+	t.Parallel()
+
+	m := &messageMux{}
+	if err := m.once(func() error {
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// func has to be ignored for the second time
+	if err := m.once(func() error {
+		return errors.New("some error")
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func testRecvNum(t *testing.T, m *messageMux, i *uint32, w uint32) {
