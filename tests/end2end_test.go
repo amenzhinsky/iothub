@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"fmt"
 	"os"
 	"reflect"
@@ -65,6 +66,11 @@ func TestEnd2End(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	creds, err := common.ParseConnectionString(dcs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for name, tr := range map[string]func() transport.Transport{
 		"mqtt": func() transport.Transport { return mqtt.New() },
 		//"amqp": func() transport.Transport { return amqp.New() },
@@ -74,15 +80,22 @@ func TestEnd2End(t *testing.T) {
 				opts []iotdevice.ClientOption
 				test string
 			}{
+				"custom": {
+					[]iotdevice.ClientOption{
+						iotdevice.WithCredentials(&thirdPartyCreds{creds}),
+					},
+					"TwinDevice", // just need to check access
+				},
 				"x509": {
 					[]iotdevice.ClientOption{
-						iotdevice.WithDeviceID(x509Device.DeviceID),
-						iotdevice.WithHostname(sc.HostName()),
-						iotdevice.WithX509FromFile("testdata/device.crt", "testdata/device.key"),
+						iotdevice.WithX509FromFile(
+							x509Device.DeviceID,
+							sc.HostName(),
+							"testdata/device.crt",
+							"testdata/device.key",
+						),
 					},
-
-					// we test only access here so we don't want to run all the tests
-					"TwinDevice",
+					"TwinDevice", // just need to check access
 				},
 				"sas": {
 					[]iotdevice.ClientOption{
@@ -116,6 +129,34 @@ func TestEnd2End(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// we're just simulating that sas token is requested some other way, like an external API.
+type thirdPartyCreds struct {
+	creds *common.Credentials
+}
+
+func (c *thirdPartyCreds) DeviceID() string {
+	return c.creds.DeviceID
+}
+
+func (c *thirdPartyCreds) Hostname() string {
+	return c.creds.HostName
+}
+
+func (c *thirdPartyCreds) IsSAS() bool {
+	return true
+}
+
+func (c *thirdPartyCreds) TLSConfig() *tls.Config {
+	return &tls.Config{
+		ServerName: c.creds.HostName,
+		RootCAs:    common.RootCAs(),
+	}
+}
+
+func (c *thirdPartyCreds) Token(ctx context.Context, uri string, d time.Duration) (string, error) {
+	return c.creds.SAS(uri, d)
 }
 
 func randString() string {

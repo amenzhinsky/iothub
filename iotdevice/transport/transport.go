@@ -3,13 +3,14 @@ package transport
 import (
 	"context"
 	"crypto/tls"
+	"time"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 )
 
 // Transport interface.
 type Transport interface {
-	Connect(ctx context.Context, tlsConfig *tls.Config, deviceID string, auth AuthFunc) error
+	Connect(ctx context.Context, creds Credentials) error
 	IsNetworkError(err error) bool
 	Send(ctx context.Context, msg *common.Message) error
 	RegisterDirectMethods(ctx context.Context, mux MethodDispatcher) error
@@ -20,17 +21,26 @@ type Transport interface {
 	Close() error
 }
 
+// MethodDispatcher handles direct method calls.
 type MethodDispatcher interface {
 	Dispatch(methodName string, b []byte) (rc int, data []byte, err error)
 }
 
+// MessageDispatcher handles incoming messages.
 type MessageDispatcher interface {
 	Dispatch(msg *common.Message)
 }
 
+// TwinStateDispatcher handles twin state updates.
 type TwinStateDispatcher interface {
 	Dispatch(b []byte)
 }
 
-// AuthFunc is used to obtain hostname and sas token before authenticating.
-type AuthFunc func(ctx context.Context, path string) (hostname string, token string, err error)
+// Credentials is connection credentials needed for x509 or sas authentication.
+type Credentials interface {
+	DeviceID() string
+	Hostname() string
+	TLSConfig() *tls.Config
+	IsSAS() bool
+	Token(ctx context.Context, uri string, d time.Duration) (string, error)
+}

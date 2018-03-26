@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/amenzhinsky/golang-iothub/common"
 	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
@@ -42,10 +41,13 @@ func WithTransport(tr transport.Transport) ClientOption {
 	}
 }
 
-// WithDeviceID sets client device id.
-func WithDeviceID(s string) ClientOption {
+// WithCredentials sets custom authentication credentials, e.g. 3rd-party token provider.
+func WithCredentials(creds transport.Credentials) ClientOption {
+	if creds == nil {
+		panic("creds is nil")
+	}
 	return func(c *Client) error {
-		c.deviceID = s
+		c.creds = creds
 		return nil
 	}
 }
@@ -54,68 +56,35 @@ func WithDeviceID(s string) ClientOption {
 // but it parses the given connection string first.
 func WithConnectionString(cs string) ClientOption {
 	return func(c *Client) error {
-		creds, err := common.ParseConnectionString(cs)
+		var err error
+		c.creds, err = NewSASCredentials(cs)
 		if err != nil {
 			return err
 		}
-		c.deviceID = creds.DeviceID
-		c.authFunc = mkCredsAuthFunc(creds)
 		return nil
 	}
 }
 
-// WithCredentials uses the given credentials to obtain
-// connection credentials by the authFunc and to set DeviceID.
-func WithCredentials(creds *common.Credentials) ClientOption {
+// WithX509FromCert enables x509 authentication.
+func WithX509FromCert(deviceID, hostname string, crt *tls.Certificate) ClientOption {
 	return func(c *Client) error {
-		c.deviceID = creds.DeviceID
-		c.authFunc = mkCredsAuthFunc(creds)
-		return nil
-	}
-}
-
-func mkCredsAuthFunc(creds *common.Credentials) transport.AuthFunc {
-	return func(_ context.Context, path string) (string, string, error) {
-		token, err := creds.SAS(creds.HostName+path, time.Hour)
+		var err error
+		c.creds, err = NewX509Credentials(deviceID, hostname, crt)
 		if err != nil {
-			return "", "", err
+			return err
 		}
-		return creds.HostName, token, nil
-	}
-}
-
-// WithAuthFunc sets AuthFunc useful when you're using a 3rd-party token service.
-func WithAuthFunc(fn transport.AuthFunc) ClientOption {
-	return func(c *Client) error {
-		c.authFunc = fn
 		return nil
 	}
 }
 
-// WithHostname changes hostname required when using x509 authentication.
-func WithHostname(hostname string) ClientOption {
-	return func(c *Client) error {
-		c.tlsConfig.ServerName = hostname
-		return nil
-	}
-}
-
-// WithX509FromCert uses the given TLS certificate for x509 authentication.
-func WithX509FromCert(crt *tls.Certificate) ClientOption {
-	return func(c *Client) error {
-		c.tlsConfig.Certificates = []tls.Certificate{*crt}
-		return nil
-	}
-}
-
-// WithX509FromFile is same as `WithX509FromCert` but parses the given files first.
-func WithX509FromFile(certFile, keyFile string) ClientOption {
+// WithX509FromFile is same as `WithX509FromCert` but parses the given pem files first.
+func WithX509FromFile(deviceID, hostname, certFile, keyFile string) ClientOption {
 	return func(c *Client) error {
 		crt, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
 			return err
 		}
-		return WithX509FromCert(&crt)(c)
+		return WithX509FromCert(deviceID, hostname, &crt)(c)
 	}
 }
 
@@ -125,31 +94,28 @@ var errNotConnected = errors.New("not connected")
 // NewClient returns new iothub client.
 func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		tlsConfig: &tls.Config{RootCAs: common.RootCAs()},
-		done:      make(chan struct{}),
-		debug:     os.Getenv("DEBUG") != "",
-		connErr:   errNotConnected,
+		done:    make(chan struct{}),
+		debug:   os.Getenv("DEBUG") != "",
+		connErr: errNotConnected,
 	}
-
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
 			return nil, err
 		}
 	}
-	if c.deviceID == "" {
-		return nil, errors.New("device id is empty, consider using `WithDeviceID` option")
+	if c.creds == nil {
+		return nil, errors.New("credentials required")
 	}
 	if c.tr == nil {
-		return nil, errors.New("transport is nil, consider using `WithTransport` option")
+		return nil, errors.New("transport required")
 	}
 	return c, nil
 }
 
 // Client is iothub device client.
 type Client struct {
-	deviceID  string
-	authFunc  transport.AuthFunc
-	tlsConfig *tls.Config
+	creds transport.Credentials
+	tr    transport.Transport
 
 	logger *log.Logger
 	debug  bool
@@ -164,8 +130,6 @@ type Client struct {
 	cmMux messageMux
 	dmMux methodMux
 	tuMux stateMux
-
-	tr transport.Transport
 }
 
 // MessageHandler handles cloud-to-device events.
@@ -179,7 +143,7 @@ type TwinUpdateHandler func(state TwinState)
 
 // DeviceID returns iothub device id.
 func (c *Client) DeviceID() string {
-	return c.deviceID
+	return c.creds.DeviceID()
 }
 
 type connection struct {
@@ -208,7 +172,7 @@ func (c *Client) Connect(ctx context.Context, opts ...ConnOption) error {
 	}
 
 Retry:
-	c.connErr = c.tr.Connect(ctx, c.tlsConfig.Clone(), c.deviceID, c.authFunc)
+	c.connErr = c.tr.Connect(ctx, c.creds)
 	if c.connErr != nil && conn.ignoreNetErrors && c.tr.IsNetworkError(c.connErr) {
 		c.logf("couldn't connect, reconnecting")
 		goto Retry
@@ -285,6 +249,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
 	return nil
 }
 
+// UnsubscribeEvents unsubscribes the given handler from cloud-to-device events.
 func (c *Client) UnsubscribeEvents(fn MessageHandler) {
 	c.cmMux.remove(fn)
 }
@@ -361,7 +326,7 @@ func (c *Client) UpdateTwinState(ctx context.Context, s TwinState) (int, error) 
 	return c.tr.UpdateTwinProperties(ctx, b)
 }
 
-// SubscribeDesiredStateChanges registers fn as a desired state changes handler.
+// SubscribeTwinUpdates registers fn as a desired state changes handler.
 func (c *Client) SubscribeTwinUpdates(ctx context.Context, fn TwinUpdateHandler) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
@@ -375,6 +340,7 @@ func (c *Client) SubscribeTwinUpdates(ctx context.Context, fn TwinUpdateHandler)
 	return nil
 }
 
+// UnsubscribeTwinUpdates unsubscribes the given handler from twin state updates.
 func (c *Client) UnsubscribeTwinUpdates(fn TwinUpdateHandler) {
 	c.tuMux.remove(fn)
 }
@@ -402,7 +368,7 @@ func WithSendMessageID(mid string) SendOption {
 	}
 }
 
-// WithSendMessageID sets message correlation id.
+// WithSendCorrelationID sets message correlation id.
 func WithSendCorrelationID(cid string) SendOption {
 	return func(msg *common.Message) error {
 		msg.CorrelationID = cid
@@ -499,6 +465,6 @@ func (c *Client) Close() error {
 		return nil
 	default:
 		close(c.done)
+		return c.tr.Close()
 	}
-	return c.tr.Close()
 }

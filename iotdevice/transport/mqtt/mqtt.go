@@ -2,7 +2,6 @@ package mqtt
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -65,34 +64,27 @@ func (tr *Transport) logf(format string, v ...interface{}) {
 	}
 }
 
-func (tr *Transport) Connect(
-	ctx context.Context,
-	tlsConfig *tls.Config,
-	deviceID string,
-	auth transport.AuthFunc,
-) error {
+func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
 		return errors.New("already connected")
 	}
 
-	host := tlsConfig.ServerName
-	pass := ""
-	if auth != nil {
-		var err error
-		host, pass, err = auth(ctx, "")
+	o := mqtt.NewClientOptions()
+	o.SetTLSConfig(creds.TLSConfig())
+
+	if creds.IsSAS() {
+		pwd, err := creds.Token(ctx, creds.Hostname(), time.Hour)
 		if err != nil {
 			return err
 		}
+		o.SetPassword(pwd)
 	}
 
-	o := mqtt.NewClientOptions()
-	o.AddBroker("tls://" + host + ":8883")
-	o.SetClientID(deviceID)
-	o.SetUsername(host + "/" + deviceID + "/api-version=" + common.APIVersion)
-	o.SetPassword(pass)
-	o.SetTLSConfig(tlsConfig)
+	o.AddBroker("tls://" + creds.Hostname() + ":8883")
+	o.SetClientID(creds.DeviceID())
+	o.SetUsername(creds.Hostname() + "/" + creds.DeviceID() + "/api-version=" + common.APIVersion)
 	o.SetAutoReconnect(true)
 	o.SetOnConnectHandler(func(_ mqtt.Client) {
 		tr.logf("connection established")
@@ -106,7 +98,7 @@ func (tr *Transport) Connect(
 		return err
 	}
 
-	tr.did = deviceID
+	tr.did = creds.DeviceID()
 	tr.conn = c
 	return nil
 }

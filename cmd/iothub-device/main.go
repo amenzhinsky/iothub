@@ -76,7 +76,7 @@ func run() error {
 			},
 		},
 		{
-			"watch-events", "ws",
+			"watch-events", "we",
 			"",
 			"subscribe to messages sent from the cloud (C2D)",
 			wrap(watchEvents),
@@ -121,29 +121,22 @@ func run() error {
 
 func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) internal.HandlerFunc {
 	return func(ctx context.Context, f *flag.FlagSet) error {
-		var opts []iotdevice.ClientOption
-		if tlsCertFlag != "" {
-			if tlsKeyFlag == "" {
-				return errors.New("tlsKeyFlag is empty")
-			}
+		var auth iotdevice.ClientOption
+		if tlsCertFlag != "" && tlsKeyFlag != "" {
 			if hostnameFlag == "" {
-				return errors.New("hostname must be set when using x509 authentication")
+				return errors.New("hostname is required for x509 authentication")
 			}
 			if deviceIDFlag == "" {
-				return errors.New("device id must be set when using 509 authentication")
+				return errors.New("device-id is required for x509 authentication")
 			}
-
-			opts = append(opts,
-				iotdevice.WithX509FromFile(tlsCertFlag, tlsKeyFlag),
-				iotdevice.WithHostname(hostnameFlag),
-				iotdevice.WithDeviceID(deviceIDFlag),
-			)
+			auth = iotdevice.WithX509FromFile(deviceIDFlag, hostnameFlag, tlsCertFlag, tlsKeyFlag)
 		} else {
+			// we cannot accept connection string from parameters
 			cs := os.Getenv("DEVICE_CONNECTION_STRING")
 			if cs == "" {
-				return errors.New("DEVICE_CONNECTION_STRING is blank")
+				return errors.New("$DEVICE_CONNECTION_STRING is empty")
 			}
-			opts = append(opts, iotdevice.WithConnectionString(cs))
+			auth = iotdevice.WithConnectionString(cs)
 		}
 
 		mk, ok := transports[transportFlag]
@@ -154,11 +147,12 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		if err != nil {
 			return err
 		}
-		c, err := iotdevice.NewClient(append(opts,
+		c, err := iotdevice.NewClient(
+			iotdevice.WithDebug(debugFlag),
 			iotdevice.WithLogger(mklog("[iothub] ")),
 			iotdevice.WithTransport(t),
-			iotdevice.WithDebug(debugFlag),
-		)...)
+			auth,
+		)
 		if err != nil {
 			return err
 		}
