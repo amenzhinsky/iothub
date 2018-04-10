@@ -97,6 +97,5 @@ To enable end-to-end testing in the `tests` directory you need to provide `TEST_
 1. AMQP-WS transport.
 1. Retry policies.
 1. Grammar check.
-1. Automated testing, manual now.
 1. Rework debugging logs.
 1. Make iotservice.Subscribe* functions non-blocking.
