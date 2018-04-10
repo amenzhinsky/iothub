@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
 	"github.com/eclipse/paho.mqtt.golang"
+	"github.com/goautomotive/iothub/common"
+	"github.com/goautomotive/iothub/iotdevice/transport"
 )
 
 // DefaultQoS is the default quality of service value.

@@ -11,11 +11,11 @@ import (
 	"os"
 	"sync"
 
-	"github.com/amenzhinsky/golang-iothub/cmd/internal"
-	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/iotdevice"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
+	"github.com/goautomotive/iothub/cmd/internal"
+	"github.com/goautomotive/iothub/common"
+	"github.com/goautomotive/iothub/iotdevice"
+	"github.com/goautomotive/iothub/iotdevice/transport"
+	"github.com/goautomotive/iothub/iotdevice/transport/mqtt"
 )
 
 var transports = map[string]func() (transport.Transport, error){

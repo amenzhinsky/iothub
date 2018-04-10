@@ -6,8 +6,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/iotservice"
+	"github.com/goautomotive/iothub/common"
+	"github.com/goautomotive/iothub/iotservice"
 )
 
 func main() {

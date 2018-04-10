@@ -9,8 +9,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
+	"github.com/goautomotive/iothub/common"
+	"github.com/goautomotive/iothub/iotdevice/transport"
 )
 
 // ClientOption is a client configuration option.

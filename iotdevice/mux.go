@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/amenzhinsky/golang-iothub/common"
+	"github.com/goautomotive/iothub/common"
 )
 
 // messageMux messages router.

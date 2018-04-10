@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/iotdevice"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
-	"github.com/amenzhinsky/golang-iothub/iotservice"
+	"github.com/goautomotive/iothub/common"
+	"github.com/goautomotive/iothub/iotdevice"
+	"github.com/goautomotive/iothub/iotdevice/transport"
+	"github.com/goautomotive/iothub/iotdevice/transport/mqtt"
+	"github.com/goautomotive/iothub/iotservice"
 )
 
 func TestEnd2End(t *testing.T) {

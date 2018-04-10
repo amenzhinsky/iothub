@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/common/commonamqp"
-	"github.com/amenzhinsky/golang-iothub/eventhub"
+	"github.com/goautomotive/iothub/common"
+	"github.com/goautomotive/iothub/common/commonamqp"
+	"github.com/goautomotive/iothub/eventhub"
 	"pack.ag/amqp"
 )
 

@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/amenzhinsky/golang-iothub/iotdevice"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
+	"github.com/goautomotive/iothub/iotdevice"
+	"github.com/goautomotive/iothub/iotdevice/transport/mqtt"
 )
 
 func main() {

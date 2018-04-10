@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/amenzhinsky/golang-iothub/common"
+	"github.com/goautomotive/iothub/common"
 )
 
 func TestMessageMux(t *testing.T) {

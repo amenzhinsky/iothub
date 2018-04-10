@@ -4,7 +4,7 @@ This repository provides SDK for golang and command line tools for both device-t
 
 This project in the active development state and if you decided to use it anyway, please vendor the source code.
 
-Some features are missing, see [TODO](https://github.com/amenzhinsky/golang-iothub#todo).
+Some features are missing, see [TODO](https://github.com/goautomotive/iothub#todo).
 
 ## Examples
 
@@ -18,8 +18,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/amenzhinsky/golang-iothub/iotdevice"
-	"github.com/amenzhinsky/golang-iothub/iotdevice/transport/mqtt"
+	"github.com/goautomotive/iothub/iotdevice"
+	"github.com/goautomotive/iothub/iotdevice/transport/mqtt"
 )
 
 func main() {
@@ -56,8 +56,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/iotservice"
+	"github.com/goautomotive/iothub/common"
+	"github.com/goautomotive/iothub/iotservice"
 )
 
 func main() {

@@ -10,9 +10,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/amenzhinsky/golang-iothub/cmd/internal"
-	"github.com/amenzhinsky/golang-iothub/common"
-	"github.com/amenzhinsky/golang-iothub/iotservice"
+	"github.com/goautomotive/iothub/cmd/internal"
+	"github.com/goautomotive/iothub/common"
+	"github.com/goautomotive/iothub/iotservice"
 )
 
 // globally accessible by command handlers, is it a good idea?
