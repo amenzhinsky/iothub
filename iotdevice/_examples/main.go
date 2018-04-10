@@ -26,6 +26,7 @@ func main() {
 	// send a device-to-cloud message
 	if err = c.SendEvent(context.Background(), []byte(`hello`),
 		iotdevice.WithSendProperty("foo", "bar"),
+		iotdevice.WithSendQoS(0), // 1 is the default value
 	); err != nil {
 		log.Fatal(err)
 	}

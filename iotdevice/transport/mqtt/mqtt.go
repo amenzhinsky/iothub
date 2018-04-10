@@ -17,7 +17,8 @@ import (
 	"github.com/eclipse/paho.mqtt.golang"
 )
 
-const defaultQoS = 1
+// DefaultQoS is the default quality of service value.
+const DefaultQoS = 1
 
 // TransportOption is a transport configuration option.
 type TransportOption func(tr *Transport)
@@ -105,7 +106,7 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 
 func (tr *Transport) SubscribeEvents(ctx context.Context, mux transport.MessageDispatcher) error {
 	return contextToken(ctx, tr.conn.Subscribe(
-		"devices/"+tr.did+"/messages/devicebound/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+		"devices/"+tr.did+"/messages/devicebound/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 			msg, err := parseEventMessage(m)
 			if err != nil {
 				tr.logf("parse error: %s", err)
@@ -118,7 +119,7 @@ func (tr *Transport) SubscribeEvents(ctx context.Context, mux transport.MessageD
 
 func (tr *Transport) SubscribeTwinUpdates(ctx context.Context, mux transport.TwinStateDispatcher) error {
 	return contextToken(ctx, tr.conn.Subscribe(
-		"$iothub/twin/PATCH/properties/desired/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+		"$iothub/twin/PATCH/properties/desired/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 			mux.Dispatch(m.Payload())
 		},
 	))
@@ -194,7 +195,7 @@ func parseCloudToDeviceTopic(s string) (map[string]string, error) {
 
 func (tr *Transport) RegisterDirectMethods(ctx context.Context, mux transport.MethodDispatcher) error {
 	return contextToken(ctx, tr.conn.Subscribe(
-		"$iothub/methods/POST/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+		"$iothub/methods/POST/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 			method, rid, err := parseDirectMethodTopic(m.Topic())
 			if err != nil {
 				tr.logf("parse error: %s", err)
@@ -206,7 +207,7 @@ func (tr *Transport) RegisterDirectMethods(ctx context.Context, mux transport.Me
 				return
 			}
 			dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%d", rc, rid)
-			if err = tr.send(ctx, dst, defaultQoS, b); err != nil {
+			if err = tr.send(ctx, dst, DefaultQoS, b); err != nil {
 				tr.logf("method response error: %s", err)
 				return
 			}
@@ -276,7 +277,7 @@ func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp
 		tr.mu.Unlock()
 	}()
 
-	if err := tr.send(ctx, dst, defaultQoS, b); err != nil {
+	if err := tr.send(ctx, dst, DefaultQoS, b); err != nil {
 		return nil, err
 	}
 
@@ -303,7 +304,7 @@ func (tr *Transport) enableTwinResponses(ctx context.Context) error {
 	}
 
 	if err := contextToken(ctx, tr.conn.Subscribe(
-		"$iothub/twin/res/#", defaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+		"$iothub/twin/res/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 			rc, rid, ver, err := parseTwinPropsTopic(m.Topic())
 			if err != nil {
 				// TODO
@@ -399,9 +400,12 @@ func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
 	}
 
 	dst := "devices/" + tr.did + "/messages/events/" + u.Encode()
-	qos := defaultQoS
+	qos := DefaultQoS
 	if q, ok := msg.TransportOptions["qos"]; ok {
-		qos = q.(int)
+		qos = q.(int) // panic if it's not an int
+		if qos != 0 && qos != 1 {
+			return fmt.Errorf("invalid QoS value: %d", qos)
+		}
 	}
 	return tr.send(ctx, dst, qos, msg.Payload)
 }
@@ -412,7 +416,7 @@ func (tr *Transport) send(ctx context.Context, topic string, qos int, b []byte) 
 	if tr.conn == nil {
 		return errors.New("not connected")
 	}
-	return contextToken(ctx, tr.conn.Publish(topic, defaultQoS, false, b))
+	return contextToken(ctx, tr.conn.Publish(topic, byte(qos), false, b))
 }
 
 // mqtt lib doesn't support contexts currently

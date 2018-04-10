@@ -36,6 +36,7 @@ var (
 	transportFlag = "mqtt"
 	midFlag       = ""
 	cidFlag       = ""
+	qosFlag       = mqtt.DefaultQoS
 
 	// x509 flags
 	tlsCertFlag  = ""
@@ -73,6 +74,7 @@ func run() error {
 			func(f *flag.FlagSet) {
 				f.StringVar(&midFlag, "mid", midFlag, "identifier for the message")
 				f.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
+				f.IntVar(&qosFlag, "qos", qosFlag, "QoS value, 0 or 1 (mqtt only)")
 			},
 		},
 		{
@@ -187,6 +189,7 @@ func send(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
 		iotdevice.WithSendProperties(props),
 		iotdevice.WithSendMessageID(midFlag),
 		iotdevice.WithSendCorrelationID(cidFlag),
+		iotdevice.WithSendQoS(qosFlag),
 	)
 }
 
