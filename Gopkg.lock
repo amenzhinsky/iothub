@@ -7,8 +7,8 @@
     ".",
     "packets"
   ]
-  revision = "aff15770515e3c57fc6109da73d42b0d46f7f483"
-  version = "v1.1.0"
+  revision = "36d01c2b4cbeb3d2a12063e4880ce30800af9560"
+  version = "v1.1.1"
 
 [[projects]]
   name = "github.com/pkg/errors"
@@ -26,18 +26,17 @@
   revision = "cbe0f9307d0156177f9dd5dc85da1a31abc5f2fb"
 
 [[projects]]
-  branch = "master"
   name = "pack.ag/amqp"
   packages = [
     ".",
     "internal/testconn"
   ]
-  revision = "7541c9e406fe7ffe25b0015f2b3fac5789dbbd24"
-  source = "github.com/vcabbage/amqp"
+  revision = "fba4c617049c3049d8bc7ba9879daca1a1a2044e"
+  version = "v0.4.1"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "56c7739003348d3227931e52b174e2cd728542307185062058874b76e53b3c05"
+  inputs-digest = "82827b4f89dac8300625bc8e860ea951f3aee293c3bf1c98692ce22eeca1b0da"
   solver-name = "gps-cdcl"
   solver-version = 1

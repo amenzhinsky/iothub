@@ -159,7 +159,7 @@ type frame struct {
 	body    frameBody // body of the frame
 
 	// optional channel which will be closed after net transmit
-	done chan struct{}
+	done chan deliveryState
 }
 
 // frameBody adds some type safety to frame encoding
@@ -1262,7 +1262,7 @@ type performTransfer struct {
 	Payload []byte
 
 	// optional channel to indicate to sender that transfer has completed
-	done chan struct{}
+	done chan deliveryState
 	// complete when receiver has responded with disposition (ReceiverSettleMode = second)
 	// instead of when this message has been sent on network
 	confirmSettlement bool
@@ -1571,6 +1571,10 @@ func (e *Error) String() string {
 	)
 }
 
+func (e *Error) Error() string {
+	return e.String()
+}
+
 /*
 <type name="end" class="composite" source="list" provides="frame">
     <descriptor name="amqp:end:list" code="0x00000000:0x00000017"/>
@@ -1763,6 +1767,13 @@ func (m *Message) Release() {
 	if m.shouldSendDisposition() {
 		m.receiver.releaseMessage(m.id)
 	}
+}
+
+// MarshalBinary encodes the message into binary form
+func (m *Message) MarshalBinary() ([]byte, error) {
+	buf := new(buffer)
+	err := m.marshal(buf)
+	return buf.b, err
 }
 
 func (m *Message) shouldSendDisposition() bool {

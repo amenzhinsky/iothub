@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -166,6 +167,8 @@ type Session struct {
 	allocateHandle   chan *link // link handles are allocated by sending a link on this channel, nil is sent on link.rx once allocated
 	deallocateHandle chan *link // link handles are deallocated by sending a link on this channel
 
+	nextDeliveryID uint32 // atomically accessed sequence for deliveryIDs
+
 	// used for gracefully closing link
 	close     chan struct{}
 	closeOnce sync.Once
@@ -201,7 +204,7 @@ func (s *Session) Close() error {
 }
 
 // txFrame sends a frame to the connWriter
-func (s *Session) txFrame(p frameBody, done chan struct{}) {
+func (s *Session) txFrame(p frameBody, done chan deliveryState) {
 	s.conn.wantWriteFrame(frame{
 		type_:   frameTypeAMQP,
 		channel: s.channel,
@@ -274,6 +277,8 @@ func (s *Sender) Send(ctx context.Context, msg *Message) error {
 		maxPayloadSize = int(s.link.session.conn.peerMaxFrameSize) - maxTransferFrameHeader
 		sndSettleMode  = s.link.senderSettleMode
 		rcvSettleMode  = s.link.receiverSettleMode
+		senderSettled  = sndSettleMode != nil && *sndSettleMode == ModeSettled
+		deliveryID     = atomic.AddUint32(&s.link.session.nextDeliveryID, 1)
 	)
 
 	// use uint64 encoded as []byte as deliveryTag
@@ -283,6 +288,7 @@ func (s *Sender) Send(ctx context.Context, msg *Message) error {
 
 	fr := performTransfer{
 		Handle:        s.link.handle,
+		DeliveryID:    &deliveryID,
 		DeliveryTag:   deliveryTag,
 		MessageFormat: &msg.Format,
 		More:          s.buf.len() > 0,
@@ -294,14 +300,14 @@ func (s *Sender) Send(ctx context.Context, msg *Message) error {
 		fr.More = s.buf.len() > 0
 		if !fr.More {
 			// mark final transfer as settled when sender mode is settled
-			fr.Settled = sndSettleMode != nil && *sndSettleMode == ModeSettled
+			fr.Settled = senderSettled
 
 			// set done on last frame to be closed after network transmission
 			//
 			// If confirmSettlement is true (ReceiverSettleMode == "second"),
 			// Session.mux will intercept the done channel and close it when the
 			// receiver has confirmed settlement instead of on net transmit.
-			fr.done = make(chan struct{})
+			fr.done = make(chan deliveryState, 1)
 			fr.confirmSettlement = rcvSettleMode != nil && *rcvSettleMode == ModeSecond
 		}
 
@@ -314,6 +320,7 @@ func (s *Sender) Send(ctx context.Context, msg *Message) error {
 		}
 
 		// clear values that are only required on first message
+		fr.DeliveryID = nil
 		fr.DeliveryTag = nil
 		fr.MessageFormat = nil
 	}
@@ -323,14 +330,16 @@ func (s *Sender) Send(ctx context.Context, msg *Message) error {
 
 	// wait for transfer to be confirmed
 	select {
-	case <-fr.done:
+	case state := <-fr.done:
+		if state, ok := state.(*stateRejected); ok {
+			return state.Error
+		}
+		return nil
 	case <-s.link.done:
 		return s.link.err
 	case <-ctx.Done():
 		return errorWrapf(ctx.Err(), "awaiting send")
 	}
-
-	return nil
 }
 
 // Address returns the link's address.
@@ -366,10 +375,10 @@ func (s *Session) mux(remoteBegin *performBegin) {
 		linksByName = make(map[string]*link) // maping of names to links
 		nextHandle  uint32                   // next handle # to be allocated
 
-		handlesByDeliveryID = make(map[uint32]uint32) //mapping of deliveryIDs to handles
-		nextDeliveryID      uint32                    // next deliveryID
+		handlesByDeliveryID = make(map[uint32]uint32) // mapping of deliveryIDs to handles
+		deliveryIDByHandle  = make(map[uint32]uint32) // mapping of handles to latest deliveryID
 
-		settlementByDeliveryID = make(map[uint32]chan struct{})
+		settlementByDeliveryID = make(map[uint32]chan deliveryState)
 
 		// flow control values
 		nextOutgoingID       uint32
@@ -456,6 +465,7 @@ func (s *Session) mux(remoteBegin *performBegin) {
 		// handle deallocation request
 		case l := <-s.deallocateHandle:
 			delete(links, l.remoteHandle)
+			delete(deliveryIDByHandle, l.handle)
 			close(l.rx) // close channel to indicate deallocation
 
 		// incoming frame for link
@@ -482,8 +492,12 @@ func (s *Session) mux(remoteBegin *performBegin) {
 						// check if settlement confirmation was requested, if so
 						// confirm by closing channel
 						if done, ok := settlementByDeliveryID[deliveryID]; ok {
-							close(done)
 							delete(settlementByDeliveryID, deliveryID)
+							select {
+							case done <- body.State:
+							default:
+							}
+							close(done)
 						}
 					}
 
@@ -583,28 +597,32 @@ func (s *Session) mux(remoteBegin *performBegin) {
 			}
 
 		case fr := <-txTransfer:
-			// nil DeliveryID indicates first message
-			if fr.DeliveryID == nil {
-				// allocate new DeliveryID
-				id := nextDeliveryID
-				nextDeliveryID++
-				fr.DeliveryID = &id
+
+			// record current delivery ID
+			var deliveryID uint32
+			if fr.DeliveryID != nil {
+				deliveryID = *fr.DeliveryID
+				deliveryIDByHandle[fr.Handle] = deliveryID
 
 				// add to handleByDeliveryID if not sender-settled
 				if !fr.Settled {
-					handlesByDeliveryID[id] = fr.Handle
+					handlesByDeliveryID[deliveryID] = fr.Handle
 				}
+			} else {
+				// if fr.DeliveryID is nil it must have been added
+				// to deliveryIDByHandle already
+				deliveryID = deliveryIDByHandle[fr.Handle]
 			}
 
 			// frame has been sender-settled, remove from map
 			if fr.Settled {
-				delete(handlesByDeliveryID, *fr.DeliveryID)
+				delete(handlesByDeliveryID, deliveryID)
 			}
 
 			// if confirmSettlement requested, add done chan to map
 			// and clear from frame so conn doesn't close it.
 			if fr.confirmSettlement && fr.done != nil {
-				settlementByDeliveryID[*fr.DeliveryID] = fr.done
+				settlementByDeliveryID[deliveryID] = fr.done
 				fr.done = nil
 			}
 
@@ -711,15 +729,15 @@ func attachLink(s *Session, r *Receiver, opts []LinkOption) (*link, error) {
 
 	// request handle from Session.mux
 	select {
-	case <-s.conn.done:
-		return nil, s.conn.getErr()
+	case <-s.done:
+		return nil, s.err
 	case s.allocateHandle <- l:
 	}
 
 	// wait for handle allocation
 	select {
-	case <-s.conn.done:
-		return nil, s.conn.getErr()
+	case <-s.done:
+		return nil, s.err
 	case <-l.rx:
 	}
 
@@ -755,8 +773,8 @@ func attachLink(s *Session, r *Receiver, opts []LinkOption) (*link, error) {
 	// wait for response
 	var fr frameBody
 	select {
-	case <-s.conn.done:
-		return nil, s.conn.getErr()
+	case <-s.done:
+		return nil, s.err
 	case fr = <-l.rx:
 	}
 	debug(3, "RX: %s", fr)
@@ -829,8 +847,9 @@ func (l *link) mux() {
 	defer l.detach()
 
 	var (
-		isReceiver = l.receiver != nil
-		isSender   = !isReceiver
+		isReceiver             = l.receiver != nil
+		isSender               = !isReceiver
+		errOnRejectDisposition = isSender && (l.receiverSettleMode == nil || *l.receiverSettleMode == ModeFirst)
 	)
 
 	handleRx := func(fr frameBody) bool {
@@ -846,8 +865,11 @@ func (l *link) mux() {
 
 			l.transfers <- *fr
 
-			l.deliveryCount++
-			l.linkCredit--
+			// decrement link-credit after entire message received
+			if !fr.More {
+				l.deliveryCount++
+				l.linkCredit--
+			}
 
 		// flow control frame
 		case *performFlow:
@@ -900,6 +922,15 @@ func (l *link) mux() {
 
 		case *performDisposition:
 			debug(3, "RX: %s", fr)
+
+			// If sending async and a message is rejected, cause a link error.
+			//
+			// This isn't ideal, but there isn't a clear better way to handle it.
+			if fr, ok := fr.State.(*stateRejected); ok && errOnRejectDisposition {
+				l.err = fr.Error
+				return false
+			}
+
 			if fr.Settled {
 				return true
 			}
@@ -989,8 +1020,12 @@ func (l *link) mux() {
 					return
 				}
 			}
-			l.deliveryCount++
-			l.linkCredit--
+
+			// decrement link-credit after entire message transferred
+			if !tr.More {
+				l.deliveryCount++
+				l.linkCredit--
+			}
 
 		// received frame
 		case fr := <-l.rx:
