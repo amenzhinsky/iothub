@@ -1,6 +1,6 @@
-# golang-iothub
+# iothub
 
-This repository provides SDK for golang and command line tools for both device-to-cloud (`iotdevice`) and cloud-to-device (`iotservice`) functionality.
+This repository provides Azure IoT Hub SDK for golang and command line tools for device-to-cloud (`iotdevice`) and cloud-to-device (`iotservice`) functionality.
 
 This project in the active development state and if you decided to use it anyway, please vendor the source code.
 
@@ -75,11 +75,11 @@ func main() {
 
 ## CLI
 
-There are two command line utilities: `iothub-device` and `iothub-sevice`. First is for using it on a IoT device and the second for managing and interacting with those devices. 
+There are two command line utilities: `iothub-device` and `iothub-sevice`. First is for using it on IoT devices and the second manages and interacts with them. 
 
-You can perform operations like publishing, subscribing events, registering and invoking direct method, subscribing to event feedback, etc. straight from the command line.
+You can perform operations like publishing, subscribing to events and feedback, registering and invoking direct method, etc. straight from the command line.
 
-`iothub-service` is a [iothub-explorer](https://github.com/Azure/iothub-explorer) replacement that can be distributed as a single binary instead of need to install nodejs and add dependency hell that it brings.
+`iothub-service` is a [iothub-explorer](https://github.com/Azure/iothub-explorer) replacement that can be distributed as a single binary opposed to typical nodejs app.
 
 See `-help` for more details.
 

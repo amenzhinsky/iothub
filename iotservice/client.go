@@ -120,7 +120,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 
 	c.debugf("connecting to %s", c.creds.HostName)
-	eh, err := eventhub.Dial(c.creds.HostName, &tls.Config{
+	eh, err := eventhub.Dial("amqps://"+c.creds.HostName, &tls.Config{
 		ServerName: c.creds.HostName,
 		RootCAs:    common.RootCAs(),
 	})

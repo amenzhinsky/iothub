@@ -31,18 +31,19 @@ var transports = map[string]func() (transport.Transport, error){
 }
 
 var (
-	debugFlag     = false
-	quiteFlag     = false
-	transportFlag = "mqtt"
-	midFlag       = ""
-	cidFlag       = ""
-	qosFlag       = mqtt.DefaultQoS
+	debugFlag     bool
+	compressFlag  bool
+	quiteFlag     bool
+	transportFlag string
+	midFlag       string
+	cidFlag       string
+	qosFlag       int
 
 	// x509 flags
-	tlsCertFlag  = ""
-	tlsKeyFlag   = ""
-	deviceIDFlag = ""
-	hostnameFlag = ""
+	tlsCertFlag  string
+	tlsKeyFlag   string
+	deviceIDFlag string
+	hostnameFlag string
 )
 
 func main() {
@@ -59,12 +60,13 @@ The $DEVICE_CONNECTION_STRING environment variable is required unless you use x5
 
 func run() error {
 	cli, err := internal.New(help, func(f *flag.FlagSet) {
-		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
-		f.StringVar(&transportFlag, "transport", transportFlag, "transport to use <mqtt|amqp|http>")
-		f.StringVar(&tlsCertFlag, "tls-cert", tlsCertFlag, "path to x509 cert file")
-		f.StringVar(&tlsKeyFlag, "tls-key", tlsKeyFlag, "path to x509 key file")
-		f.StringVar(&deviceIDFlag, "device-id", deviceIDFlag, "device id, required for x509")
-		f.StringVar(&hostnameFlag, "hostname", hostnameFlag, "hostname to connect to, required for x509")
+		f.BoolVar(&debugFlag, "debug", false, "enable debug mode")
+		f.BoolVar(&compressFlag, "compress", false, "compress data (remove JSON indentations)")
+		f.StringVar(&transportFlag, "transport", "mqtt", "transport to use <mqtt|amqp|http>")
+		f.StringVar(&tlsCertFlag, "tls-cert", "", "path to x509 cert file")
+		f.StringVar(&tlsKeyFlag, "tls-key", "", "path to x509 key file")
+		f.StringVar(&deviceIDFlag, "device-id", "", "device id, required for x509")
+		f.StringVar(&hostnameFlag, "hostname", "", "hostname to connect to, required for x509")
 	}, []*internal.Command{
 		{
 			"send", "s",
@@ -72,9 +74,9 @@ func run() error {
 			"send a message to the cloud (D2C)",
 			wrap(send),
 			func(f *flag.FlagSet) {
-				f.StringVar(&midFlag, "mid", midFlag, "identifier for the message")
-				f.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
-				f.IntVar(&qosFlag, "qos", qosFlag, "QoS value, 0 or 1 (mqtt only)")
+				f.StringVar(&midFlag, "mid", "", "identifier for the message")
+				f.StringVar(&cidFlag, "cid", "", "message identifier in a request-reply")
+				f.IntVar(&qosFlag, "qos", mqtt.DefaultQoS, "QoS value, 0 or 1 (mqtt only)")
 			},
 		},
 		{
@@ -97,7 +99,7 @@ func run() error {
 			"handle the named direct method, reads responses from STDIN",
 			wrap(directMethod),
 			func(f *flag.FlagSet) {
-				f.BoolVar(&quiteFlag, "quite", quiteFlag, "disable additional hints")
+				f.BoolVar(&quiteFlag, "quite", false, "disable additional hints")
 			},
 		},
 		{
@@ -199,7 +201,7 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) erro
 	}
 	errc := make(chan error, 1)
 	if err := c.SubscribeEvents(ctx, func(msg *common.Message) {
-		if err := internal.OutputJSON(msg); err != nil {
+		if err := internal.OutputJSON(msg, compressFlag); err != nil {
 			errc <- err
 		}
 	}); err != nil {
@@ -215,7 +217,7 @@ func watchTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error 
 
 	errc := make(chan error, 1)
 	if err := c.SubscribeTwinUpdates(ctx, func(s iotdevice.TwinState) {
-		if err := internal.OutputJSON(s); err != nil {
+		if err := internal.OutputJSON(s, compressFlag); err != nil {
 			errc <- err
 		}
 	}); err != nil {

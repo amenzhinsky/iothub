@@ -2,47 +2,60 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/goautomotive/iothub/cmd/internal"
 	"github.com/goautomotive/iothub/common"
+	"github.com/goautomotive/iothub/common/commonamqp"
+	"github.com/goautomotive/iothub/eventhub"
 	"github.com/goautomotive/iothub/iotservice"
+	"pack.ag/amqp"
 )
 
 // globally accessible by command handlers, is it a good idea?
 var (
-	uidFlag             = "golang-iothub"
-	midFlag             = ""
-	cidFlag             = ""
-	expFlag             = time.Duration(0)
-	ackFlag             = ""
-	connectTimeoutFlag  = 0
-	responseTimeoutFlag = 30
+	// common
+	debugFlag    bool
+	compressFlag bool
+
+	// send
+	uidFlag             string
+	midFlag             string
+	cidFlag             string
+	expFlag             time.Duration
+	ackFlag             string
+	connectTimeoutFlag  int
+	responseTimeoutFlag int
 
 	// create device
-	autoGenerateFlag = false
+	autoGenerateFlag bool
 
 	// create/update device
-	primaryKeyFlag          = ""
-	secondaryKeyFlag        = ""
-	primaryThumbprintFlag   = ""
-	secondaryThumbprintFlag = ""
-
-	// common flags
-	debugFlag = false
+	primaryKeyFlag          string
+	secondaryKeyFlag        string
+	primaryThumbprintFlag   string
+	secondaryThumbprintFlag string
+	caFlag                  bool
 
 	// sas and connection string
-	secondaryFlag = false
+	secondaryFlag bool
 
 	// sas
-	uriFlag      = ""
-	durationFlag = time.Hour
+	uriFlag      string
+	durationFlag time.Duration
+
+	// watch events
+	ehcsFlag string
+	ehcgFlag string
 )
 
 func main() {
@@ -60,6 +73,7 @@ The $SERVICE_CONNECTION_STRING environment variable is required for authenticati
 func run() error {
 	cli, err := internal.New(help, func(f *flag.FlagSet) {
 		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
+		f.BoolVar(&compressFlag, "compress", false, "compress data (remove JSON indentations)")
 	}, []*internal.Command{
 		{
 			"send", "s",
@@ -67,18 +81,21 @@ func run() error {
 			"send a message to the named device (C2D)",
 			wrap(send),
 			func(f *flag.FlagSet) {
-				f.StringVar(&ackFlag, "ack", ackFlag, "type of ack feedback")
-				f.StringVar(&uidFlag, "uid", uidFlag, "origin of the message")
-				f.StringVar(&midFlag, "mid", midFlag, "identifier for the message")
-				f.StringVar(&cidFlag, "cid", cidFlag, "message identifier in a request-reply")
-				f.DurationVar(&expFlag, "exp", expFlag, "message lifetime")
+				f.StringVar(&ackFlag, "ack", "", "type of ack feedback")
+				f.StringVar(&uidFlag, "uid", "golang-iothub", "origin of the message")
+				f.StringVar(&midFlag, "mid", "", "identifier for the message")
+				f.StringVar(&cidFlag, "cid", "", "message identifier in a request-reply")
+				f.DurationVar(&expFlag, "exp", 0, "message lifetime")
 			},
 		},
 		{
 			"watch-events", "we",
 			"", "subscribe to device messages (D2C)",
 			wrap(watchEvents),
-			nil,
+			func(f *flag.FlagSet) {
+				f.StringVar(&ehcsFlag, "ehcs", "", "custom eventhub connection string")
+				f.StringVar(&ehcgFlag, "ehcg", "$Default", "eventhub consumer group")
+			},
 		},
 		{
 			"watch-feedback", "wf",
@@ -91,8 +108,8 @@ func run() error {
 			"DEVICE METHOD PAYLOAD", "call a direct method on a device",
 			wrap(call),
 			func(f *flag.FlagSet) {
-				f.IntVar(&connectTimeoutFlag, "c", connectTimeoutFlag, "connect timeout in seconds")
-				f.IntVar(&responseTimeoutFlag, "r", responseTimeoutFlag, "response timeout in seconds")
+				f.IntVar(&connectTimeoutFlag, "c", 0, "connect timeout in seconds")
+				f.IntVar(&responseTimeoutFlag, "r", 30, "response timeout in seconds")
 			},
 		},
 		{
@@ -117,6 +134,7 @@ func run() error {
 				f.StringVar(&secondaryKeyFlag, "secondary-key", "", "secondary key (base64)")
 				f.StringVar(&primaryThumbprintFlag, "primary-thumbprint", "", "x509 primary thumbprint")
 				f.StringVar(&secondaryThumbprintFlag, "secondary-thumbprint", "", "x509 secondary thumbprint")
+				f.BoolVar(&caFlag, "ca", false, "use certificate authority authentication")
 			},
 		},
 		{
@@ -128,6 +146,7 @@ func run() error {
 				f.StringVar(&secondaryKeyFlag, "secondary-key", "", "secondary key (base64)")
 				f.StringVar(&primaryThumbprintFlag, "primary-thumbprint", "", "x509 primary thumbprint")
 				f.StringVar(&secondaryThumbprintFlag, "secondary-thumbprint", "", "x509 secondary thumbprint")
+				f.BoolVar(&caFlag, "ca", false, "use certificate authority authentication")
 			},
 		},
 		{
@@ -177,7 +196,7 @@ func run() error {
 			"DEVICE", "get a device's connection string",
 			wrap(connectionString),
 			func(f *flag.FlagSet) {
-				f.BoolVar(&secondaryFlag, "secondary", secondaryFlag, "use the secondary key instead")
+				f.BoolVar(&secondaryFlag, "secondary", false, "use the secondary key instead")
 			},
 		},
 		{
@@ -185,9 +204,9 @@ func run() error {
 			"DEVICE", "generate a SAS token",
 			wrap(sas),
 			func(f *flag.FlagSet) {
-				f.StringVar(&uriFlag, "uri", uriFlag, "storage resource uri")
-				f.DurationVar(&durationFlag, "duration", durationFlag, "token validity time")
-				f.BoolVar(&secondaryFlag, "secondary", secondaryFlag, "use the secondary key instead")
+				f.StringVar(&uriFlag, "uri", "", "storage resource uri")
+				f.DurationVar(&durationFlag, "duration", time.Hour, "token validity time")
+				f.BoolVar(&secondaryFlag, "secondary", false, "use the secondary key instead")
 			},
 		},
 	})
@@ -232,7 +251,7 @@ func device(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(d)
+	return internal.OutputJSON(d, compressFlag)
 }
 
 func devices(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -243,15 +262,13 @@ func devices(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(d)
+	return internal.OutputJSON(d, compressFlag)
 }
 
 func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
-
-	device := &iotservice.Device{DeviceID: f.Arg(0)}
 	if autoGenerateFlag {
 		var err error
 		primaryKeyFlag, err = iotservice.NewSymmetricKey()
@@ -263,60 +280,63 @@ func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 			return err
 		}
 	}
-	if primaryKeyFlag != "" || secondaryKeyFlag != "" {
-		device.Authentication = &iotservice.Authentication{
-			Type: iotservice.AuthSAS,
-			SymmetricKey: &iotservice.SymmetricKey{
-				PrimaryKey:   primaryKeyFlag,
-				SecondaryKey: secondaryKeyFlag,
-			},
-		}
-	}
-	if primaryThumbprintFlag != "" || secondaryThumbprintFlag != "" {
-		device.Authentication = &iotservice.Authentication{
-			Type: iotservice.AuthSelfSigned,
-			X509Thumbprint: &iotservice.X509Thumbprint{
-				PrimaryThumbprint:   primaryThumbprintFlag,
-				SecondaryThumbprint: secondaryThumbprintFlag,
-			},
-		}
-	}
-
-	d, err := c.CreateDevice(ctx, device)
+	a, err := mkAuthentication()
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(d)
+	d, err := c.CreateDevice(ctx, &iotservice.Device{
+		DeviceID:       f.Arg(0),
+		Authentication: a,
+	})
+	if err != nil {
+		return err
+	}
+	return internal.OutputJSON(d, compressFlag)
 }
 
 func updateDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
-	device := &iotservice.Device{DeviceID: f.Arg(0)}
+	a, err := mkAuthentication()
+	if err != nil {
+		return err
+	}
+	d, err := c.UpdateDevice(ctx, &iotservice.Device{
+		DeviceID:       f.Arg(0),
+		Authentication: a,
+	})
+	if err != nil {
+		return err
+	}
+	return internal.OutputJSON(d, compressFlag)
+}
+
+func mkAuthentication() (*iotservice.Authentication, error) {
 	if primaryKeyFlag != "" || secondaryKeyFlag != "" {
-		device.Authentication = &iotservice.Authentication{
+		return &iotservice.Authentication{
 			Type: "sas",
 			SymmetricKey: &iotservice.SymmetricKey{
 				PrimaryKey:   primaryKeyFlag,
 				SecondaryKey: secondaryKeyFlag,
 			},
-		}
+		}, nil
 	}
 	if primaryThumbprintFlag != "" || secondaryThumbprintFlag != "" {
-		device.Authentication = &iotservice.Authentication{
+		return &iotservice.Authentication{
 			Type: "selfSigned",
 			X509Thumbprint: &iotservice.X509Thumbprint{
 				PrimaryThumbprint:   primaryThumbprintFlag,
 				SecondaryThumbprint: secondaryThumbprintFlag,
 			},
-		}
+		}, nil
 	}
-	d, err := c.UpdateDevice(ctx, device)
-	if err != nil {
-		return err
+	if caFlag {
+		return &iotservice.Authentication{
+			Type: iotservice.AuthCA,
+		}, nil
 	}
-	return internal.OutputJSON(d)
+	return nil, errors.New("no authentication type provided")
 }
 
 func deleteDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -334,7 +354,7 @@ func stats(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(s)
+	return internal.OutputJSON(s, compressFlag)
 }
 
 func twin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -345,7 +365,7 @@ func twin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(t)
+	return internal.OutputJSON(t, compressFlag)
 }
 
 func updateTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -375,7 +395,7 @@ func updateTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) erro
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(twin)
+	return internal.OutputJSON(twin, compressFlag)
 }
 
 func call(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -393,7 +413,7 @@ func call(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(r)
+	return internal.OutputJSON(r, compressFlag)
 }
 
 func send(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -430,9 +450,33 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) err
 	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
+
+	// TODO: extract from main package
+	if ehcsFlag != "" {
+		u, err := url.Parse(ehcsFlag)
+		if err != nil {
+			return err
+		}
+		name := strings.TrimLeft(u.Path, "/")
+		u.Path = "" // remove path from address
+		eh, err := eventhub.Dial(u.String(), &tls.Config{
+			ServerName: u.Host,
+			RootCAs:    common.RootCAs(),
+		})
+		if err != nil {
+			return err
+		}
+		return eh.SubscribePartitions(ctx, name, ehcgFlag, func(m *amqp.Message) {
+			msg := commonamqp.FromAMQPMessage(m)
+			if err := internal.OutputJSON(msg, compressFlag); err != nil {
+				panic(err)
+			}
+		})
+	}
+
 	errc := make(chan error, 1)
 	if err := c.SubscribeEvents(ctx, func(msg *common.Message) {
-		if err := internal.OutputJSON(msg); err != nil {
+		if err := internal.OutputJSON(msg, compressFlag); err != nil {
 			errc <- err
 		}
 	}); err != nil {
@@ -447,7 +491,7 @@ func watchFeedback(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) e
 	}
 	errc := make(chan error, 1)
 	if err := c.SubscribeFeedback(ctx, func(f *iotservice.Feedback) {
-		if err := internal.OutputJSON(f); err != nil {
+		if err := internal.OutputJSON(f, compressFlag); err != nil {
 			errc <- err
 		}
 	}); err != nil {
@@ -464,7 +508,7 @@ func jobs(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(v)
+	return internal.OutputJSON(v, compressFlag)
 }
 
 func job(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -475,7 +519,7 @@ func job(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(v)
+	return internal.OutputJSON(v, compressFlag)
 }
 
 func cancelJob(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -486,7 +530,7 @@ func cancelJob(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error
 	if err != nil {
 		return err
 	}
-	return internal.OutputJSON(v)
+	return internal.OutputJSON(v, compressFlag)
 }
 
 func connectionString(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {

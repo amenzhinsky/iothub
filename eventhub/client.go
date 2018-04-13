@@ -14,8 +14,8 @@ import (
 )
 
 // Dial connects to the named amqp broker and returns an eventhub client.
-func Dial(hostname string, tlsConfig *tls.Config) (*Client, error) {
-	conn, err := amqp.Dial("amqps://"+hostname,
+func Dial(addr string, tlsConfig *tls.Config) (*Client, error) {
+	conn, err := amqp.Dial(addr,
 		amqp.ConnTLSConfig(tlsConfig),
 	)
 	if err != nil {

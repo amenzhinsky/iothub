@@ -155,8 +155,12 @@ func OutputLine(format string) error {
 }
 
 // OutputJSON prints indented json to stdout.
-func OutputJSON(v interface{}) error {
-	b, err := json.MarshalIndent(v, "", "\t")
+func OutputJSON(v interface{}, compress bool) error {
+	indent := "\t"
+	if compress {
+		indent = ""
+	}
+	b, err := json.MarshalIndent(v, "", indent)
 	if err != nil {
 		return err
 	}
