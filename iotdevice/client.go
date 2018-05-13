@@ -242,9 +242,11 @@ func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
 	if err := c.ConnectionError(ctx); err != nil {
 		return err
 	}
-	c.cmMux.once(func() error {
+	if err := c.cmMux.once(func() error {
 		return c.tr.SubscribeEvents(ctx, &c.cmMux)
-	})
+	}); err != nil {
+		return err
+	}
 	c.cmMux.add(fn)
 	return nil
 }
