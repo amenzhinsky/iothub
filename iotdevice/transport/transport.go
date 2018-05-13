@@ -11,7 +11,6 @@ import (
 // Transport interface.
 type Transport interface {
 	Connect(ctx context.Context, creds Credentials) error
-	IsNetworkError(err error) bool
 	Send(ctx context.Context, msg *common.Message) error
 	RegisterDirectMethods(ctx context.Context, mux MethodDispatcher) error
 	SubscribeEvents(ctx context.Context, mux MessageDispatcher) error

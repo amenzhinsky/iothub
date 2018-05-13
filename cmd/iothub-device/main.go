@@ -160,7 +160,7 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		if err != nil {
 			return err
 		}
-		if err := c.ConnectInBackground(ctx); err != nil {
+		if err := c.Connect(ctx); err != nil {
 			return err
 		}
 		return fn(ctx, f, c)

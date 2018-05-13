@@ -126,14 +126,6 @@ func (tr *Transport) SubscribeTwinUpdates(ctx context.Context, mux transport.Twi
 	))
 }
 
-// mqtt library wraps errors with fmt.Errorf.
-func (tr *Transport) IsNetworkError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "Network Error")
-}
-
 func parseEventMessage(m mqtt.Message) (*common.Message, error) {
 	p, err := parseCloudToDeviceTopic(m.Topic())
 	if err != nil {

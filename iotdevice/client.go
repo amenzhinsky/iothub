@@ -88,15 +88,12 @@ func WithX509FromFile(deviceID, hostname, certFile, keyFile string) ClientOption
 	}
 }
 
-// errNotConnected is the initial connection state.
-var errNotConnected = errors.New("not connected")
-
 // NewClient returns new iothub client.
 func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		done:    make(chan struct{}),
-		debug:   os.Getenv("DEBUG") != "",
-		connErr: errNotConnected,
+		ready: make(chan struct{}),
+		done:  make(chan struct{}),
+		debug: os.Getenv("DEBUG") != "",
 	}
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
@@ -120,12 +117,9 @@ type Client struct {
 	logger *log.Logger
 	debug  bool
 
-	mu   sync.RWMutex
-	done chan struct{}
-
-	connCh  chan struct{}
-	connMu  sync.RWMutex
-	connErr error // nil means successfully connected
+	mu    sync.Mutex
+	ready chan struct{}
+	done  chan struct{}
 
 	cmMux messageMux
 	dmMux methodMux
@@ -146,100 +140,43 @@ func (c *Client) DeviceID() string {
 	return c.creds.DeviceID()
 }
 
-type connection struct {
-	ignoreNetErrors bool
-}
-
-// ConnOption is a connection option.
-type ConnOption func(c *connection)
-
-// WithConnIgnoreNetErrors when a network error occurs while connecting
-// it's just ignored and connection reestablished until it succeeds.
-func WithConnIgnoreNetErrors(ignore bool) ConnOption {
-	return func(c *connection) {
-		c.ignoreNetErrors = ignore
-	}
-}
-
-// Connect connects to the iothub.
-func (c *Client) Connect(ctx context.Context, opts ...ConnOption) error {
-	c.connMu.Lock()
-	defer c.connMu.Unlock()
-
-	conn := &connection{}
-	for _, opt := range opts {
-		opt(conn)
-	}
-
-Retry:
-	c.connErr = c.tr.Connect(ctx, c.creds)
-	if c.connErr != nil && conn.ignoreNetErrors && c.tr.IsNetworkError(c.connErr) {
-		c.logf("couldn't connect, reconnecting")
-		goto Retry
-	}
-	return c.connErr
-}
-
-// ConnectInBackground returns immediately connects in the background.
-// Methods that require connection are blocked until it's established.
-//
-// When error is the connect loop is not a connection error stops
-// the loop and it's propagated to all connection-dependent methods.
-//
-// It can be useful to check connection state using `ConnectionError`
-// in a separate goroutine.
-func (c *Client) ConnectInBackground(ctx context.Context, opts ...ConnOption) error {
-	c.connMu.Lock()
-	c.connCh = make(chan struct{})
-	c.connMu.Unlock()
-	go func() {
-		if err := c.Connect(ctx, opts...); err != nil {
-			c.logf("background connection error: %s", err)
-		}
-		c.connMu.Lock()
-		close(c.connCh)
-		c.connMu.Unlock()
-	}()
-	return nil
-}
-
-// ConnectionError blocks until the connection process is
-// finished and returns its error, see `ConnectInBackground` method.
-//
-// Example:
-// 	if err := c.ConnectInBackground(ctx); err != nil {
-// 		return err
-// 	}
-//
-// 	go func() {
-// 		if err := c.ConnectionError(ctx); err != nil {
-// 			fmt.Fprintf(os.Stderr, "connection error: %s\n", err)
-// 			os.Exit(1)
-// 		}
-// 	}()
-func (c *Client) ConnectionError(ctx context.Context) error {
-	c.connMu.RLock()
-	w := c.connCh
-	c.connMu.RUnlock()
-
-	// non-background connection
-	if w == nil {
-		return c.connErr
-	}
-
+// Connect connects to the iothub all subsequent calls
+// will block until this function finishes with no error so it's clien's
+// responsibility to connect in the background by running it in a goroutine
+// and control other method invocations or call in in a synchronous way.
+func (c *Client) Connect(ctx context.Context) error {
+	c.mu.Lock()
 	select {
-	case <-w:
-		return c.connErr
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-c.ready:
+		c.mu.Unlock()
+		return errors.New("already connected")
+	default:
+	}
+	err := c.tr.Connect(ctx, c.creds)
+	if err == nil {
+		close(c.ready)
+	}
+	c.mu.Unlock()
+	return err
+}
+
+// ErrClosed the client is already closed.
+var ErrClosed = errors.New("closed")
+
+func (c *Client) checkConnection(ctx context.Context) error {
+	select {
+	case <-c.ready:
+		return nil
 	case <-c.done:
 		return ErrClosed
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
 // SubscribeEvents subscribes to cloud-to-device events and blocks until ctx is canceled.
 func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
-	if err := c.ConnectionError(ctx); err != nil {
+	if err := c.checkConnection(ctx); err != nil {
 		return err
 	}
 	if err := c.cmMux.once(func() error {
@@ -261,7 +198,7 @@ func (c *Client) UnsubscribeEvents(fn MessageHandler) {
 // If f returns an error and empty body its error string
 // used as value of the error attribute in the result json.
 func (c *Client) RegisterMethod(ctx context.Context, name string, fn DirectMethodHandler) error {
-	if err := c.ConnectionError(ctx); err != nil {
+	if err := c.checkConnection(ctx); err != nil {
 		return err
 	}
 	if name == "" {
@@ -281,9 +218,6 @@ func (c *Client) UnregisterMethod(name string) {
 	c.dmMux.remove(name)
 }
 
-// ErrClosed returned by methods when client closes.
-var ErrClosed = errors.New("iotdevice: closed")
-
 // TwinState is both desired and reported twin device's state.
 type TwinState map[string]interface{}
 
@@ -298,7 +232,7 @@ func (s TwinState) Version() int {
 
 // RetrieveTwinState returns desired and reported twin device states.
 func (c *Client) RetrieveTwinState(ctx context.Context) (desired TwinState, reported TwinState, err error) {
-	if err := c.ConnectionError(ctx); err != nil {
+	if err := c.checkConnection(ctx); err != nil {
 		return nil, nil, err
 	}
 	b, err := c.tr.RetrieveTwinProperties(ctx)
@@ -318,7 +252,7 @@ func (c *Client) RetrieveTwinState(ctx context.Context) (desired TwinState, repo
 // UpdateTwinState updates twin device's state and returns new version.
 // To remove any attribute set its value to nil.
 func (c *Client) UpdateTwinState(ctx context.Context, s TwinState) (int, error) {
-	if err := c.ConnectionError(ctx); err != nil {
+	if err := c.checkConnection(ctx); err != nil {
 		return 0, err
 	}
 	b, err := json.Marshal(s)
@@ -330,7 +264,7 @@ func (c *Client) UpdateTwinState(ctx context.Context, s TwinState) (int, error) 
 
 // SubscribeTwinUpdates registers fn as a desired state changes handler.
 func (c *Client) SubscribeTwinUpdates(ctx context.Context, fn TwinUpdateHandler) error {
-	if err := c.ConnectionError(ctx); err != nil {
+	if err := c.checkConnection(ctx); err != nil {
 		return err
 	}
 	if err := c.tuMux.once(func() error {
@@ -429,7 +363,7 @@ func WithSendProperties(m map[string]string) SendOption {
 // SendEvent sends a device-to-cloud message.
 // Panics when event is nil.
 func (c *Client) SendEvent(ctx context.Context, payload []byte, opts ...SendOption) error {
-	if err := c.ConnectionError(ctx); err != nil {
+	if err := c.checkConnection(ctx); err != nil {
 		return err
 	}
 	if payload == nil {

@@ -485,7 +485,7 @@ func newDeviceAndServiceClient(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = dc.ConnectInBackground(ctx, iotdevice.WithConnIgnoreNetErrors(true)); err != nil {
+	if err = dc.Connect(ctx); err != nil {
 		t.Fatal(err)
 	}
 	return dc, sc
