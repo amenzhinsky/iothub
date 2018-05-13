@@ -87,6 +87,7 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	o.SetClientID(creds.DeviceID())
 	o.SetUsername(creds.Hostname() + "/" + creds.DeviceID() + "/api-version=" + common.APIVersion)
 	o.SetAutoReconnect(true)
+	o.SetMaxReconnectInterval(30 * time.Second)
 	o.SetOnConnectHandler(func(_ mqtt.Client) {
 		tr.logf("connection established")
 	})
