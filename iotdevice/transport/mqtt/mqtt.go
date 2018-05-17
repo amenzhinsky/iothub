@@ -72,21 +72,24 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 		return errors.New("already connected")
 	}
 
+	username := creds.Hostname() + "/" + creds.DeviceID() + "/api-version=" + common.APIVersion
+
 	o := mqtt.NewClientOptions()
 	o.SetTLSConfig(creds.TLSConfig())
-
-	if creds.IsSAS() {
-		pwd, err := creds.Token(ctx, creds.Hostname(), time.Hour)
-		if err != nil {
-			return err
-		}
-		o.SetPassword(pwd)
-	}
-
 	o.AddBroker("tls://" + creds.Hostname() + ":8883")
 	o.SetClientID(creds.DeviceID())
-	o.SetUsername(creds.Hostname() + "/" + creds.DeviceID() + "/api-version=" + common.APIVersion)
-	o.SetAutoReconnect(true)
+	o.SetCredentialsProvider(func() (string, string) {
+		if !creds.IsSAS() {
+			return username, ""
+		}
+		// TODO: renew token only when it expires in case an external token provider is used
+		// TODO: this can slow down the reconnect feature, so need to figure out max token lifetime
+		password, err := creds.Token(ctx, creds.Hostname(), time.Hour)
+		if err != nil {
+			panic(err)
+		}
+		return username, password
+	})
 	o.SetMaxReconnectInterval(30 * time.Second)
 	o.SetOnConnectHandler(func(_ mqtt.Client) {
 		tr.logf("connection established")
