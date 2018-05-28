@@ -46,6 +46,9 @@ type Transport struct {
 	did string // device id
 	rid uint32 // request id, incremented each request
 
+	subm sync.RWMutex
+	subs []subFunc // on-connect mqtt subscriptions
+
 	done chan struct{}         // closed when the transport is closed
 	resp map[uint32]chan *resp // responses from iothub
 
@@ -73,7 +76,6 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	}
 
 	username := creds.Hostname() + "/" + creds.DeviceID() + "/api-version=" + common.APIVersion
-
 	o := mqtt.NewClientOptions()
 	o.SetTLSConfig(creds.TLSConfig())
 	o.AddBroker("tls://" + creds.Hostname() + ":8883")
@@ -97,6 +99,15 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	o.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
 		tr.logf("connection lost: %v", err)
 	})
+	o.SetOnConnectHandler(func(c mqtt.Client) {
+		tr.subm.RLock()
+		for _, sub := range tr.subs {
+			if err := sub(); err != nil {
+				tr.logger.Printf("subscribe error: %s", err)
+			}
+		}
+		tr.subm.RUnlock()
+	})
 
 	c := mqtt.NewClient(o)
 	if err := contextToken(ctx, c.Connect()); err != nil {
@@ -108,25 +119,52 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	return nil
 }
 
+type subFunc func() error
+
+// sub invokes the given sub function and if it passes with no error,
+// pushes it to the on-re-connect subscriptions list, because the client
+// has to resubscribe every reconnect.
+func (tr *Transport) sub(sub subFunc) error {
+	if err := sub(); err != nil {
+		return err
+	}
+	tr.subm.Lock()
+	tr.subs = append(tr.subs, sub)
+	tr.subm.Unlock()
+	return nil
+}
+
 func (tr *Transport) SubscribeEvents(ctx context.Context, mux transport.MessageDispatcher) error {
-	return contextToken(ctx, tr.conn.Subscribe(
-		"devices/"+tr.did+"/messages/devicebound/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
-			msg, err := parseEventMessage(m)
-			if err != nil {
-				tr.logf("parse error: %s", err)
-				return
-			}
-			mux.Dispatch(msg)
-		},
-	))
+	return tr.sub(tr.subEvents(ctx, mux))
+}
+
+func (tr *Transport) subEvents(ctx context.Context, mux transport.MessageDispatcher) subFunc {
+	return func() error {
+		return contextToken(ctx, tr.conn.Subscribe(
+			"devices/"+tr.did+"/messages/devicebound/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+				msg, err := parseEventMessage(m)
+				if err != nil {
+					tr.logf("parse error: %s", err)
+					return
+				}
+				mux.Dispatch(msg)
+			},
+		))
+	}
 }
 
 func (tr *Transport) SubscribeTwinUpdates(ctx context.Context, mux transport.TwinStateDispatcher) error {
-	return contextToken(ctx, tr.conn.Subscribe(
-		"$iothub/twin/PATCH/properties/desired/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
-			mux.Dispatch(m.Payload())
-		},
-	))
+	return tr.sub(tr.subTwinUpdates(ctx, mux))
+}
+
+func (tr *Transport) subTwinUpdates(ctx context.Context, mux transport.TwinStateDispatcher) subFunc {
+	return func() error {
+		return contextToken(ctx, tr.conn.Subscribe(
+			"$iothub/twin/PATCH/properties/desired/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+				mux.Dispatch(m.Payload())
+			},
+		))
+	}
 }
 
 func parseEventMessage(m mqtt.Message) (*common.Message, error) {
@@ -190,25 +228,31 @@ func parseCloudToDeviceTopic(s string) (map[string]string, error) {
 }
 
 func (tr *Transport) RegisterDirectMethods(ctx context.Context, mux transport.MethodDispatcher) error {
-	return contextToken(ctx, tr.conn.Subscribe(
-		"$iothub/methods/POST/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
-			method, rid, err := parseDirectMethodTopic(m.Topic())
-			if err != nil {
-				tr.logf("parse error: %s", err)
-				return
-			}
-			rc, b, err := mux.Dispatch(method, m.Payload())
-			if err != nil {
-				tr.logf("dispatch error: %s", err)
-				return
-			}
-			dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%d", rc, rid)
-			if err = tr.send(ctx, dst, DefaultQoS, b); err != nil {
-				tr.logf("method response error: %s", err)
-				return
-			}
-		},
-	))
+	return tr.sub(tr.subDirectMethods(ctx, mux))
+}
+
+func (tr *Transport) subDirectMethods(ctx context.Context, mux transport.MethodDispatcher) subFunc {
+	return func() error {
+		return contextToken(ctx, tr.conn.Subscribe(
+			"$iothub/methods/POST/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+				method, rid, err := parseDirectMethodTopic(m.Topic())
+				if err != nil {
+					tr.logf("parse error: %s", err)
+					return
+				}
+				rc, b, err := mux.Dispatch(method, m.Payload())
+				if err != nil {
+					tr.logf("dispatch error: %s", err)
+					return
+				}
+				dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%d", rc, rid)
+				if err = tr.send(ctx, dst, DefaultQoS, b); err != nil {
+					tr.logf("method response error: %s", err)
+					return
+				}
+			},
+		))
+	}
 }
 
 // returns method name and rid
@@ -298,39 +342,45 @@ func (tr *Transport) enableTwinResponses(ctx context.Context) error {
 	if tr.resp != nil {
 		return nil
 	}
-
-	if err := contextToken(ctx, tr.conn.Subscribe(
-		"$iothub/twin/res/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
-			rc, rid, ver, err := parseTwinPropsTopic(m.Topic())
-			if err != nil {
-				// TODO
-				fmt.Printf("error: %s", err)
-				return
-			}
-
-			tr.mu.RLock()
-			defer tr.mu.RUnlock()
-			for r, rch := range tr.resp {
-				if int(r) != rid {
-					continue
-				}
-				select {
-				case rch <- &resp{code: rc, ver: ver, body: m.Payload()}:
-				default:
-					// we cannot allow blocking here,
-					// buffered channel should solve it.
-					panic("response sending blocked")
-				}
-				return
-			}
-			tr.logf("unknown rid: %q", rid)
-		},
-	)); err != nil {
+	if err := tr.sub(tr.subTwinResponses(ctx)); err != nil {
 		return err
 	}
-
 	tr.resp = make(map[uint32]chan *resp)
 	return nil
+}
+
+func (tr *Transport) subTwinResponses(ctx context.Context) subFunc {
+	return func() error {
+		return contextToken(ctx, tr.conn.Subscribe(
+			"$iothub/twin/res/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+				rc, rid, ver, err := parseTwinPropsTopic(m.Topic())
+				if err != nil {
+					fmt.Printf("parse twin props topic error: %s", err)
+					return
+				}
+
+				tr.mu.RLock()
+				defer tr.mu.RUnlock()
+				for r, rch := range tr.resp {
+					if int(r) != rid {
+						continue
+					}
+					res := &resp{code: rc, ver: ver, body: m.Payload()}
+					select {
+					case rch <- res:
+						// try to push without a goroutine first
+						// if the channel buffer is not busy
+					default:
+						go func() {
+							rch <- res
+						}()
+					}
+					return
+				}
+				tr.logf("unknown rid: %q", rid)
+			},
+		))
+	}
 }
 
 // parseTwinPropsTopic parses the given topic name into rc, rid and ver.

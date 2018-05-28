@@ -110,9 +110,9 @@ type Client struct {
 	http   *http.Client // REST client
 }
 
-// Connect connects to AMQP broker, it's done automatically before
+// ConnectToAMQP connects to the iothub AMQP broker, it's done automatically before
 // publishing events or subscribing to the feedback topic.
-func (c *Client) Connect(ctx context.Context) error {
+func (c *Client) ConnectToAMQP(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn != nil {
@@ -328,7 +328,7 @@ func (c *Client) SendEvent(
 		return errors.New("payload is nil")
 	}
 
-	if err := c.Connect(ctx); err != nil {
+	if err := c.ConnectToAMQP(ctx); err != nil {
 		return err
 	}
 
@@ -358,7 +358,7 @@ type FeedbackHandler func(f *Feedback)
 
 // SubscribeFeedback subscribes to feedback of messages that ack was requested.
 func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) error {
-	if err := c.Connect(ctx); err != nil {
+	if err := c.ConnectToAMQP(ctx); err != nil {
 		return err
 	}
 	recv, err := c.conn.Sess().NewReceiver(
