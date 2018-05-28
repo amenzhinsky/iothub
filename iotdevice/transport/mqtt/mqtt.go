@@ -23,9 +23,19 @@ const DefaultQoS = 1
 // TransportOption is a transport configuration option.
 type TransportOption func(tr *Transport)
 
+// WithLogger sets logger for errors and warnings
+// plus debug messages when it's enabled.
 func WithLogger(l *log.Logger) TransportOption {
 	return func(tr *Transport) {
 		tr.logger = l
+	}
+}
+
+// WithDebug enables debug mode.
+// All debug messages are written to the logger.
+func WithDebug(enable bool) TransportOption {
+	return func(tr *Transport) {
+		tr.debug = enable
 	}
 }
 
@@ -46,13 +56,14 @@ type Transport struct {
 	did string // device id
 	rid uint32 // request id, incremented each request
 
-	subm sync.RWMutex
-	subs []subFunc // on-connect mqtt subscriptions
+	subm sync.RWMutex // cannot use mu for protecting subs
+	subs []subFunc    // on-connect mqtt subscriptions
 
 	done chan struct{}         // closed when the transport is closed
 	resp map[uint32]chan *resp // responses from iothub
 
 	logger *log.Logger
+	debug  bool
 }
 
 type resp struct {
@@ -64,6 +75,12 @@ type resp struct {
 
 func (tr *Transport) logf(format string, v ...interface{}) {
 	if tr.logger != nil {
+		tr.logger.Printf(format, v...)
+	}
+}
+
+func (tr *Transport) debugf(format string, v ...interface{}) {
+	if tr.logger != nil && tr.debug {
 		tr.logger.Printf(format, v...)
 	}
 }
@@ -92,18 +109,18 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 		}
 		return username, password
 	})
-	o.SetMaxReconnectInterval(30 * time.Second)
+	o.SetMaxReconnectInterval(30 * time.Second) // default is 15min, way to long
 	o.SetOnConnectHandler(func(_ mqtt.Client) {
-		tr.logf("connection established")
+		tr.debugf("connection established")
 	})
 	o.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
-		tr.logf("connection lost: %v", err)
+		tr.debugf("connection lost: %v", err)
 	})
 	o.SetOnConnectHandler(func(c mqtt.Client) {
 		tr.subm.RLock()
 		for _, sub := range tr.subs {
 			if err := sub(); err != nil {
-				tr.logger.Printf("subscribe error: %s", err)
+				tr.logger.Printf("on-connect error: %s", err)
 			}
 		}
 		tr.subm.RUnlock()
@@ -377,7 +394,7 @@ func (tr *Transport) subTwinResponses(ctx context.Context) subFunc {
 					}
 					return
 				}
-				tr.logf("unknown rid: %q", rid)
+				tr.logf("warn: unknown rid: %q", rid)
 			},
 		))
 	}
@@ -497,7 +514,7 @@ func (tr *Transport) Close() error {
 	}
 	if tr.conn != nil && tr.conn.IsConnected() {
 		tr.conn.Disconnect(250)
-		tr.logf("disconnected")
+		tr.debugf("disconnected")
 	}
 	return nil
 }
