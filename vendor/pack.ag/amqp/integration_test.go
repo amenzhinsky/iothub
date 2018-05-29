@@ -125,7 +125,7 @@ func TestIntegrationRoundTrip(t *testing.T) {
 				var sendErr error
 				go func() {
 					defer wg.Done()
-					defer sender.Close()
+					defer testClose(t, sender.Close)
 
 					for i, data := range tt.data {
 						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -152,7 +152,7 @@ func TestIntegrationRoundTrip(t *testing.T) {
 						receiveErr = err
 						return
 					}
-					defer receiver.Close()
+					defer testClose(t, receiver.Close)
 
 					for i, data := range tt.data {
 						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -221,6 +221,8 @@ func TestIntegrationSend(t *testing.T) {
 		},
 	}
 
+	var totalMessages int
+
 	for _, tt := range tests {
 		t.Run(tt.label, func(t *testing.T) {
 			checkLeaks := leaktest.CheckTimeout(t, 60*time.Second)
@@ -252,7 +254,7 @@ func TestIntegrationSend(t *testing.T) {
 					return
 				}
 			}
-			sender.Close()
+			testClose(t, sender.Close)
 			client.Close() // close before leak check
 
 			checkLeaks() // this is done here because queuesClient starts additional goroutines
@@ -265,12 +267,200 @@ func TestIntegrationSend(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if amc := *q.CountDetails.ActiveMessageCount; int(amc) != len(tt.data) {
-				t.Fatalf("Expected ActiveMessageCount to be 0, but it was %d", amc)
+			totalMessages += len(tt.data)
+			if amc := *q.CountDetails.ActiveMessageCount; int(amc) != totalMessages {
+				t.Fatalf("Expected ActiveMessageCount to be %d, but it was %d", totalMessages, amc)
 			}
 
 			if dead := *q.CountDetails.DeadLetterMessageCount; dead > 0 {
 				t.Fatalf("Expected DeadLetterMessageCount to be 0, but it was %d", dead)
+			}
+		})
+	}
+}
+
+func TestIntegrationSend_Concurrent(t *testing.T) {
+	queueName, queuesClient, cleanup := newTestQueue(t, "receive")
+	defer cleanup()
+
+	tests := []struct {
+		label string
+		data  []string
+	}{
+		{
+			label: "3 send, small payload",
+			data: []string{
+				"2Hey there!",
+				"2Hi there!",
+				"2Ho there!",
+			},
+		},
+		{
+			label: "3 roundtrip, medium payload",
+			data: []string{
+				strings.Repeat("A", 10000),
+				strings.Repeat("B", 10000),
+				strings.Repeat("C", 10000),
+			},
+		},
+	}
+
+	var totalMessages int
+
+	for _, tt := range tests {
+		t.Run(tt.label, func(t *testing.T) {
+			checkLeaks := leaktest.CheckTimeout(t, 60*time.Second)
+
+			// Create client
+			client := newSBClient(t, tt.label)
+			defer client.Close()
+
+			// Open a session
+			session, err := client.NewSession()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Create a sender
+			sender, err := session.NewSender(
+				amqp.LinkTargetAddress(queueName),
+				amqp.LinkReceiverSettle(amqp.ModeSecond),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var wg sync.WaitGroup
+			wg.Add(len(tt.data))
+			for i, data := range tt.data {
+				go func(i int, data string) {
+					defer wg.Done()
+
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					err := sender.Send(ctx, amqp.NewMessage([]byte(data)))
+					cancel()
+					if err != nil {
+						t.Fatalf("Error on send %d: %+v", i, err)
+						return
+					}
+				}(i, data)
+			}
+			wg.Wait()
+
+			testClose(t, sender.Close)
+			client.Close() // close before leak check
+
+			checkLeaks() // this is done here because queuesClient starts additional goroutines
+
+			// Wait for Azure to update stats
+			time.Sleep(1 * time.Second)
+
+			q, err := queuesClient.Get(context.Background(), resourceGroup, namespace, queueName)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			totalMessages += len(tt.data)
+			if amc := *q.CountDetails.ActiveMessageCount; int(amc) != totalMessages {
+				t.Fatalf("Expected ActiveMessageCount to be %d, but it was %d", totalMessages, amc)
+			}
+
+			if dead := *q.CountDetails.DeadLetterMessageCount; dead > 0 {
+				t.Fatalf("Expected DeadLetterMessageCount to be 0, but it was %d", dead)
+			}
+		})
+	}
+}
+func TestIntegrationSessionHandleMax(t *testing.T) {
+	queueName, _, cleanup := newTestQueue(t, "sessionwrap")
+	defer cleanup()
+
+	tests := []struct {
+		maxLinks int
+		links    int
+		close    int
+		error    *regexp.Regexp
+	}{
+		{
+			maxLinks: 4,
+			links:    5,
+			error:    regexp.MustCompile(`handle max \(3\)`),
+		},
+		{
+			maxLinks: 5,
+			links:    5,
+		},
+		{
+			maxLinks: 4,
+			links:    5,
+			close:    1,
+		},
+		{
+			maxLinks: 4,
+			links:    8,
+			close:    4,
+		},
+		{
+			maxLinks: 62,
+			links:    64,
+			close:    2,
+		},
+		{
+			maxLinks: 62,
+			links:    64,
+			close:    1,
+			error:    regexp.MustCompile(`handle max \(61\)`),
+		},
+	}
+
+	for _, tt := range tests {
+		label := fmt.Sprintf("max %d, links %d, close %d", tt.maxLinks, tt.links, tt.close)
+		t.Run(label, func(t *testing.T) {
+			// checkLeaks := leaktest.CheckTimeout(t, 60*time.Second)
+
+			// Create client
+			client := newSBClient(t, label)
+			defer client.Close()
+
+			// Open a session
+			session, err := client.NewSession(
+				amqp.SessionMaxLinks(tt.maxLinks),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var matches int
+
+			// Create a sender
+			for i := 0; i < tt.links; i++ {
+				sender, err := session.NewSender(
+					amqp.LinkTargetAddress(queueName),
+				)
+				switch {
+				case err == nil:
+				case tt.error == nil:
+					t.Fatal(err)
+				case !tt.error.MatchString(err.Error()):
+					t.Errorf("expect error to match %q, but it was %q", tt.error, err)
+				default:
+					matches++
+				}
+
+				if tt.close > 0 {
+					err = sender.Close(context.Background())
+					if err != nil {
+						t.Fatal(err)
+					}
+					tt.close--
+				}
+			}
+
+			if tt.error != nil && matches == 0 {
+				t.Errorf("expect an error")
+			}
+			if tt.error != nil && matches > 1 {
+				t.Errorf("expected 1 matching error, got %d", matches)
 			}
 		})
 	}
@@ -302,12 +492,7 @@ func TestIntegrationClose(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		go func() {
-			err := receiver.Close()
-			if err != nil {
-				t.Fatalf("Expected nil error from receiver.Close(), got: %+v", err)
-			}
-		}()
+		go testClose(t, receiver.Close)
 
 		_, err = receiver.Receive(context.Background())
 		if err != amqp.ErrLinkClosed {
@@ -315,7 +500,10 @@ func TestIntegrationClose(t *testing.T) {
 			return
 		}
 
-		client.Close() // close before leak check
+		err = client.Close() // close before leak check
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		checkLeaks()
 	})
@@ -342,12 +530,7 @@ func TestIntegrationClose(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		go func() {
-			err := session.Close()
-			if err != nil {
-				t.Fatalf("Expected nil error from session.Close(), got: %+v", err)
-			}
-		}()
+		go testClose(t, session.Close)
 
 		_, err = receiver.Receive(context.Background())
 		if err != amqp.ErrSessionClosed {
@@ -355,7 +538,10 @@ func TestIntegrationClose(t *testing.T) {
 			return
 		}
 
-		client.Close() // close before leak check
+		err = client.Close() // close before leak check
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		checkLeaks()
 	})
@@ -528,7 +714,7 @@ func createEventHubReceivers(t testing.TB, hubName string, session *amqp.Session
 			wg.Add(1)
 			go func(rxIdx int, receiver *amqp.Receiver) {
 				defer wg.Done()
-				defer receiver.Close()
+				defer testClose(t, receiver.Close)
 
 				for i := 0; ; i++ {
 					msg, err := receiver.Receive(ctx)
@@ -665,14 +851,18 @@ func dump(i interface{}) {
 }
 
 func newEHClient(t testing.TB, label string, opts ...amqp.ConnOption) *amqp.Client {
+	t.Helper()
 	return newClient(t, label, ehNamespace, ehAccessKeyName, ehAccessKey, opts...)
 }
 
 func newSBClient(t testing.TB, label string, opts ...amqp.ConnOption) *amqp.Client {
+	t.Helper()
 	return newClient(t, label, namespace, accessKeyName, accessKey, opts...)
 }
 
 func newClient(t testing.TB, label, ns, username, password string, opts ...amqp.ConnOption) *amqp.Client {
+	t.Helper()
+
 	opts = append(opts,
 		amqp.ConnSASLPlain(username, password),
 	)
@@ -723,19 +913,20 @@ func newClient(t testing.TB, label, ns, username, password string, opts ...amqp.
 	return client
 }
 
-func newTestQueue(tb testing.TB, suffix string) (string, servicebus.QueuesClient, func()) {
-	shouldRunIntegration(tb)
+func newTestQueue(t testing.TB, suffix string) (string, servicebus.QueuesClient, func()) {
+	t.Helper()
+	shouldRunIntegration(t)
 
 	queueName := "integration-" + suffix + "-" + strconv.FormatUint(rand.Uint64(), 10)
-	tb.Log("Creating queue", queueName)
+	t.Log("Creating queue", queueName)
 
 	oauthConfig, err := adal.NewOAuthConfig(azure.PublicCloud.ActiveDirectoryEndpoint, tenantID)
 	if err != nil {
-		tb.Fatal(err)
+		t.Fatal(err)
 	}
 	token, err := adal.NewServicePrincipalToken(*oauthConfig, clientID, clientSecret, azure.PublicCloud.ResourceManagerEndpoint)
 	if err != nil {
-		tb.Fatal(err)
+		t.Fatal(err)
 	}
 
 	queuesClient := servicebus.NewQueuesClient(subscriptionID)
@@ -744,32 +935,33 @@ func newTestQueue(tb testing.TB, suffix string) (string, servicebus.QueuesClient
 	params := servicebus.SBQueue{}
 	_, err = queuesClient.CreateOrUpdate(context.Background(), resourceGroup, namespace, queueName, params)
 	if err != nil {
-		tb.Fatal(err)
+		t.Fatal(err)
 	}
 
 	cleanup := func() {
 		_, err = queuesClient.Delete(context.Background(), resourceGroup, namespace, queueName)
 		if err != nil {
-			tb.Logf("Unable to remove queue: %s - %v", queueName, err)
+			t.Logf("Unable to remove queue: %s - %v", queueName, err)
 		}
 	}
 
 	return queueName, queuesClient, cleanup
 }
 
-func newTestHub(tb testing.TB, suffix string) (string, eventhub.EventHubsClient, func()) {
-	shouldRunIntegration(tb)
+func newTestHub(t testing.TB, suffix string) (string, eventhub.EventHubsClient, func()) {
+	t.Helper()
+	shouldRunIntegration(t)
 
 	hubName := "integration-" + suffix + "-" + strconv.FormatUint(rand.Uint64(), 10)
-	tb.Log("Creating hub", hubName)
+	t.Log("Creating hub", hubName)
 
 	oauthConfig, err := adal.NewOAuthConfig(azure.PublicCloud.ActiveDirectoryEndpoint, tenantID)
 	if err != nil {
-		tb.Fatal(err)
+		t.Fatal(err)
 	}
 	token, err := adal.NewServicePrincipalToken(*oauthConfig, clientID, clientSecret, azure.PublicCloud.ResourceManagerEndpoint)
 	if err != nil {
-		tb.Fatal(err)
+		t.Fatal(err)
 	}
 
 	ehClient := eventhub.NewEventHubsClient(subscriptionID)
@@ -783,13 +975,13 @@ func newTestHub(tb testing.TB, suffix string) (string, eventhub.EventHubsClient,
 	}
 	_, err = ehClient.CreateOrUpdate(context.Background(), resourceGroup, ehNamespace, hubName, params)
 	if err != nil {
-		tb.Fatal(err)
+		t.Fatal(err)
 	}
 
 	cleanup := func() {
 		_, err = ehClient.Delete(context.Background(), resourceGroup, ehNamespace, hubName)
 		if err != nil {
-			tb.Logf("Unable to remove queue: %s - %v", hubName, err)
+			t.Logf("Unable to remove queue: %s - %v", hubName, err)
 		}
 	}
 
@@ -808,9 +1000,10 @@ func mustGetenv(key string) string {
 	return v
 }
 
-func shouldRunIntegration(tb testing.TB) {
+func shouldRunIntegration(t testing.TB) {
+	t.Helper()
 	if isForkPR {
-		tb.Skip("skipping integration test in PR")
+		t.Skip("skipping integration test in PR")
 	}
 }
 
@@ -820,4 +1013,16 @@ func repeatStrings(count int, strs ...string) []string {
 		out = append(out, strs...)
 	}
 	return out[:count]
+}
+
+func testClose(t testing.TB, close func(context.Context) error) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := close(ctx)
+	if err != nil {
+		t.Errorf("error closing: %+v\n", err)
+	}
 }

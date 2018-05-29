@@ -77,7 +77,7 @@ func SubscribePartitions(ctx context.Context, sess *amqp.Session, name, group st
 		}
 
 		go func(r *amqp.Receiver) {
-			defer recv.Close()
+			defer recv.Close(context.Background())
 			for {
 				msg, err := r.Receive(ctx)
 				if err != nil {
@@ -137,13 +137,13 @@ func (c *Client) PutToken(ctx context.Context, audience, token string) error {
 	if err != nil {
 		return err
 	}
-	defer send.Close()
+	defer send.Close(context.Background())
 
 	recv, err := c.sess.NewReceiver(amqp.LinkSourceAddress("$cbs"))
 	if err != nil {
 		return err
 	}
-	defer recv.Close()
+	defer recv.Close(context.Background())
 
 	if err = send.Send(ctx, &amqp.Message{
 		Value: token,
@@ -181,7 +181,7 @@ func (c *Client) Close() error {
 	default:
 		close(c.done)
 	}
-	if err := c.sess.Close(); err != nil {
+	if err := c.sess.Close(context.Background()); err != nil {
 		return err
 	}
 	return c.conn.Close()
@@ -209,7 +209,7 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	if err != nil {
 		return nil, err
 	}
-	defer recv.Close()
+	defer recv.Close(context.Background())
 
 	send, err := sess.NewSender(
 		amqp.LinkTargetAddress("$management"),
@@ -218,7 +218,7 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	if err != nil {
 		return nil, err
 	}
-	defer send.Close()
+	defer send.Close(context.Background())
 
 	mid, err := RandString()
 	if err != nil {

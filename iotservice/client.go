@@ -170,14 +170,14 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	if err != nil {
 		return nil, "", err
 	}
-	defer sess.Close()
+	defer sess.Close(context.Background())
 
 	// trigger redirect error
 	recv, err := sess.NewReceiver(amqp.LinkSourceAddress("messages/events/"))
 	if err != nil {
 		return nil, "", err
 	}
-	defer recv.Close()
+	defer recv.Close(context.Background())
 	_, err = recv.Receive(ctx)
 
 	if err == nil {
@@ -218,7 +218,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
 	if err != nil {
 		return err
 	}
-	defer sess.Close()
+	defer sess.Close(context.Background())
 
 	return eventhub.SubscribePartitions(ctx, sess, group, "$Default", func(msg *amqp.Message) {
 		go fn(commonamqp.FromAMQPMessage(msg))
@@ -349,7 +349,7 @@ func (c *Client) SendEvent(
 	if err != nil {
 		return err
 	}
-	defer send.Close()
+	defer send.Close(context.Background())
 	return send.Send(ctx, commonamqp.ToAMQPMessage(msg))
 }
 
@@ -367,7 +367,7 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) erro
 	if err != nil {
 		return err
 	}
-	defer recv.Close()
+	defer recv.Close(context.Background())
 
 	for {
 		msg, err := recv.Receive(ctx)
