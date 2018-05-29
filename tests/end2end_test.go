@@ -191,7 +191,6 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	go func() {
 		for {
 			if err := dc.SendEvent(ctx, payload,
-				//iotdevice.WithSendTo(to), // TODO: breaks amqp
 				iotdevice.WithSendMessageID(randString()),
 				iotdevice.WithSendCorrelationID(randString()),
 				iotdevice.WithSendProperties(props),

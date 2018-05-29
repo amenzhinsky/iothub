@@ -312,13 +312,13 @@ func WithSendCorrelationID(cid string) SendOption {
 	}
 }
 
-// WithSendTo sets message destination.
-func WithSendTo(to string) SendOption {
-	return func(msg *common.Message) error {
-		msg.To = to
-		return nil
-	}
-}
+// TODO: breaks amqp.
+//func WithSendTo(to string) SendOption {
+//	return func(msg *common.Message) error {
+//		msg.To = to
+//		return nil
+//	}
+//}
 
 // TODO: seems like has no effect.
 //func WithSendUserID(uid string) SendOption {

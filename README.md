@@ -4,7 +4,9 @@ This repository provides Azure IoT Hub SDK for golang and command line tools for
 
 This project in the active development state and if you decided to use it anyway, please vendor the source code.
 
-Some features are missing, see [TODO](https://github.com/goautomotive/iothub#todo).
+Only MQTT is available for device-to-cloud communication for because it has many advantages over AMQP and REST: it's stable, widespread, compact and provide many out-of-box features like auto-reconnects.
+
+See [TODO](https://github.com/goautomotive/iothub#todo) list to learn what is missing.
 
 ## Examples
 
@@ -75,7 +77,7 @@ func main() {
 
 ## CLI
 
-There are two command line utilities: `iothub-device` and `iothub-sevice`. First is for using it on IoT devices and the second manages and interacts with them. 
+The project provides two command line utilities: `iothub-device` and `iothub-sevice`. First is for using it on IoT devices and the second manages and interacts with them. 
 
 You can perform operations like publishing, subscribing to events and feedback, registering and invoking direct method, etc. straight from the command line.
 
@@ -90,12 +92,12 @@ To enable end-to-end testing in the `tests` directory you need to provide `TEST_
 ## TODO
 
 1. Stabilize API.
-1. Files uploading.
-1. Batch sending.
-1. HTTP transport.
-1. AMQP transport.
-1. AMQP-WS transport.
-1. Retry policies.
-1. Grammar check.
+1. HTTP transport (files uploading).
+1. AMQP transport (batch sending, WS).
+1. Grammar check plus better documentation.
 1. Rework debugging logs.
-1. Make iotservice.Subscribe* functions non-blocking.
+1. Rework Subscribe* functions.
+
+## Contributing
+
+All contributions are welcome.
