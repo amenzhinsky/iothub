@@ -204,7 +204,6 @@ func (c *Client) RegisterMethod(ctx context.Context, name string, fn DirectMetho
 	if name == "" {
 		return errors.New("name cannot be blank")
 	}
-
 	if err := c.dmMux.once(func() error {
 		return c.tr.RegisterDirectMethods(ctx, &c.dmMux)
 	}); err != nil {
@@ -378,16 +377,18 @@ func (c *Client) SendEvent(ctx context.Context, payload []byte, opts ...SendOpti
 	if err := c.tr.Send(ctx, msg); err != nil {
 		return err
 	}
-	if c.debug {
-		c.logf("device-to-cloud sent\n%v", msg)
-	} else {
-		c.logf("device-to-cloud sent")
-	}
+	c.debugf("device-to-cloud: %#v", msg)
 	return nil
 }
 
 func (c *Client) logf(format string, v ...interface{}) {
 	if c.logger != nil {
+		c.logger.Printf(format, v...)
+	}
+}
+
+func (c *Client) debugf(format string, v ...interface{}) {
+	if c.logger != nil && c.debug {
 		c.logger.Printf(format, v...)
 	}
 }
