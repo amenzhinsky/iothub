@@ -4,24 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"reflect"
 	"sync"
 	"sync/atomic"
 
 	"github.com/goautomotive/iothub/common"
 )
 
-// messageMux messages router.
-type messageMux struct {
-	on uint32
-	mu sync.RWMutex
-	s  []MessageHandler
-}
-
-func (m *messageMux) once(fn func() error) error {
-	return once(&m.on, &m.mu, fn)
-}
-
+// once is like sync.Once but if fn returns an error it's considered
+// as a failure and it's still can be called until it returns a nil error.
 func once(i *uint32, mu *sync.RWMutex, fn func() error) error {
 	// make a quick check without locking the mutex
 	if atomic.LoadUint32(i) == 1 {
@@ -41,38 +31,150 @@ func once(i *uint32, mu *sync.RWMutex, fn func() error) error {
 	return nil
 }
 
-// add adds the given handler to the handlers list.
-func (m *messageMux) add(fn MessageHandler) {
-	if fn == nil {
-		panic("fn is nil")
-	}
-	m.mu.Lock()
-	m.s = append(m.s, fn)
-	m.mu.Unlock()
+type eventsMux struct {
+	on   uint32
+	mu   sync.RWMutex
+	subs []*EventSub
+	done chan struct{}
 }
 
-// remove removes all matched handlers from the handlers list.
-func (m *messageMux) remove(fn MessageHandler) {
+func (m *eventsMux) once(fn func() error) error {
+	return once(&m.on, &m.mu, fn)
+}
+
+func (m *eventsMux) Dispatch(msg *common.Message) {
 	m.mu.RLock()
-	for i := len(m.s) - 1; i >= 0; i-- {
-		if ptreq(m.s[i], fn) {
-			m.s = append(m.s[:i], m.s[i+1:]...)
+	for _, sub := range m.subs {
+		select {
+		case sub.ch <- msg:
+		default:
+			go func() {
+				select {
+				case sub.ch <- msg:
+				case <-m.done:
+				}
+			}()
 		}
 	}
 	m.mu.RUnlock()
 }
 
-func ptreq(v1, v2 interface{}) bool {
-	return reflect.ValueOf(v1).Pointer() == reflect.ValueOf(v2).Pointer()
+func (m *eventsMux) sub() *EventSub {
+	s := &EventSub{ch: make(chan *common.Message, 10)}
+	m.mu.Lock()
+	m.subs = append(m.subs, s)
+	m.mu.Unlock()
+	return s
 }
 
-// Dispatch handles every handler in its own goroutine to prevent blocking.
-func (m *messageMux) Dispatch(msg *common.Message) {
+func (m *eventsMux) unsub(s *EventSub) {
+	m.mu.Lock()
+	for i, ss := range m.subs {
+		if ss == s {
+			m.subs = append(m.subs[:i], m.subs[i+1:]...)
+			break
+		}
+	}
+	m.mu.Unlock()
+}
+
+func (m *eventsMux) close(err error) {
+	m.mu.Lock()
+	for _, s := range m.subs {
+		s.err = ErrClosed
+		close(s.ch)
+	}
+	m.subs = m.subs[0:0]
+	m.mu.Unlock()
+}
+
+type EventSub struct {
+	ch  chan *common.Message
+	err error
+}
+
+func (s *EventSub) C() <-chan *common.Message {
+	return s.ch
+}
+
+func (s *EventSub) Err() error {
+	return s.err
+}
+
+type twinStateMux struct {
+	on   uint32
+	mu   sync.RWMutex
+	subs []*TwinStateSub
+	done chan struct{}
+}
+
+func (m *twinStateMux) once(fn func() error) error {
+	return once(&m.on, &m.mu, fn)
+}
+
+func (m *twinStateMux) Dispatch(b []byte) {
+	var v TwinState
+	if err := json.Unmarshal(b, &v); err != nil {
+		log.Printf("unmarshal error: %s", err) // TODO
+		return
+	}
+
 	m.mu.RLock()
-	for _, fn := range m.s {
-		fn(msg)
+	for _, sub := range m.subs {
+		select {
+		case sub.ch <- v:
+		default:
+			go func() {
+				select {
+				case sub.ch <- v:
+				case <-m.done:
+				}
+			}()
+		}
 	}
 	m.mu.RUnlock()
+}
+
+func (m *twinStateMux) sub() *TwinStateSub {
+	s := &TwinStateSub{ch: make(chan TwinState, 10)}
+	m.mu.Lock()
+	m.subs = append(m.subs, s)
+	m.mu.Unlock()
+	return s
+}
+
+func (m *twinStateMux) unsub(s *TwinStateSub) {
+	m.mu.Lock()
+	for i, ss := range m.subs {
+		if ss == s {
+			m.subs = append(m.subs[:i], m.subs[i+1:]...)
+			break
+		}
+	}
+	m.mu.Unlock()
+}
+
+func (m *twinStateMux) close(err error) {
+	m.mu.Lock()
+	for _, s := range m.subs {
+		s.err = ErrClosed
+		close(s.ch)
+	}
+	m.subs = m.subs[0:0]
+	m.mu.Unlock()
+}
+
+type TwinStateSub struct {
+	ch  chan TwinState
+	err error
+}
+
+func (s *TwinStateSub) C() <-chan TwinState {
+	return s.ch
+}
+
+func (s *TwinStateSub) Err() error {
+	return s.err
 }
 
 // methodMux is direct-methods dispatcher.
@@ -142,55 +244,4 @@ func (m *methodMux) Dispatch(method string, b []byte) (int, []byte, error) {
 
 func jsonErr(err error) (int, []byte, error) {
 	return 500, []byte(fmt.Sprintf(`{"error":%q}`, err.Error())), nil
-}
-
-// mostly copy-paste of messageRouter
-type stateMux struct {
-	on uint32
-	mu sync.RWMutex
-	s  []TwinUpdateHandler
-}
-
-func (m *stateMux) once(fn func() error) error {
-	return once(&m.on, &m.mu, fn)
-}
-
-func (m *stateMux) add(fn TwinUpdateHandler) {
-	if fn == nil {
-		panic("fn is nil")
-	}
-	m.mu.Lock()
-	m.s = append(m.s, fn)
-	m.mu.Unlock()
-}
-
-func (m *stateMux) remove(fn TwinUpdateHandler) {
-	m.mu.RLock()
-	for i := len(m.s) - 1; i >= 0; i-- {
-		if ptreq(m.s[i], fn) {
-			m.s = append(m.s[:i], m.s[i+1:]...)
-		}
-	}
-	m.mu.RUnlock()
-}
-
-// blocks until all handlers return
-func (m *stateMux) Dispatch(b []byte) {
-	var v TwinState
-	if err := json.Unmarshal(b, &v); err != nil {
-		log.Printf("unmarshal error: %s", err)
-		return
-	}
-
-	w := sync.WaitGroup{}
-	m.mu.RLock()
-	w.Add(len(m.s))
-	for _, fn := range m.s {
-		go func(f TwinUpdateHandler) {
-			f(v)
-			w.Done()
-		}(fn)
-	}
-	m.mu.RUnlock()
-	w.Wait()
 }

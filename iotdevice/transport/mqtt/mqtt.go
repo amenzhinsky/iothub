@@ -161,7 +161,7 @@ func (tr *Transport) subEvents(ctx context.Context, mux transport.MessageDispatc
 			"devices/"+tr.did+"/messages/devicebound/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 				msg, err := parseEventMessage(m)
 				if err != nil {
-					tr.logf("parse error: %s", err)
+					tr.logf("message parse error: %s", err)
 					return
 				}
 				mux.Dispatch(msg)

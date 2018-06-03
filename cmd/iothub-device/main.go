@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"github.com/goautomotive/iothub/cmd/internal"
-	"github.com/goautomotive/iothub/common"
 	"github.com/goautomotive/iothub/iotdevice"
 	"github.com/goautomotive/iothub/iotdevice/transport"
 	"github.com/goautomotive/iothub/iotdevice/transport/mqtt"
@@ -199,31 +198,32 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) erro
 	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-	errc := make(chan error, 1)
-	if err := c.SubscribeEvents(ctx, func(msg *common.Message) {
-		if err := internal.OutputJSON(msg, compressFlag); err != nil {
-			errc <- err
-		}
-	}); err != nil {
+	sub, err := c.SubscribeEvents(ctx)
+	if err != nil {
 		return err
 	}
-	return <-errc
+	for msg := range sub.C() {
+		if err = internal.OutputJSON(msg, compressFlag); err != nil {
+			return err
+		}
+	}
+	return sub.Err()
 }
 
 func watchTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
 	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-
-	errc := make(chan error, 1)
-	if err := c.SubscribeTwinUpdates(ctx, func(s iotdevice.TwinState) {
-		if err := internal.OutputJSON(s, compressFlag); err != nil {
-			errc <- err
-		}
-	}); err != nil {
+	sub, err := c.SubscribeTwinUpdates(ctx)
+	if err != nil {
 		return err
 	}
-	return <-errc
+	for twin := range sub.C() {
+		if err = internal.OutputJSON(twin, compressFlag); err != nil {
+			return err
+		}
+	}
+	return sub.Err()
 }
 
 func directMethod(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {

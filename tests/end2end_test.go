@@ -258,13 +258,11 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
-	msgc := make(chan *common.Message, 1)
 	fbsc := make(chan *iotservice.Feedback, 1)
 	errc := make(chan error, 3)
 
-	if err := dc.SubscribeEvents(ctx, func(msg *common.Message) {
-		msgc <- msg
-	}); err != nil {
+	sub, err := dc.SubscribeEvents(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -320,7 +318,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	}()
 
 	select {
-	case msg := <-msgc:
+	case msg := <-sub.C():
 		// test feedback is received
 		select {
 		case fb := <-fbsc:
@@ -392,12 +390,11 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
-	sch := make(chan iotdevice.TwinState)
-	if err := dc.SubscribeTwinUpdates(ctx, func(s iotdevice.TwinState) {
-		sch <- s
-	}); err != nil {
+	sub, err := dc.SubscribeTwinUpdates(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer dc.UnsubscribeTwinUpdates(sub)
 
 	twin, err := sc.UpdateTwin(ctx, dc.DeviceID(), &iotservice.Twin{
 		Tags: map[string]interface{}{
@@ -414,7 +411,7 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 
 	select {
-	case state := <-sch:
+	case state := <-sub.C():
 		if state["$version"] != twin.Properties.Desired["$version"] {
 			t.Errorf("version = %d, want %d", state["$version"], twin.Properties.Desired["$version"])
 		}
@@ -422,7 +419,7 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 			t.Errorf("test-prop = %q, want %q", state["test-prop"], twin.Properties.Desired["test-prop"])
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("SubscribeTwinUpdates twin timed out")
+		t.Fatal("SubscribeTwinUpdates timed out")
 	}
 }
 

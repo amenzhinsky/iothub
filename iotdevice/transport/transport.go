@@ -20,11 +20,6 @@ type Transport interface {
 	Close() error
 }
 
-// MethodDispatcher handles direct method calls.
-type MethodDispatcher interface {
-	Dispatch(methodName string, b []byte) (rc int, data []byte, err error)
-}
-
 // MessageDispatcher handles incoming messages.
 type MessageDispatcher interface {
 	Dispatch(msg *common.Message)
@@ -33,6 +28,11 @@ type MessageDispatcher interface {
 // TwinStateDispatcher handles twin state updates.
 type TwinStateDispatcher interface {
 	Dispatch(b []byte)
+}
+
+// MethodDispatcher handles direct method calls.
+type MethodDispatcher interface {
+	Dispatch(methodName string, b []byte) (rc int, data []byte, err error)
 }
 
 // Credentials is connection credentials needed for x509 or sas authentication.

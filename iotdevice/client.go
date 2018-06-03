@@ -95,6 +95,11 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 		done:  make(chan struct{}),
 		debug: os.Getenv("DEBUG") != "",
 	}
+
+	// need to pass done channel to muxes
+	c.evMux.done = c.done
+	c.tsMux.done = c.done
+
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
 			return nil, err
@@ -117,23 +122,17 @@ type Client struct {
 	logger *log.Logger
 	debug  bool
 
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	ready chan struct{}
 	done  chan struct{}
 
-	cmMux messageMux
+	evMux eventsMux
+	tsMux twinStateMux
 	dmMux methodMux
-	tuMux stateMux
 }
-
-// MessageHandler handles cloud-to-device events.
-type MessageHandler func(msg *common.Message)
 
 // DirectMethodHandler handles direct method invocations.
 type DirectMethodHandler func(p map[string]interface{}) (map[string]interface{}, error)
-
-// TwinUpdateHandler handles twin desired state changes.
-type TwinUpdateHandler func(state TwinState)
 
 // DeviceID returns iothub device id.
 func (c *Client) DeviceID() string {
@@ -174,23 +173,22 @@ func (c *Client) checkConnection(ctx context.Context) error {
 	}
 }
 
-// SubscribeEvents subscribes to cloud-to-device events and blocks until ctx is canceled.
-func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
+// SubscribeEvents subscribes to cloud-to-device events and returns a subscription struct.
+func (c *Client) SubscribeEvents(ctx context.Context) (*EventSub, error) {
 	if err := c.checkConnection(ctx); err != nil {
-		return err
+		return nil, err
 	}
-	if err := c.cmMux.once(func() error {
-		return c.tr.SubscribeEvents(ctx, &c.cmMux)
+	if err := c.evMux.once(func() error {
+		return c.tr.SubscribeEvents(ctx, &c.evMux)
 	}); err != nil {
-		return err
+		return nil, err
 	}
-	c.cmMux.add(fn)
-	return nil
+	return c.evMux.sub(), nil
 }
 
-// UnsubscribeEvents unsubscribes the given handler from cloud-to-device events.
-func (c *Client) UnsubscribeEvents(fn MessageHandler) {
-	c.cmMux.remove(fn)
+// UnsubscribeEvents makes the given subscription to stop receiving messages.
+func (c *Client) UnsubscribeEvents(sub *EventSub) {
+	c.evMux.unsub(sub)
 }
 
 // RegisterMethod registers the given direct method handler,
@@ -222,10 +220,7 @@ type TwinState map[string]interface{}
 
 // Version is state version.
 func (s TwinState) Version() int {
-	v, ok := s["$version"].(float64)
-	if !ok {
-		return 0
-	}
+	v, _ := s["$version"].(float64)
 	return int(v)
 }
 
@@ -262,22 +257,21 @@ func (c *Client) UpdateTwinState(ctx context.Context, s TwinState) (int, error) 
 }
 
 // SubscribeTwinUpdates registers fn as a desired state changes handler.
-func (c *Client) SubscribeTwinUpdates(ctx context.Context, fn TwinUpdateHandler) error {
+func (c *Client) SubscribeTwinUpdates(ctx context.Context) (*TwinStateSub, error) {
 	if err := c.checkConnection(ctx); err != nil {
-		return err
+		return nil, err
 	}
-	if err := c.tuMux.once(func() error {
-		return c.tr.SubscribeTwinUpdates(ctx, &c.tuMux)
+	if err := c.tsMux.once(func() error {
+		return c.tr.SubscribeTwinUpdates(ctx, &c.tsMux)
 	}); err != nil {
-		return err
+		return nil, err
 	}
-	c.tuMux.add(fn)
-	return nil
+	return c.tsMux.sub(), nil
 }
 
 // UnsubscribeTwinUpdates unsubscribes the given handler from twin state updates.
-func (c *Client) UnsubscribeTwinUpdates(fn TwinUpdateHandler) {
-	c.tuMux.remove(fn)
+func (c *Client) UnsubscribeTwinUpdates(sub *TwinStateSub) {
+	c.tsMux.unsub(sub)
 }
 
 // SendOption is a send event options.
@@ -310,30 +304,6 @@ func WithSendCorrelationID(cid string) SendOption {
 		return nil
 	}
 }
-
-// TODO: breaks amqp.
-//func WithSendTo(to string) SendOption {
-//	return func(msg *common.Message) error {
-//		msg.To = to
-//		return nil
-//	}
-//}
-
-// TODO: seems like has no effect.
-//func WithSendUserID(uid string) SendOption {
-//	return func(msg *common.Message) error {
-//		msg.UserID = uid
-//		return nil
-//	}
-//}
-
-// TODO: cloud disconnects when using mqtt, for amqp has no effect
-//func WithSendExpiryTime(t time.Time) SendOption {
-//	return func(msg *common.Message) error {
-//		msg.ExpiryTime = t
-//		return nil
-//	}
-//}
 
 // WithSendProperty sets a message option.
 func WithSendProperty(k, v string) SendOption {
@@ -402,6 +372,8 @@ func (c *Client) Close() error {
 		return nil
 	default:
 		close(c.done)
+		c.evMux.close(ErrClosed)
+		c.tsMux.close(ErrClosed)
 		return c.tr.Close()
 	}
 }

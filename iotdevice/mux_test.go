@@ -2,61 +2,41 @@ package iotdevice
 
 import (
 	"bytes"
-	"errors"
-	"sync/atomic"
 	"testing"
 
 	"github.com/goautomotive/iothub/common"
 )
 
-func TestMessageMux(t *testing.T) {
-	t.Parallel()
-
-	var i uint32
-	f1 := func(*common.Message) {
-		atomic.AddUint32(&i, 1)
+func TestEventsMux(t *testing.T) {
+	mux := &eventsMux{}
+	sub := mux.sub()
+	mux.Dispatch(&common.Message{
+		Payload: []byte("hello"),
+	})
+	msg := <-sub.C()
+	if !bytes.Equal(msg.Payload, []byte("hello")) {
+		t.Fatalf("invalid payload = %v, want %v", msg.Payload, []byte("hello"))
 	}
-	f2 := func(*common.Message) {
-		atomic.AddUint32(&i, 1)
+	mux.unsub(sub)
+	mux.Dispatch(&common.Message{
+		Payload: []byte("hello"),
+	})
+	select {
+	case <-sub.C():
+		t.Fatal("C is not closed after unsub")
+	default:
 	}
-
-	m := &messageMux{}
-
-	m.add(f1)
-	m.add(f1)
-	m.add(f2)
-	testRecvNum(t, m, &i, 3)
-
-	m.remove(f1)
-	testRecvNum(t, m, &i, 1)
-
-	m.remove(f2)
-	testRecvNum(t, m, &i, 0)
-}
-
-func TestMessageMux_Once(t *testing.T) {
-	t.Parallel()
-
-	m := &messageMux{}
-	if err := m.once(func() error {
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	// func has to be ignored for the second time
-	if err := m.once(func() error {
-		return errors.New("some error")
-	}); err != nil {
+	if err := sub.Err(); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func testRecvNum(t *testing.T, m *messageMux, i *uint32, w uint32) {
-	atomic.StoreUint32(i, 0) // zero counter
-	m.Dispatch(&common.Message{})
-
-	if g := atomic.LoadUint32(i); g != w {
-		t.Fatalf("recv num = %d, want %d", g, w)
+func TestEventsMuxClose(t *testing.T) {
+	mux := &eventsMux{}
+	sub := mux.sub()
+	mux.close(ErrClosed)
+	if err := sub.Err(); err != ErrClosed {
+		t.Fatalf("closed mux sub err = %v, want %v", err, ErrClosed)
 	}
 }
 
