@@ -200,7 +200,7 @@ func run() error {
 			},
 		},
 		{
-			"access-signature", "as",
+			"access-signature", "sas",
 			"DEVICE", "generate a SAS token",
 			wrap(sas),
 			func(f *flag.FlagSet) {

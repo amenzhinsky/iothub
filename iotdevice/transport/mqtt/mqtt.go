@@ -475,10 +475,11 @@ func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
 
 func (tr *Transport) send(ctx context.Context, topic string, qos int, b []byte) error {
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	if tr.conn == nil {
+		tr.mu.RUnlock()
 		return errors.New("not connected")
 	}
+	tr.mu.RUnlock()
 	return contextToken(ctx, tr.conn.Publish(topic, byte(qos), false, b))
 }
 
