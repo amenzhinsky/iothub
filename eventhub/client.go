@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/goautomotive/iothub/common"
+
 	"pack.ag/amqp"
 )
 
@@ -106,15 +108,22 @@ func (c *Client) PutTokenContinuously(
 	ctx context.Context,
 	audience string,
 	token string,
+	cred *common.Credentials,
 	stopCh chan struct{},
 ) error {
 	if err := c.PutToken(ctx, audience, token); err != nil {
 		return err
 	}
 	go func() {
+		ticker := time.NewTimer(30 * time.Minute) // 30min is half of 1hour
+
 		for {
 			select {
-			case <-time.After(time.Hour): // TODO: bigger update interval
+			case <-ticker.C:
+				token, err := cred.SAS(cred.HostName, time.Hour)
+				if err != nil {
+					return
+				}
 				if err := c.PutToken(ctx, audience, token); err != nil {
 					log.Printf("put token error: %s", err)
 					return
