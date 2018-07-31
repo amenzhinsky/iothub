@@ -151,18 +151,16 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 		return nil, "", err
 	}
 
-	addr := "amqps://" + c.creds.HostName
-	conn, err := amqp.Dial(addr, amqp.ConnSASLPlain(user, pass))
-	if err != nil {
-		return nil, "", err
+	addrDevice := "amqps://" + c.creds.HostName
+	connDevice, errDevice := amqp.Dial(addrDevice, amqp.ConnSASLPlain(user, pass))
+	if errDevice != nil {
+		return nil, "", errDevice
 	}
 	defer func() {
-		if err != nil {
-			conn.Close()
-		}
+		connDevice.Close()
 	}()
 
-	sess, err := conn.NewSession()
+	sess, err := connDevice.NewSession()
 	if err != nil {
 		return nil, "", err
 	}
@@ -189,8 +187,8 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	group := rerr.RemoteError.Info["address"].(string)
 	group = group[strings.Index(group, ":5671/")+6 : len(group)-1]
 
-	addr = "amqps://" + rerr.RemoteError.Info["hostname"].(string)
-	conn, err = amqp.Dial(addr, amqp.ConnSASLPlain(c.creds.SharedAccessKeyName, c.creds.SharedAccessKey))
+	addr := "amqps://" + rerr.RemoteError.Info["hostname"].(string)
+	conn, err := amqp.Dial(addr, amqp.ConnSASLPlain(c.creds.SharedAccessKeyName, c.creds.SharedAccessKey))
 	if err != nil {
 		return nil, "", err
 	}
