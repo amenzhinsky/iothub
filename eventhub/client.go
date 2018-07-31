@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -121,9 +122,11 @@ func (c *Client) PutTokenContinuously(
 			case <-ticker.C:
 				token, err := cred.SAS(cred.HostName, time.Hour)
 				if err != nil {
+					log.Printf("create SAS token error: %s", err)
 					return
 				}
 				if err := c.PutToken(context.Background(), audience, token); err != nil {
+					log.Printf("put token error: %s", err)
 					return
 				}
 			case <-stopCh:
