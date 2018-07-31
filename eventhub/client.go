@@ -10,7 +10,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/goautomotive/iothub/common"
+
 	"pack.ag/amqp"
+)
+
+var (
+	DurationOfTokenGenerate = 1 * time.Hour
 )
 
 // Dial connects to the named amqp broker and returns an eventhub client.
@@ -105,17 +111,35 @@ func SubscribePartitions(ctx context.Context, sess *amqp.Session, name, group st
 func (c *Client) PutTokenContinuously(
 	ctx context.Context,
 	audience string,
-	token string,
+	cred *common.Credentials,
 	stopCh chan struct{},
 ) error {
+	// validate
+	if int64(DurationOfTokenGenerate-10*time.Minute) <= 0 {
+		return errors.New("duration is minus")
+	}
+
+	token, err := cred.SAS(cred.HostName, DurationOfTokenGenerate)
+	if err != nil {
+		return err
+	}
 	if err := c.PutToken(ctx, audience, token); err != nil {
 		return err
 	}
+
 	go func() {
+		ticker := time.NewTimer(DurationOfTokenGenerate - 10*time.Minute) // 10min is a safe buffer
+		defer ticker.Stop()
+
 		for {
 			select {
-			case <-time.After(time.Hour): // TODO: bigger update interval
-				if err := c.PutToken(ctx, audience, token); err != nil {
+			case <-ticker.C:
+				token, err := cred.SAS(cred.HostName, DurationOfTokenGenerate)
+				if err != nil {
+					log.Printf("create SAS token error: %s", err)
+					return
+				}
+				if err := c.PutToken(context.Background(), audience, token); err != nil {
 					log.Printf("put token error: %s", err)
 					return
 				}

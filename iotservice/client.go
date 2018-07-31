@@ -133,11 +133,7 @@ func (c *Client) ConnectToAMQP(ctx context.Context) error {
 		}
 	}()
 
-	sas, err := c.creds.SAS(c.creds.HostName, time.Hour)
-	if err != nil {
-		return err
-	}
-	if err = eh.PutTokenContinuously(ctx, c.creds.HostName, sas, c.done); err != nil {
+	if err = eh.PutTokenContinuously(ctx, c.creds.HostName, c.creds, c.done); err != nil {
 		return err
 	}
 	c.conn = eh
