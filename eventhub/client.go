@@ -114,6 +114,11 @@ func (c *Client) PutTokenContinuously(
 	cred *common.Credentials,
 	stopCh chan struct{},
 ) error {
+	// validate
+	if int64(DurationOfTokenGenerate-10*time.Minute) <= 0 {
+		return errors.New("duration is minus")
+	}
+
 	token, err := cred.SAS(cred.HostName, DurationOfTokenGenerate)
 	if err != nil {
 		return err
