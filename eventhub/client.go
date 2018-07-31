@@ -15,6 +15,10 @@ import (
 	"pack.ag/amqp"
 )
 
+var (
+	DurationOfTokenGenerate = 1 * time.Hour
+)
+
 // Dial connects to the named amqp broker and returns an eventhub client.
 func Dial(addr string, tlsConfig *tls.Config) (*Client, error) {
 	conn, err := amqp.Dial(addr,
@@ -107,21 +111,25 @@ func SubscribePartitions(ctx context.Context, sess *amqp.Session, name, group st
 func (c *Client) PutTokenContinuously(
 	ctx context.Context,
 	audience string,
-	token string,
 	cred *common.Credentials,
 	stopCh chan struct{},
 ) error {
+	token, err := cred.SAS(cred.HostName, DurationOfTokenGenerate)
+	if err != nil {
+		return err
+	}
 	if err := c.PutToken(ctx, audience, token); err != nil {
 		return err
 	}
+
 	go func() {
-		ticker := time.NewTimer(30 * time.Minute) // 30min is half of 1hour
+		ticker := time.NewTimer(DurationOfTokenGenerate - 10*time.Minute) // 10min is a safe buffer
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				token, err := cred.SAS(cred.HostName, time.Hour)
+				token, err := cred.SAS(cred.HostName, DurationOfTokenGenerate)
 				if err != nil {
 					log.Printf("create SAS token error: %s", err)
 					return
