@@ -105,12 +105,13 @@ func SubscribePartitions(ctx context.Context, sess *amqp.Session, name, group st
 // PutTokenContinuously writes token first time in blocking mode and returns
 // maintaining token updates in the background until stopCh is closed.
 func (c *Client) PutTokenContinuously(
+	ctx context.Context,
 	audience string,
 	token string,
 	cred *common.Credentials,
 	stopCh chan struct{},
 ) error {
-	if err := c.PutToken(context.Background(), audience, token); err != nil {
+	if err := c.PutToken(ctx, audience, token); err != nil {
 		return err
 	}
 	go func() {

@@ -137,7 +137,7 @@ func (c *Client) ConnectToAMQP(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err = eh.PutTokenContinuously(c.creds.HostName, sas, c.creds, c.done); err != nil {
+	if err = eh.PutTokenContinuously(ctx, c.creds.HostName, sas, c.creds, c.done); err != nil {
 		return err
 	}
 	c.conn = eh
