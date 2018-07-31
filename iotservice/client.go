@@ -392,14 +392,23 @@ func (c *Client) HostName() string {
 	return c.creds.HostName
 }
 
+var (
+	errEmptyDeviceID   = errors.New("device id is empty")
+	errEmptyJobID      = errors.New("job id is empty")
+	errKeyNotAvailable = errors.New("symmetric key is not available")
+)
+
 // DeviceConnectionString builds up a connection string for the given device.
 func (c *Client) DeviceConnectionString(device *Device, secondary bool) (string, error) {
 	if device == nil {
 		panic("device is nil")
 	}
-	key, err := deviceKey(device, secondary)
-	if err != nil {
-		return "", err
+	if device.DeviceID == "" {
+		return "", errEmptyDeviceID
+	}
+	key := deviceKey(device, secondary)
+	if key == "" {
+		return "", errKeyNotAvailable
 	}
 	return fmt.Sprintf("HostName=%s;DeviceId=%s;SharedAccessKey=%s",
 		c.creds.HostName, device.DeviceID, key), nil
@@ -410,9 +419,15 @@ func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary boo
 	if device == nil {
 		panic("device is nil")
 	}
-	key, err := deviceKey(device, secondary)
-	if err != nil {
-		return "", err
+	if device.DeviceID == "" {
+		return "", errEmptyDeviceID
+	}
+	key := deviceKey(device, secondary)
+	if key == "" {
+		return "", errKeyNotAvailable
+	}
+	if duration == 0 {
+		duration = time.Hour
 	}
 	creds := common.Credentials{
 		HostName:        c.creds.HostName,
@@ -422,14 +437,14 @@ func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary boo
 	return creds.SAS(creds.HostName, duration)
 }
 
-func deviceKey(device *Device, secondary bool) (string, error) {
+func deviceKey(device *Device, secondary bool) string {
 	if device.Authentication == nil || device.Authentication.SymmetricKey == nil {
-		return "", errors.New("symmetric key is not available")
+		return ""
 	}
 	if secondary {
-		return device.Authentication.SymmetricKey.SecondaryKey, nil
+		return device.Authentication.SymmetricKey.SecondaryKey
 	}
-	return device.Authentication.SymmetricKey.PrimaryKey, nil
+	return device.Authentication.SymmetricKey.PrimaryKey
 }
 
 type call struct {
@@ -526,7 +541,7 @@ func (c *Client) UpdateDevice(ctx context.Context, device *Device) (*Device, err
 		panic("device is nil")
 	}
 	if device.DeviceID == "" {
-		return nil, errors.New("deviceID is empty")
+		return nil, errEmptyDeviceID
 	}
 	d := &Device{}
 	if err := c.call(ctx, http.MethodPut, "devices/"+url.PathEscape(device.DeviceID), http.Header{
@@ -537,9 +552,10 @@ func (c *Client) UpdateDevice(ctx context.Context, device *Device) (*Device, err
 	return d, nil
 }
 
+// DeleteDevice deletes the named device.
 func (c *Client) DeleteDevice(ctx context.Context, deviceID string) error {
 	if deviceID == "" {
-		return errors.New("deviceID is empty")
+		return errEmptyDeviceID
 	}
 	return c.call(ctx, http.MethodDelete, "devices/"+url.PathEscape(deviceID), http.Header{
 		"If-Match": {"*"},
@@ -557,6 +573,9 @@ func (c *Client) ListDevices(ctx context.Context) ([]*Device, error) {
 
 // GetTwin retrieves the named twin device from the registry.
 func (c *Client) GetTwin(ctx context.Context, deviceID string) (*Twin, error) {
+	if deviceID == "" {
+		return nil, errEmptyDeviceID
+	}
 	t := &Twin{}
 	if err := c.call(ctx, http.MethodGet, "twins/"+url.PathEscape(deviceID), nil, nil, t); err != nil {
 		return nil, err
@@ -572,7 +591,7 @@ func (c *Client) UpdateTwin(
 	etag string,
 ) (*Twin, error) {
 	if deviceID == "" {
-		return nil, errors.New("deviceID is empty")
+		return nil, errEmptyDeviceID
 	}
 	if twin == nil {
 		panic("twin is nil")
@@ -636,6 +655,9 @@ func (c *Client) ListJobs(ctx context.Context) ([]map[string]interface{}, error)
 }
 
 func (c *Client) GetJob(ctx context.Context, jobID string) (map[string]interface{}, error) {
+	if jobID == "" {
+		return nil, errEmptyJobID
+	}
 	var v map[string]interface{}
 	if err := c.call(ctx, http.MethodGet, "jobs/"+url.PathEscape(jobID), nil, nil, &v); err != nil {
 		return nil, err
@@ -644,6 +666,9 @@ func (c *Client) GetJob(ctx context.Context, jobID string) (map[string]interface
 }
 
 func (c *Client) CancelJob(ctx context.Context, jobID string) (map[string]interface{}, error) {
+	if jobID == "" {
+		return nil, errEmptyJobID
+	}
 	var v map[string]interface{}
 	if err := c.call(ctx, http.MethodDelete, "jobs/"+url.PathEscape(jobID), nil, nil, &v); err != nil {
 		return nil, err
