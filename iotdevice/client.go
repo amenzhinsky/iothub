@@ -35,6 +35,9 @@ func WithLogger(l *log.Logger) ClientOption {
 
 // WithTransport changes default transport.
 func WithTransport(tr transport.Transport) ClientOption {
+	if tr == nil {
+		panic("transport is nil")
+	}
 	return func(c *Client) error {
 		c.tr = tr
 		return nil
@@ -156,6 +159,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		close(c.ready)
 	}
 	c.mu.Unlock()
+	// TODO: c.err = err
 	return err
 }
 

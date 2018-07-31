@@ -156,9 +156,7 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	if err != nil {
 		return nil, "", err
 	}
-	defer func(conn *amqp.Client) {
-		conn.Close()
-	}(conn)
+	defer conn.Close()
 
 	sess, err := conn.NewSession()
 	if err != nil {
@@ -173,7 +171,6 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	}
 	defer recv.Close(context.Background())
 	_, err = recv.Receive(ctx)
-
 	if err == nil {
 		return nil, "", errors.New("expected redirect error")
 	}
