@@ -156,11 +156,9 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	if err != nil {
 		return nil, "", err
 	}
-	defer func() {
-		if err != nil {
-			conn.Close()
-		}
-	}()
+	defer func(conn *amqp.Client) {
+		conn.Close()
+	}(conn)
 
 	sess, err := conn.NewSession()
 	if err != nil {
