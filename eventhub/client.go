@@ -128,7 +128,7 @@ func (c *Client) PutTokenContinuously(
 	}
 
 	go func() {
-		ticker := time.NewTimer(DurationOfTokenGenerate - 10*time.Minute) // 10min is a safe buffer
+		ticker := time.NewTicker(DurationOfTokenGenerate - 10*time.Minute) // 10min is a safe buffer
 		defer ticker.Stop()
 
 		for {
