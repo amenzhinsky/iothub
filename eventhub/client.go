@@ -126,7 +126,7 @@ func (c *Client) PutTokenContinuously(
 	}
 
 	go func() {
-		ticker := time.NewTimer(tokenUpdateInterval - tokenUpdateSpan)
+		ticker := time.NewTicker(tokenUpdateInterval - tokenUpdateSpan)
 		defer ticker.Stop()
 
 		for {
