@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"strconv"
 	"strings"
@@ -12,9 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/eclipse/paho.mqtt.golang"
-	"github.com/goautomotive/iothub/common"
-	"github.com/goautomotive/iothub/iotdevice/transport"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
 )
 
 // DefaultQoS is the default quality of service value.
@@ -25,24 +24,33 @@ type TransportOption func(tr *Transport)
 
 // WithLogger sets logger for errors and warnings
 // plus debug messages when it's enabled.
-func WithLogger(l *log.Logger) TransportOption {
+func WithLogger(l common.Logger) TransportOption {
 	return func(tr *Transport) {
 		tr.logger = l
 	}
 }
 
-// WithDebug enables debug mode.
-// All debug messages are written to the logger.
-func WithDebug(enable bool) TransportOption {
+// WithClientOptionsConfig configures the mqtt client options structure,
+// use it only when you know EXACTLY what you're doing, because changing
+// some of opts attributes may lead to unexpected behaviour.
+//
+// Typical usecase is to change adjust connect or reconnect interval.
+func WithClientOptionsConfig(fn func(opts *mqtt.ClientOptions)) TransportOption {
+	if fn == nil {
+		panic("fn is nil")
+	}
 	return func(tr *Transport) {
-		tr.debug = enable
+		tr.cocfg = fn
 	}
 }
 
 // New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 func New(opts ...TransportOption) transport.Transport {
-	tr := &Transport{done: make(chan struct{})}
+	tr := &Transport{
+		done:   make(chan struct{}),
+		logger: common.NewLogWrapper(false),
+	}
 	for _, opt := range opts {
 		opt(tr)
 	}
@@ -62,8 +70,8 @@ type Transport struct {
 	done chan struct{}         // closed when the transport is closed
 	resp map[uint32]chan *resp // responses from iothub
 
-	logger *log.Logger
-	debug  bool
+	logger common.Logger
+	cocfg  func(opts *mqtt.ClientOptions)
 }
 
 type resp struct {
@@ -71,18 +79,6 @@ type resp struct {
 	body []byte
 
 	ver int // twin response only
-}
-
-func (tr *Transport) logf(format string, v ...interface{}) {
-	if tr.logger != nil {
-		tr.logger.Printf(format, v...)
-	}
-}
-
-func (tr *Transport) debugf(format string, v ...interface{}) {
-	if tr.logger != nil && tr.debug {
-		tr.logger.Printf(format, v...)
-	}
 }
 
 func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) error {
@@ -109,22 +105,27 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 		}
 		return username, password
 	})
+	o.SetWriteTimeout(30 * time.Second)
 	o.SetMaxReconnectInterval(30 * time.Second) // default is 15min, way to long
 	o.SetOnConnectHandler(func(_ mqtt.Client) {
-		tr.debugf("connection established")
+		tr.logger.Debugf("connection established")
 	})
 	o.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
-		tr.debugf("connection lost: %v", err)
+		tr.logger.Debugf("connection lost: %v", err)
 	})
 	o.SetOnConnectHandler(func(c mqtt.Client) {
 		tr.subm.RLock()
 		for _, sub := range tr.subs {
 			if err := sub(); err != nil {
-				tr.logger.Printf("on-connect error: %s", err)
+				tr.logger.Debugf("on-connect error: %s", err)
 			}
 		}
 		tr.subm.RUnlock()
 	})
+
+	if tr.cocfg != nil {
+		tr.cocfg(o)
+	}
 
 	c := mqtt.NewClient(o)
 	if err := contextToken(ctx, c.Connect()); err != nil {
@@ -161,7 +162,7 @@ func (tr *Transport) subEvents(ctx context.Context, mux transport.MessageDispatc
 			"devices/"+tr.did+"/messages/devicebound/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 				msg, err := parseEventMessage(m)
 				if err != nil {
-					tr.logf("message parse error: %s", err)
+					tr.logger.Errorf("message parse error: %s", err)
 					return
 				}
 				mux.Dispatch(msg)
@@ -254,17 +255,17 @@ func (tr *Transport) subDirectMethods(ctx context.Context, mux transport.MethodD
 			"$iothub/methods/POST/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 				method, rid, err := parseDirectMethodTopic(m.Topic())
 				if err != nil {
-					tr.logf("parse error: %s", err)
+					tr.logger.Errorf("parse error: %s", err)
 					return
 				}
 				rc, b, err := mux.Dispatch(method, m.Payload())
 				if err != nil {
-					tr.logf("dispatch error: %s", err)
+					tr.logger.Errorf("dispatch error: %s", err)
 					return
 				}
 				dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%d", rc, rid)
 				if err = tr.send(ctx, dst, DefaultQoS, b); err != nil {
-					tr.logf("method response error: %s", err)
+					tr.logger.Errorf("method response error: %s", err)
 					return
 				}
 			},
@@ -394,7 +395,7 @@ func (tr *Transport) subTwinResponses(ctx context.Context) subFunc {
 					}
 					return
 				}
-				tr.logf("warn: unknown rid: %q", rid)
+				tr.logger.Warnf("unknown rid: %q", rid)
 			},
 		))
 	}
@@ -515,7 +516,7 @@ func (tr *Transport) Close() error {
 	}
 	if tr.conn != nil && tr.conn.IsConnected() {
 		tr.conn.Disconnect(250)
-		tr.debugf("disconnected")
+		tr.logger.Debugf("disconnected")
 	}
 	return nil
 }

@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/goautomotive/iothub/common"
+	"github.com/amenzhinsky/iothub/common"
 )
 
 func TestEventsMux(t *testing.T) {
-	mux := &eventsMux{}
+	mux := newEventsMux()
 	sub := mux.sub()
 	mux.Dispatch(&common.Message{
 		Payload: []byte("hello"),
@@ -32,7 +32,7 @@ func TestEventsMux(t *testing.T) {
 }
 
 func TestEventsMuxClose(t *testing.T) {
-	mux := &eventsMux{}
+	mux := newEventsMux()
 	sub := mux.sub()
 	mux.close(ErrClosed)
 	if err := sub.Err(); err != ErrClosed {

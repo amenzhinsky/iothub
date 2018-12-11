@@ -7,17 +7,16 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/goautomotive/iothub/cmd/internal"
-	"github.com/goautomotive/iothub/common"
-	"github.com/goautomotive/iothub/common/commonamqp"
-	"github.com/goautomotive/iothub/eventhub"
-	"github.com/goautomotive/iothub/iotservice"
+	"github.com/amenzhinsky/iothub/cmd/internal"
+	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/common/commonamqp"
+	"github.com/amenzhinsky/iothub/eventhub"
+	"github.com/amenzhinsky/iothub/iotservice"
 	"pack.ag/amqp"
 )
 
@@ -35,9 +34,6 @@ var (
 	ackFlag             string
 	connectTimeoutFlag  int
 	responseTimeoutFlag int
-
-	// create device
-	autoGenerateFlag bool
 
 	// create/update device
 	primaryKeyFlag          string
@@ -129,7 +125,6 @@ func run() error {
 			"DEVICE", "creates a new device",
 			wrap(createDevice),
 			func(f *flag.FlagSet) {
-				f.BoolVar(&autoGenerateFlag, "auto", false, "auto generate keys")
 				f.StringVar(&primaryKeyFlag, "primary-key", "", "primary key (base64)")
 				f.StringVar(&secondaryKeyFlag, "secondary-key", "", "secondary key (base64)")
 				f.StringVar(&primaryThumbprintFlag, "primary-thumbprint", "", "x509 primary thumbprint")
@@ -223,17 +218,10 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotservice.Client) error) int
 		if cs == "" {
 			return errors.New("SERVICE_CONNECTION_STRING is blank")
 		}
-
-		var logger *log.Logger
-		if debugFlag {
-			logger = log.New(os.Stderr, "[iotservice] ", 0)
-		}
-
 		c, err := iotservice.NewClient(
 			iotservice.WithLogger(nil), // disable logging
 			iotservice.WithConnectionString(cs),
-			iotservice.WithLogger(logger),
-			iotservice.WithDebug(debugFlag),
+			iotservice.WithLogger(common.NewLogWrapper(debugFlag)),
 		)
 		if err != nil {
 			return err
@@ -269,17 +257,6 @@ func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 	if f.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
-	if autoGenerateFlag {
-		var err error
-		primaryKeyFlag, err = iotservice.NewSymmetricKey()
-		if err != nil {
-			return err
-		}
-		secondaryKeyFlag, err = iotservice.NewSymmetricKey()
-		if err != nil {
-			return err
-		}
-	}
 	a, err := mkAuthentication()
 	if err != nil {
 		return err
@@ -313,15 +290,7 @@ func updateDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 }
 
 func mkAuthentication() (*iotservice.Authentication, error) {
-	if primaryKeyFlag != "" || secondaryKeyFlag != "" {
-		return &iotservice.Authentication{
-			Type: "sas",
-			SymmetricKey: &iotservice.SymmetricKey{
-				PrimaryKey:   primaryKeyFlag,
-				SecondaryKey: secondaryKeyFlag,
-			},
-		}, nil
-	}
+	// TODO: validate that flags only of one type of auth can be passed
 	if primaryThumbprintFlag != "" || secondaryThumbprintFlag != "" {
 		return &iotservice.Authentication{
 			Type: "selfSigned",
@@ -336,7 +305,28 @@ func mkAuthentication() (*iotservice.Authentication, error) {
 			Type: iotservice.AuthCA,
 		}, nil
 	}
-	return nil, errors.New("no authentication type provided")
+
+	// auto-generate keys when no auth type is given
+	var err error
+	if primaryKeyFlag == "" {
+		primaryKeyFlag, err = iotservice.NewSymmetricKey()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if secondaryKeyFlag == "" {
+		secondaryKeyFlag, err = iotservice.NewSymmetricKey()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &iotservice.Authentication{
+		Type: "sas",
+		SymmetricKey: &iotservice.SymmetricKey{
+			PrimaryKey:   primaryKeyFlag,
+			SecondaryKey: secondaryKeyFlag,
+		},
+	}, nil
 }
 
 func deleteDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {

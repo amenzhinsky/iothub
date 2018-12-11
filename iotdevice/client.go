@@ -5,28 +5,17 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"log"
-	"os"
 	"sync"
 
-	"github.com/goautomotive/iothub/common"
-	"github.com/goautomotive/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
 )
 
 // ClientOption is a client configuration option.
 type ClientOption func(c *Client) error
 
-// WithDebug enables or disables debug mode.
-// By default it's activated by the DEBUG environment variable but can be overwritten.
-func WithDebug(t bool) ClientOption {
-	return func(c *Client) error {
-		c.debug = t
-		return nil
-	}
-}
-
 // WithLogger changes default logger, default it an stdout logger.
-func WithLogger(l *log.Logger) ClientOption {
+func WithLogger(l common.Logger) ClientOption {
 	return func(c *Client) error {
 		c.logger = l
 		return nil
@@ -35,6 +24,9 @@ func WithLogger(l *log.Logger) ClientOption {
 
 // WithTransport changes default transport.
 func WithTransport(tr transport.Transport) ClientOption {
+	if tr == nil {
+		panic("transport is nil")
+	}
 	return func(c *Client) error {
 		c.tr = tr
 		return nil
@@ -91,14 +83,14 @@ func WithX509FromFile(deviceID, hostname, certFile, keyFile string) ClientOption
 // NewClient returns new iothub client.
 func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		ready: make(chan struct{}),
-		done:  make(chan struct{}),
-		debug: os.Getenv("DEBUG") != "",
-	}
+		ready:  make(chan struct{}),
+		done:   make(chan struct{}),
+		logger: common.NewLogWrapper(false),
 
-	// need to pass done channel to muxes
-	c.evMux.done = c.done
-	c.tsMux.done = c.done
+		evMux: newEventsMux(),
+		tsMux: newTwinStateMux(),
+		dmMux: newMethodMux(),
+	}
 
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
@@ -119,16 +111,15 @@ type Client struct {
 	creds transport.Credentials
 	tr    transport.Transport
 
-	logger *log.Logger
-	debug  bool
+	logger common.Logger
 
 	mu    sync.RWMutex
 	ready chan struct{}
 	done  chan struct{}
 
-	evMux eventsMux
-	tsMux twinStateMux
-	dmMux methodMux
+	evMux *eventsMux
+	tsMux *twinStateMux
+	dmMux *methodMux
 }
 
 // DirectMethodHandler handles direct method invocations.
@@ -156,6 +147,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		close(c.ready)
 	}
 	c.mu.Unlock()
+	// TODO: c.err = err
 	return err
 }
 
@@ -179,7 +171,7 @@ func (c *Client) SubscribeEvents(ctx context.Context) (*EventSub, error) {
 		return nil, err
 	}
 	if err := c.evMux.once(func() error {
-		return c.tr.SubscribeEvents(ctx, &c.evMux)
+		return c.tr.SubscribeEvents(ctx, c.evMux)
 	}); err != nil {
 		return nil, err
 	}
@@ -203,7 +195,7 @@ func (c *Client) RegisterMethod(ctx context.Context, name string, fn DirectMetho
 		return errors.New("name cannot be blank")
 	}
 	if err := c.dmMux.once(func() error {
-		return c.tr.RegisterDirectMethods(ctx, &c.dmMux)
+		return c.tr.RegisterDirectMethods(ctx, c.dmMux)
 	}); err != nil {
 		return err
 	}
@@ -262,7 +254,7 @@ func (c *Client) SubscribeTwinUpdates(ctx context.Context) (*TwinStateSub, error
 		return nil, err
 	}
 	if err := c.tsMux.once(func() error {
-		return c.tr.SubscribeTwinUpdates(ctx, &c.tsMux)
+		return c.tr.SubscribeTwinUpdates(ctx, c.tsMux)
 	}); err != nil {
 		return nil, err
 	}
@@ -347,20 +339,8 @@ func (c *Client) SendEvent(ctx context.Context, payload []byte, opts ...SendOpti
 	if err := c.tr.Send(ctx, msg); err != nil {
 		return err
 	}
-	c.debugf("device-to-cloud: %#v", msg)
+	c.logger.Debugf("device-to-cloud: %#v", msg)
 	return nil
-}
-
-func (c *Client) logf(format string, v ...interface{}) {
-	if c.logger != nil {
-		c.logger.Printf(format, v...)
-	}
-}
-
-func (c *Client) debugf(format string, v ...interface{}) {
-	if c.logger != nil && c.debug {
-		c.logger.Printf(format, v...)
-	}
 }
 
 // Close closes transport connection.

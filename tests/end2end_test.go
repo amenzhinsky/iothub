@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/goautomotive/iothub/common"
-	"github.com/goautomotive/iothub/iotdevice"
-	"github.com/goautomotive/iothub/iotdevice/transport"
-	"github.com/goautomotive/iothub/iotdevice/transport/mqtt"
-	"github.com/goautomotive/iothub/iotservice"
+	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/iotdevice"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
+	"github.com/amenzhinsky/iothub/iotservice"
 )
 
 func TestEnd2End(t *testing.T) {
@@ -73,7 +73,8 @@ func TestEnd2End(t *testing.T) {
 
 	for name, tr := range map[string]func() transport.Transport{
 		"mqtt": func() transport.Transport { return mqtt.New() },
-		//"amqp": func() transport.Transport { return amqp.New() },
+		// TODO: "amqp": func() transport.Transport { return amqp.New() },
+		// TODO: "http": func() transport.Transport { return http.New() },
 	} {
 		t.Run(name, func(t *testing.T) {
 			for auth, suite := range map[string]struct {
@@ -123,7 +124,6 @@ func TestEnd2End(t *testing.T) {
 			}
 		})
 	}
-
 	for _, did := range []string{sasDevice.DeviceID, x509Device.DeviceID} {
 		if err = sc.DeleteDevice(context.Background(), did); err != nil {
 			t.Fatal(err)

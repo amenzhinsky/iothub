@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/goautomotive/iothub/common"
-	"github.com/goautomotive/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
 )
 
 func NewSASCredentials(cs string) (transport.Credentials, error) {

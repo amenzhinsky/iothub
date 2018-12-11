@@ -7,19 +7,19 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 
-	"github.com/goautomotive/iothub/cmd/internal"
-	"github.com/goautomotive/iothub/iotdevice"
-	"github.com/goautomotive/iothub/iotdevice/transport"
-	"github.com/goautomotive/iothub/iotdevice/transport/mqtt"
+	"github.com/amenzhinsky/iothub/cmd/internal"
+	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/iotdevice"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
 )
 
 var transports = map[string]func() (transport.Transport, error){
 	"mqtt": func() (transport.Transport, error) {
-		return mqtt.New(mqtt.WithLogger(mklog("[mqtt]   "))), nil
+		return mqtt.New(mqtt.WithLogger(common.NewLogWrapper(debugFlag))), nil
 	},
 	"amqp": func() (transport.Transport, error) {
 		return nil, errors.New("not implemented")
@@ -151,8 +151,7 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 			return err
 		}
 		c, err := iotdevice.NewClient(
-			iotdevice.WithDebug(debugFlag),
-			iotdevice.WithLogger(mklog("[iothub] ")),
+			iotdevice.WithLogger(common.NewLogWrapper(debugFlag)),
 			iotdevice.WithTransport(t),
 			auth,
 		)
@@ -164,14 +163,6 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		}
 		return fn(ctx, f, c)
 	}
-}
-
-// mklog enables logging only when debug mode is on
-func mklog(prefix string) *log.Logger {
-	if !debugFlag {
-		return nil
-	}
-	return log.New(os.Stderr, prefix, 0)
 }
 
 func send(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {

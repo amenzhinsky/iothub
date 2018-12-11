@@ -10,13 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/goautomotive/iothub/common"
-
+	"github.com/amenzhinsky/iothub/common"
 	"pack.ag/amqp"
-)
-
-var (
-	DurationOfTokenGenerate = 1 * time.Hour
 )
 
 // Dial connects to the named amqp broker and returns an eventhub client.
@@ -106,6 +101,14 @@ func SubscribePartitions(ctx context.Context, sess *amqp.Session, name, group st
 	}
 }
 
+const (
+	tokenUpdateInterval = time.Hour
+
+	// we need to update tokens before they expire to prevent disconnects
+	// from azure, without interrupting the message flow
+	tokenUpdateSpan = 10 * time.Minute
+)
+
 // PutTokenContinuously writes token first time in blocking mode and returns
 // maintaining token updates in the background until stopCh is closed.
 func (c *Client) PutTokenContinuously(
@@ -114,12 +117,7 @@ func (c *Client) PutTokenContinuously(
 	cred *common.Credentials,
 	stopCh chan struct{},
 ) error {
-	// validate
-	if int64(DurationOfTokenGenerate-10*time.Minute) <= 0 {
-		return errors.New("duration is minus")
-	}
-
-	token, err := cred.SAS(cred.HostName, DurationOfTokenGenerate)
+	token, err := cred.SAS(cred.HostName, tokenUpdateInterval)
 	if err != nil {
 		return err
 	}
@@ -128,21 +126,22 @@ func (c *Client) PutTokenContinuously(
 	}
 
 	go func() {
-		ticker := time.NewTimer(DurationOfTokenGenerate - 10*time.Minute) // 10min is a safe buffer
+		ticker := time.NewTimer(tokenUpdateInterval - tokenUpdateSpan)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				token, err := cred.SAS(cred.HostName, DurationOfTokenGenerate)
+				token, err := cred.SAS(cred.HostName, tokenUpdateInterval)
 				if err != nil {
-					log.Printf("create SAS token error: %s", err)
+					log.Printf("genegate SAS token error: %s", err)
 					return
 				}
 				if err := c.PutToken(context.Background(), audience, token); err != nil {
 					log.Printf("put token error: %s", err)
 					return
 				}
+				ticker.Reset(tokenUpdateInterval - tokenUpdateSpan)
 			case <-stopCh:
 				return
 			}

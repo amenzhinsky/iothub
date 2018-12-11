@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"time"
 
-	"github.com/goautomotive/iothub/common"
+	"github.com/amenzhinsky/iothub/common"
 )
 
 // Transport interface.

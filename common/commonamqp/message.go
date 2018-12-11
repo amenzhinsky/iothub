@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/goautomotive/iothub/common"
+	"github.com/amenzhinsky/iothub/common"
 	"pack.ag/amqp"
 )
 

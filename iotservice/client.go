@@ -10,16 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/goautomotive/iothub/common"
-	"github.com/goautomotive/iothub/common/commonamqp"
-	"github.com/goautomotive/iothub/eventhub"
+	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/common/commonamqp"
+	"github.com/amenzhinsky/iothub/eventhub"
 	"pack.ag/amqp"
 )
 
@@ -55,17 +54,9 @@ func WithHTTPClient(client *http.Client) ClientOption {
 }
 
 // WithLogger sets client logger.
-func WithLogger(l *log.Logger) ClientOption {
+func WithLogger(l common.Logger) ClientOption {
 	return func(c *Client) error {
 		c.logger = l
-		return nil
-	}
-}
-
-// WithDebug enables or disables debug mode.
-func WithDebug(d bool) ClientOption {
-	return func(c *Client) error {
-		c.debug = d
 		return nil
 	}
 }
@@ -73,7 +64,8 @@ func WithDebug(d bool) ClientOption {
 // NewClient creates new iothub service client.
 func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		done: make(chan struct{}),
+		done:   make(chan struct{}),
+		logger: common.NewLogWrapper(false),
 	}
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
@@ -105,8 +97,7 @@ type Client struct {
 	conn   *eventhub.Client
 	done   chan struct{}
 	creds  *common.Credentials
-	logger *log.Logger
-	debug  bool
+	logger common.Logger
 	http   *http.Client // REST client
 }
 
@@ -119,7 +110,7 @@ func (c *Client) ConnectToAMQP(ctx context.Context) error {
 		return nil // already connected
 	}
 
-	c.debugf("connecting to %s", c.creds.HostName)
+	c.logger.Debugf("connecting to %s", c.creds.HostName)
 	eh, err := eventhub.Dial("amqps://"+c.creds.HostName, &tls.Config{
 		ServerName: c.creds.HostName,
 		RootCAs:    common.RootCAs(),
@@ -156,9 +147,7 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	if err != nil {
 		return nil, "", err
 	}
-	defer func(conn *amqp.Client) {
-		conn.Close()
-	}(conn)
+	defer conn.Close()
 
 	sess, err := conn.NewSession()
 	if err != nil {
@@ -173,12 +162,11 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	}
 	defer recv.Close(context.Background())
 	_, err = recv.Receive(ctx)
-
 	if err == nil {
 		return nil, "", errors.New("expected redirect error")
 	}
 
-	rerr, ok := err.(amqp.DetachError)
+	rerr, ok := err.(*amqp.DetachError)
 	if !ok || rerr.RemoteError.Condition != amqp.ErrorLinkRedirect {
 		return nil, "", err
 	}
@@ -395,14 +383,23 @@ func (c *Client) HostName() string {
 	return c.creds.HostName
 }
 
+var (
+	errEmptyDeviceID   = errors.New("device id is empty")
+	errEmptyJobID      = errors.New("job id is empty")
+	errKeyNotAvailable = errors.New("symmetric key is not available")
+)
+
 // DeviceConnectionString builds up a connection string for the given device.
 func (c *Client) DeviceConnectionString(device *Device, secondary bool) (string, error) {
 	if device == nil {
 		panic("device is nil")
 	}
-	key, err := deviceKey(device, secondary)
-	if err != nil {
-		return "", err
+	if device.DeviceID == "" {
+		return "", errEmptyDeviceID
+	}
+	key := deviceKey(device, secondary)
+	if key == "" {
+		return "", errKeyNotAvailable
 	}
 	return fmt.Sprintf("HostName=%s;DeviceId=%s;SharedAccessKey=%s",
 		c.creds.HostName, device.DeviceID, key), nil
@@ -413,9 +410,15 @@ func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary boo
 	if device == nil {
 		panic("device is nil")
 	}
-	key, err := deviceKey(device, secondary)
-	if err != nil {
-		return "", err
+	if device.DeviceID == "" {
+		return "", errEmptyDeviceID
+	}
+	key := deviceKey(device, secondary)
+	if key == "" {
+		return "", errKeyNotAvailable
+	}
+	if duration == 0 {
+		duration = time.Hour
 	}
 	creds := common.Credentials{
 		HostName:        c.creds.HostName,
@@ -425,14 +428,14 @@ func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary boo
 	return creds.SAS(creds.HostName, duration)
 }
 
-func deviceKey(device *Device, secondary bool) (string, error) {
+func deviceKey(device *Device, secondary bool) string {
 	if device.Authentication == nil || device.Authentication.SymmetricKey == nil {
-		return "", errors.New("symmetric key is not available")
+		return ""
 	}
 	if secondary {
-		return device.Authentication.SymmetricKey.SecondaryKey, nil
+		return device.Authentication.SymmetricKey.SecondaryKey
 	}
-	return device.Authentication.SymmetricKey.PrimaryKey, nil
+	return device.Authentication.SymmetricKey.PrimaryKey
 }
 
 type call struct {
@@ -529,7 +532,7 @@ func (c *Client) UpdateDevice(ctx context.Context, device *Device) (*Device, err
 		panic("device is nil")
 	}
 	if device.DeviceID == "" {
-		return nil, errors.New("deviceID is empty")
+		return nil, errEmptyDeviceID
 	}
 	d := &Device{}
 	if err := c.call(ctx, http.MethodPut, "devices/"+url.PathEscape(device.DeviceID), http.Header{
@@ -540,9 +543,10 @@ func (c *Client) UpdateDevice(ctx context.Context, device *Device) (*Device, err
 	return d, nil
 }
 
+// DeleteDevice deletes the named device.
 func (c *Client) DeleteDevice(ctx context.Context, deviceID string) error {
 	if deviceID == "" {
-		return errors.New("deviceID is empty")
+		return errEmptyDeviceID
 	}
 	return c.call(ctx, http.MethodDelete, "devices/"+url.PathEscape(deviceID), http.Header{
 		"If-Match": {"*"},
@@ -560,6 +564,9 @@ func (c *Client) ListDevices(ctx context.Context) ([]*Device, error) {
 
 // GetTwin retrieves the named twin device from the registry.
 func (c *Client) GetTwin(ctx context.Context, deviceID string) (*Twin, error) {
+	if deviceID == "" {
+		return nil, errEmptyDeviceID
+	}
 	t := &Twin{}
 	if err := c.call(ctx, http.MethodGet, "twins/"+url.PathEscape(deviceID), nil, nil, t); err != nil {
 		return nil, err
@@ -575,7 +582,7 @@ func (c *Client) UpdateTwin(
 	etag string,
 ) (*Twin, error) {
 	if deviceID == "" {
-		return nil, errors.New("deviceID is empty")
+		return nil, errEmptyDeviceID
 	}
 	if twin == nil {
 		panic("twin is nil")
@@ -621,7 +628,7 @@ func (c *Client) ExportDevicesToBlob(
 ) (map[string]interface{}, error) {
 	var v map[string]interface{}
 	if err := c.call(ctx, http.MethodGet, "jobs/create", nil, map[string]interface{}{
-		"type": "export",
+		"type":                   "export",
 		"outputBlobContainerUri": outputBlobURL,
 		"excludeKeysInExport":    excludeKeys,
 	}, &v); err != nil {
@@ -639,6 +646,9 @@ func (c *Client) ListJobs(ctx context.Context) ([]map[string]interface{}, error)
 }
 
 func (c *Client) GetJob(ctx context.Context, jobID string) (map[string]interface{}, error) {
+	if jobID == "" {
+		return nil, errEmptyJobID
+	}
 	var v map[string]interface{}
 	if err := c.call(ctx, http.MethodGet, "jobs/"+url.PathEscape(jobID), nil, nil, &v); err != nil {
 		return nil, err
@@ -647,6 +657,9 @@ func (c *Client) GetJob(ctx context.Context, jobID string) (map[string]interface
 }
 
 func (c *Client) CancelJob(ctx context.Context, jobID string) (map[string]interface{}, error) {
+	if jobID == "" {
+		return nil, errEmptyJobID
+	}
 	var v map[string]interface{}
 	if err := c.call(ctx, http.MethodDelete, "jobs/"+url.PathEscape(jobID), nil, nil, &v); err != nil {
 		return nil, err
@@ -710,7 +723,9 @@ func (c *Client) call(
 	if err != nil {
 		return err
 	}
-	c.debugf("%s %s %d:\n%s\n%s", method, uri, res.StatusCode, prefix(b, "> "), prefix(body, "< "))
+	c.logger.Debugf("%s %s %d:\n%s\n%s",
+		method, uri, res.StatusCode, prefix(b, "> "), prefix(body, "< "),
+	)
 	if v == nil && res.StatusCode == http.StatusNoContent {
 		return nil
 	}
@@ -730,18 +745,6 @@ func prefix(s []byte, prefix string) string {
 		return string(s)
 	}
 	return b.String()
-}
-
-func (c *Client) logf(format string, v ...interface{}) {
-	if c.logger != nil {
-		c.logger.Printf(format, v...)
-	}
-}
-
-func (c *Client) debugf(format string, v ...interface{}) {
-	if c.debug {
-		c.logf(format, v...)
-	}
 }
 
 // Close closes transport.

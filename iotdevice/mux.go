@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/goautomotive/iothub/common"
+	"github.com/amenzhinsky/iothub/common"
 )
 
 // once is like sync.Once but if fn returns an error it's considered
@@ -31,6 +31,10 @@ func once(i *uint32, mu *sync.RWMutex, fn func() error) error {
 	return nil
 }
 
+func newEventsMux() *eventsMux {
+	return &eventsMux{done: make(chan struct{})}
+}
+
 type eventsMux struct {
 	on   uint32
 	mu   sync.RWMutex
@@ -45,16 +49,12 @@ func (m *eventsMux) once(fn func() error) error {
 func (m *eventsMux) Dispatch(msg *common.Message) {
 	m.mu.RLock()
 	for _, sub := range m.subs {
-		select {
-		case sub.ch <- msg:
-		default:
-			go func() {
-				select {
-				case sub.ch <- msg:
-				case <-m.done:
-				}
-			}()
-		}
+		go func() {
+			select {
+			case sub.ch <- msg:
+			case <-m.done:
+			}
+		}()
 	}
 	m.mu.RUnlock()
 }
@@ -80,6 +80,12 @@ func (m *eventsMux) unsub(s *EventSub) {
 
 func (m *eventsMux) close(err error) {
 	m.mu.Lock()
+	select {
+	case <-m.done:
+		panic("already closed")
+	default:
+	}
+	close(m.done)
 	for _, s := range m.subs {
 		s.err = ErrClosed
 		close(s.ch)
@@ -101,6 +107,10 @@ func (s *EventSub) Err() error {
 	return s.err
 }
 
+func newTwinStateMux() *twinStateMux {
+	return &twinStateMux{done: make(chan struct{})}
+}
+
 type twinStateMux struct {
 	on   uint32
 	mu   sync.RWMutex
@@ -120,17 +130,19 @@ func (m *twinStateMux) Dispatch(b []byte) {
 	}
 
 	m.mu.RLock()
+	select {
+	case <-m.done:
+		panic("already closed")
+	default:
+	}
+	close(m.done)
 	for _, sub := range m.subs {
-		select {
-		case sub.ch <- v:
-		default:
-			go func() {
-				select {
-				case sub.ch <- v:
-				case <-m.done:
-				}
-			}()
-		}
+		go func() {
+			select {
+			case sub.ch <- v:
+			case <-m.done:
+			}
+		}()
 	}
 	m.mu.RUnlock()
 }
@@ -175,6 +187,10 @@ func (s *TwinStateSub) C() <-chan TwinState {
 
 func (s *TwinStateSub) Err() error {
 	return s.err
+}
+
+func newMethodMux() *methodMux {
+	return &methodMux{}
 }
 
 // methodMux is direct-methods dispatcher.
