@@ -24,7 +24,7 @@ func Dial(addr string, tlsConfig *tls.Config) (*Client, error) {
 	}
 	sess, err := conn.NewSession()
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	return &Client{
@@ -85,7 +85,10 @@ func SubscribePartitions(ctx context.Context, sess *amqp.Session, name, group st
 					errc <- err
 					return
 				}
-				msg.Accept()
+				if err = msg.Accept(); err != nil {
+					errc <- err
+					return
+				}
 				msgc <- msg
 			}
 		}(recv)
@@ -190,8 +193,7 @@ func (c *Client) PutToken(ctx context.Context, audience, token string) error {
 	if err = CheckMessageResponse(msg); err != nil {
 		return err
 	}
-	msg.Accept()
-	return nil
+	return msg.Accept()
 }
 
 // Close closes amqp session and connection.
@@ -271,7 +273,9 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	if msg.Properties.CorrelationID != mid {
 		return nil, errors.New("message-id mismatch")
 	}
-	msg.Accept()
+	if err := msg.Accept(); err != nil {
+		return nil, err
+	}
 
 	val, ok := msg.Value.(map[string]interface{})
 	if !ok {

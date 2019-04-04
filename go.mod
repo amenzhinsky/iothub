@@ -12,5 +12,5 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/testify v1.2.2 // indirect
 	golang.org/x/net v0.0.0-20180811021610-c39426892332 // indirect
-	pack.ag/amqp v0.7.3
+	pack.ag/amqp v0.11.0
 )

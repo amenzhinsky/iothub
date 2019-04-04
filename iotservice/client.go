@@ -120,7 +120,7 @@ func (c *Client) ConnectToAMQP(ctx context.Context) error {
 	}
 	defer func() {
 		if err != nil {
-			eh.Close()
+			err = eh.Close()
 		}
 	}()
 
@@ -176,7 +176,9 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	group = group[strings.Index(group, ":5671/")+6 : len(group)-1]
 
 	addr = "amqps://" + rerr.RemoteError.Info["hostname"].(string)
-	conn, err = amqp.Dial(addr, amqp.ConnSASLPlain(c.creds.SharedAccessKeyName, c.creds.SharedAccessKey))
+	conn, err = amqp.Dial(addr, amqp.ConnSASLPlain(
+		c.creds.SharedAccessKeyName, c.creds.SharedAccessKey,
+	))
 	if err != nil {
 		return nil, "", err
 	}
@@ -356,7 +358,9 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) erro
 		if err != nil {
 			return err
 		}
-		msg.Accept()
+		if err = msg.Accept(); err != nil {
+			return err
+		}
 
 		var v []*Feedback
 		if err = json.Unmarshal(msg.Data[0], &v); err != nil {
