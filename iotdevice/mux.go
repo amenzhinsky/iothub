@@ -48,10 +48,11 @@ func (m *eventsMux) once(fn func() error) error {
 
 func (m *eventsMux) Dispatch(msg *common.Message) {
 	m.mu.RLock()
-	for _, sub := range m.subs {
+	for _, s := range m.subs {
 		go func() {
 			select {
-			case sub.ch <- msg:
+			case s.ch <- msg:
+			case <-s.done:
 			case <-m.done:
 			}
 		}()
@@ -60,7 +61,7 @@ func (m *eventsMux) Dispatch(msg *common.Message) {
 }
 
 func (m *eventsMux) sub() *EventSub {
-	s := &EventSub{ch: make(chan *common.Message, 10)}
+	s := newEventSub()
 	m.mu.Lock()
 	m.subs = append(m.subs, s)
 	m.mu.Unlock()
@@ -71,6 +72,7 @@ func (m *eventsMux) unsub(s *EventSub) {
 	m.mu.Lock()
 	for i, ss := range m.subs {
 		if ss == s {
+			s.close(nil)
 			m.subs = append(m.subs[:i], m.subs[i+1:]...)
 			break
 		}
@@ -87,16 +89,23 @@ func (m *eventsMux) close(err error) {
 	}
 	close(m.done)
 	for _, s := range m.subs {
-		s.err = ErrClosed
-		close(s.ch)
+		s.close(ErrClosed)
 	}
 	m.subs = m.subs[0:0]
 	m.mu.Unlock()
 }
 
+func newEventSub() *EventSub {
+	return &EventSub{
+		ch:   make(chan *common.Message, 10),
+		done: make(chan struct{}),
+	}
+}
+
 type EventSub struct {
-	ch  chan *common.Message
-	err error
+	ch   chan *common.Message
+	err  error
+	done chan struct{}
 }
 
 func (s *EventSub) C() <-chan *common.Message {
@@ -105,6 +114,12 @@ func (s *EventSub) C() <-chan *common.Message {
 
 func (s *EventSub) Err() error {
 	return s.err
+}
+
+func (s *EventSub) close(err error) {
+	s.err = err
+	close(s.done)
+	close(s.ch)
 }
 
 func newTwinStateMux() *twinStateMux {
