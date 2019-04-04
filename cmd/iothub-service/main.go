@@ -291,7 +291,7 @@ func mkAuthentication() (*iotservice.Authentication, error) {
 	// TODO: validate that flags only of one type of auth can be passed
 	if primaryThumbprintFlag != "" || secondaryThumbprintFlag != "" {
 		return &iotservice.Authentication{
-			Type: "selfSigned",
+			Type: iotservice.AuthSelfSigned,
 			X509Thumbprint: &iotservice.X509Thumbprint{
 				PrimaryThumbprint:   primaryThumbprintFlag,
 				SecondaryThumbprint: secondaryThumbprintFlag,
@@ -319,7 +319,7 @@ func mkAuthentication() (*iotservice.Authentication, error) {
 		}
 	}
 	return &iotservice.Authentication{
-		Type: "sas",
+		Type: iotservice.AuthSAS,
 		SymmetricKey: &iotservice.SymmetricKey{
 			PrimaryKey:   primaryKeyFlag,
 			SecondaryKey: secondaryKeyFlag,
