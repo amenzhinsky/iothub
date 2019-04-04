@@ -134,7 +134,7 @@ func (c *Client) ConnectToAMQP(ctx context.Context) error {
 // Subscribing to C2D events requires connection to an eventhub instance,
 // that's hostname and authentication mechanism is absolutely different
 // from raw connection to an AMQP broker.
-func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, error) {
+func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, string, error) {
 	user := c.creds.SharedAccessKeyName + "@sas.root." + c.creds.HostName
 	user = user[:len(user)-18] // sub .azure-devices.net"
 	pass, err := c.creds.SAS(c.creds.HostName, time.Hour)
@@ -143,13 +143,13 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	}
 
 	addr := "amqps://" + c.creds.HostName
-	conn, err := amqp.Dial(addr, amqp.ConnSASLPlain(user, pass))
+	eh, err := amqp.Dial(addr, amqp.ConnSASLPlain(user, pass))
 	if err != nil {
 		return nil, "", err
 	}
-	defer conn.Close()
+	defer eh.Close()
 
-	sess, err := conn.NewSession()
+	sess, err := eh.NewSession()
 	if err != nil {
 		return nil, "", err
 	}
@@ -176,7 +176,7 @@ func (c *Client) connectToEventHub(ctx context.Context) (*amqp.Client, string, e
 	group = group[strings.Index(group, ":5671/")+6 : len(group)-1]
 
 	addr = "amqps://" + rerr.RemoteError.Info["hostname"].(string)
-	conn, err = amqp.Dial(addr, amqp.ConnSASLPlain(
+	conn, err := eventhub.Dial(addr, amqp.ConnSASLPlain(
 		c.creds.SharedAccessKeyName, c.creds.SharedAccessKey,
 	))
 	if err != nil {
@@ -192,19 +192,13 @@ type MessageHandler func(e *common.Message)
 // No need to call Connect first, because this method different connect
 // method that dials an eventhub instance first opposed to SendEvent func.
 func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
-	conn, group, err := c.connectToEventHub(ctx)
+	eh, group, err := c.connectToEventHub(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer eh.Close()
 
-	sess, err := conn.NewSession()
-	if err != nil {
-		return err
-	}
-	defer sess.Close(context.Background())
-
-	return eventhub.SubscribePartitions(ctx, sess, group, "$Default", func(msg *amqp.Message) {
+	return eh.SubscribePartitions(ctx, group, "$Default", func(msg *amqp.Message) {
 		go fn(commonamqp.FromAMQPMessage(msg))
 	})
 }

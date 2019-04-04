@@ -81,10 +81,12 @@ func (c *Client) Sess() *amqp.Session {
 }
 
 func (c *Client) SubscribePartitions(ctx context.Context, name, group string, f func(*amqp.Message)) error {
-	return SubscribePartitions(ctx, c.sess, name, group, f)
-}
+	sess, err := c.conn.NewSession()
+	if err != nil {
+		return err
+	}
+	defer sess.Close(context.Background())
 
-func SubscribePartitions(ctx context.Context, sess *amqp.Session, name, group string, f func(*amqp.Message)) error {
 	ids, err := getPartitionIDs(ctx, sess, name)
 	if err != nil {
 		return err
@@ -98,7 +100,9 @@ func SubscribePartitions(ctx context.Context, sess *amqp.Session, name, group st
 	errc := make(chan error, len(ids))
 	for _, id := range ids {
 		recv, err := sess.NewReceiver(
-			amqp.LinkSourceAddress(fmt.Sprintf("/%s/ConsumerGroups/%s/Partitions/%s", name, group, id)),
+			amqp.LinkSourceAddress(
+				fmt.Sprintf("/%s/ConsumerGroups/%s/Partitions/%s", name, group, id),
+			),
 
 			// TODO: make it configurable
 			amqp.LinkSelectorFilter(fmt.Sprintf("amqp.annotation.x-opt-enqueuedtimeutc > '%d'",
