@@ -7,9 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
@@ -441,27 +439,8 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) err
 		return internal.ErrInvalidUsage
 	}
 
-	// TODO: extract from main package
 	if ehcsFlag != "" {
-		u, err := url.Parse(ehcsFlag)
-		if err != nil {
-			return err
-		}
-		name := strings.TrimLeft(u.Path, "/")
-		u.Path = "" // remove path from address
-		eh, err := eventhub.Dial(u.String(), &tls.Config{
-			ServerName: u.Host,
-			RootCAs:    common.RootCAs(),
-		})
-		if err != nil {
-			return err
-		}
-		return eh.SubscribePartitions(ctx, name, ehcgFlag, func(m *amqp.Message) {
-			msg := commonamqp.FromAMQPMessage(m)
-			if err := internal.OutputJSON(msg, compressFlag); err != nil {
-				panic(err)
-			}
-		})
+		return watchEventHubEvents(ctx, ehcsFlag, ehcgFlag)
 	}
 
 	errc := make(chan error, 1)
@@ -473,6 +452,40 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) err
 		return err
 	}
 	return <-errc
+}
+
+func watchEventHubEvents(ctx context.Context, cs, group string) error {
+	creds, err := eventhub.ParseConnectionString(cs)
+	if err != nil {
+		return err
+	}
+
+	addr := fmt.Sprintf("amqps://%s/%s", creds.Endpoint, creds.EntityPath)
+	eh, err := eventhub.Dial(addr,
+		amqp.ConnTLSConfig(&tls.Config{
+			ServerName: creds.Endpoint,
+			RootCAs:    common.RootCAs(),
+		}),
+
+		// we cannot use username and password as a part of Dial connection string
+		// because access key is base64 (not base64url) encoded and may contain
+		// '=' or '+' chars that break URL parsing, simply replacing them with
+		// '_' and '+' won't do the job because amqp.Dial uses them as is and
+		// Azure will reject them afterwards
+		amqp.ConnSASLPlain(
+			creds.SharedAccessKeyName,
+			creds.SharedAccessKey,
+		),
+	)
+	if err != nil {
+		return err
+	}
+	return eh.SubscribePartitions(ctx, creds.EntityPath, group, func(m *amqp.Message) {
+		msg := commonamqp.FromAMQPMessage(m)
+		if err := internal.OutputJSON(msg, compressFlag); err != nil {
+			panic(err)
+		}
+	})
 }
 
 func watchFeedback(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {

@@ -3,10 +3,10 @@ package eventhub
 import (
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,11 +14,43 @@ import (
 	"pack.ag/amqp"
 )
 
+// Credentials is an evenhub connection string representation.
+type Credentials struct {
+	Endpoint            string
+	SharedAccessKeyName string
+	SharedAccessKey     string
+	EntityPath          string
+}
+
+// ParseConnectionString parses the given connection string into Credentials structure.
+func ParseConnectionString(cs string) (*Credentials, error) {
+	var c Credentials
+	for _, s := range strings.Split(cs, ";") {
+		kv := strings.SplitN(s, "=", 2)
+		if len(kv) != 2 {
+			return nil, errors.New("malformed connection string")
+		}
+
+		switch kv[0] {
+		case "Endpoint":
+			if !strings.HasPrefix(kv[1], "sb://") {
+				return nil, errors.New("only sb:// schema supported")
+			}
+			c.Endpoint = strings.TrimRight(kv[1][5:], "/")
+		case "SharedAccessKeyName":
+			c.SharedAccessKeyName = kv[1]
+		case "SharedAccessKey":
+			c.SharedAccessKey = kv[1]
+		case "EntityPath":
+			c.EntityPath = kv[1]
+		}
+	}
+	return &c, nil
+}
+
 // Dial connects to the named amqp broker and returns an eventhub client.
-func Dial(addr string, tlsConfig *tls.Config) (*Client, error) {
-	conn, err := amqp.Dial(addr,
-		amqp.ConnTLSConfig(tlsConfig),
-	)
+func Dial(addr string, opts ...amqp.ConnOption) (*Client, error) {
+	conn, err := amqp.Dial(addr, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +150,7 @@ func (c *Client) PutTokenContinuously(
 	ctx context.Context,
 	audience string,
 	cred *common.Credentials,
-	stopCh chan struct{},
+	done <-chan struct{},
 ) error {
 	token, err := cred.SAS(cred.HostName, tokenUpdateInterval)
 	if err != nil {
@@ -145,7 +177,7 @@ func (c *Client) PutTokenContinuously(
 					return
 				}
 				ticker.Reset(tokenUpdateInterval - tokenUpdateSpan)
-			case <-stopCh:
+			case <-done:
 				return
 			}
 		}

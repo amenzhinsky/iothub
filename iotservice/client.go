@@ -111,10 +111,10 @@ func (c *Client) ConnectToAMQP(ctx context.Context) error {
 	}
 
 	c.logger.Debugf("connecting to %s", c.creds.HostName)
-	eh, err := eventhub.Dial("amqps://"+c.creds.HostName, &tls.Config{
+	eh, err := eventhub.Dial("amqps://"+c.creds.HostName, amqp.ConnTLSConfig(&tls.Config{
 		ServerName: c.creds.HostName,
 		RootCAs:    common.RootCAs(),
-	})
+	}))
 	if err != nil {
 		return err
 	}
@@ -326,7 +326,7 @@ func (c *Client) SendEvent(
 		}
 	}
 
-	// opening a new link for every message is not the most efficient way
+	// TODO: opening a new link for every message is not the most efficient way
 	send, err := c.conn.Sess().NewSender(
 		amqp.LinkTargetAddress("/messages/devicebound"),
 	)
