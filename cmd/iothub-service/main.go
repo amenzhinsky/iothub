@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -217,7 +216,6 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotservice.Client) error) int
 			return errors.New("SERVICE_CONNECTION_STRING is blank")
 		}
 		c, err := iotservice.NewClient(
-			iotservice.WithLogger(nil), // disable logging
 			iotservice.WithConnectionString(cs),
 			iotservice.WithLogger(common.NewLogWrapper(debugFlag)),
 		)
@@ -462,20 +460,15 @@ func watchEventHubEvents(ctx context.Context, cs, group string) error {
 
 	addr := fmt.Sprintf("amqps://%s/%s", creds.Endpoint, creds.EntityPath)
 	eh, err := eventhub.Dial(addr,
-		amqp.ConnTLSConfig(&tls.Config{
-			ServerName: creds.Endpoint,
-			RootCAs:    common.RootCAs(),
-		}),
+		eventhub.WithLogger(common.NewLogWrapper(debugFlag)),
+		eventhub.WithTLSConfig(common.TLSConfig(creds.Endpoint)),
 
 		// we cannot use username and password as a part of Dial connection string
 		// because access key is base64 (not base64url) encoded and may contain
 		// '=' or '+' chars that break URL parsing, simply replacing them with
 		// '_' and '+' won't do the job because amqp.Dial uses them as is and
 		// Azure will reject them afterwards
-		amqp.ConnSASLPlain(
-			creds.SharedAccessKeyName,
-			creds.SharedAccessKey,
-		),
+		eventhub.WithSASLPlain(creds.SharedAccessKeyName, creds.SharedAccessKey),
 	)
 	if err != nil {
 		return err

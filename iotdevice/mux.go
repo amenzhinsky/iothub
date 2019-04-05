@@ -5,30 +5,18 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"sync/atomic"
 
 	"github.com/amenzhinsky/iothub/common"
 )
 
-// once is like sync.Once but if fn returns an error it's considered
-// as a failure and it's still can be called until it returns a nil error.
-func once(i *uint32, mu *sync.RWMutex, fn func() error) error {
-	// make a quick check without locking the mutex
-	if atomic.LoadUint32(i) == 1 {
-		return nil
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	// someone can run the given func and change the value
-	// between atomic checking and lock acquiring
-	if *i == 1 {
-		return nil
-	}
-	if err := fn(); err != nil {
-		return err
-	}
-	atomic.StoreUint32(i, 1)
-	return nil
+// once wraps a function that can return an error and
+// executes it only once, all sequential calls return nils.
+func once(on *sync.Once, fn func() error) error {
+	var err error
+	on.Do(func() {
+		err = fn()
+	})
+	return err
 }
 
 func newEventsMux() *eventsMux {
@@ -36,26 +24,26 @@ func newEventsMux() *eventsMux {
 }
 
 type eventsMux struct {
-	on   uint32
+	on   sync.Once
 	mu   sync.RWMutex
 	subs []*EventSub
 	done chan struct{}
 }
 
 func (m *eventsMux) once(fn func() error) error {
-	return once(&m.on, &m.mu, fn)
+	return once(&m.on, fn)
 }
 
 func (m *eventsMux) Dispatch(msg *common.Message) {
 	m.mu.RLock()
 	for _, s := range m.subs {
-		go func() {
-			select {
-			case s.ch <- msg:
-			case <-s.done:
-			case <-m.done:
-			}
-		}()
+		//go func() {
+		select {
+		case <-s.done:
+		case <-m.done:
+		case s.ch <- msg:
+		}
+		//}()
 	}
 	m.mu.RUnlock()
 }
@@ -97,7 +85,7 @@ func (m *eventsMux) close(err error) {
 
 func newEventSub() *EventSub {
 	return &EventSub{
-		ch:   make(chan *common.Message, 10),
+		ch:   make(chan *common.Message, 10), // TODO: configurable value
 		done: make(chan struct{}),
 	}
 }
@@ -127,14 +115,14 @@ func newTwinStateMux() *twinStateMux {
 }
 
 type twinStateMux struct {
-	on   uint32
+	on   sync.Once
 	mu   sync.RWMutex
 	subs []*TwinStateSub
 	done chan struct{}
 }
 
 func (m *twinStateMux) once(fn func() error) error {
-	return once(&m.on, &m.mu, fn)
+	return once(&m.on, fn)
 }
 
 func (m *twinStateMux) Dispatch(b []byte) {
@@ -210,13 +198,13 @@ func newMethodMux() *methodMux {
 
 // methodMux is direct-methods dispatcher.
 type methodMux struct {
-	on uint32
+	on sync.Once
 	mu sync.RWMutex
 	m  map[string]DirectMethodHandler
 }
 
 func (m *methodMux) once(fn func() error) error {
-	return once(&m.on, &m.mu, fn)
+	return once(&m.on, fn)
 }
 
 // handle registers the given direct-method handler.

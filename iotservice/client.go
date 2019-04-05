@@ -111,10 +111,9 @@ func (c *Client) ConnectToAMQP(ctx context.Context) error {
 	}
 
 	c.logger.Debugf("connecting to %s", c.creds.HostName)
-	eh, err := eventhub.Dial("amqps://"+c.creds.HostName, amqp.ConnTLSConfig(&tls.Config{
-		ServerName: c.creds.HostName,
-		RootCAs:    common.RootCAs(),
-	}))
+	eh, err := eventhub.Dial("amqps://"+c.creds.HostName,
+		eventhub.WithTLSConfig(common.TLSConfig(c.creds.HostName)),
+	)
 	if err != nil {
 		return err
 	}
@@ -143,7 +142,11 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, strin
 	}
 
 	addr := "amqps://" + c.creds.HostName
-	eh, err := amqp.Dial(addr, amqp.ConnSASLPlain(user, pass))
+	eh, err := amqp.Dial(addr,
+		amqp.ConnTLSConfig(common.TLSConfig(c.creds.HostName)),
+		amqp.ConnSASLPlain(user, pass),
+	)
+
 	if err != nil {
 		return nil, "", err
 	}
@@ -175,10 +178,11 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, strin
 	group := rerr.RemoteError.Info["address"].(string)
 	group = group[strings.Index(group, ":5671/")+6 : len(group)-1]
 
-	addr = "amqps://" + rerr.RemoteError.Info["hostname"].(string)
-	conn, err := eventhub.Dial(addr, amqp.ConnSASLPlain(
-		c.creds.SharedAccessKeyName, c.creds.SharedAccessKey,
-	))
+	host := rerr.RemoteError.Info["hostname"].(string)
+	conn, err := eventhub.Dial("amqps://"+host,
+		eventhub.WithTLSConfig(common.TLSConfig(host)),
+		eventhub.WithSASLPlain(c.creds.SharedAccessKeyName, c.creds.SharedAccessKey),
+	)
 	if err != nil {
 		return nil, "", err
 	}

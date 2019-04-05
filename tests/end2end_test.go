@@ -418,7 +418,7 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 		if state["test-prop"] != twin.Properties.Desired["test-prop"] {
 			t.Errorf("test-prop = %q, want %q", state["test-prop"], twin.Properties.Desired["test-prop"])
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("SubscribeTwinUpdates timed out")
 	}
 }

@@ -1,7 +1,6 @@
 package common
 
 import (
-	"crypto/tls"
 	"net/http"
 	"testing"
 )
@@ -15,9 +14,7 @@ func TestTLSConfig(t *testing.T) {
 	}
 
 	c := &http.Client{Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs: RootCAs(),
-		},
+		TLSClientConfig: TLSConfig("portal.azure.com"),
 	}}
 	if _, err := c.Do(r); err != nil {
 		t.Fatal(err)

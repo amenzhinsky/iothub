@@ -3,6 +3,7 @@ package eventhub
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -48,30 +49,58 @@ func ParseConnectionString(cs string) (*Credentials, error) {
 	return &c, nil
 }
 
+type Option func(c *Client)
+
+func WithTLSConfig(tc *tls.Config) Option {
+	return WithConnOption(amqp.ConnTLSConfig(tc))
+}
+
+func WithSASLPlain(username, password string) Option {
+	return WithConnOption(amqp.ConnSASLPlain(username, password))
+}
+
+func WithConnOption(opt amqp.ConnOption) Option {
+	return func(c *Client) {
+		c.opts = append(c.opts, opt)
+	}
+}
+
+func WithLogger(l common.Logger) Option {
+	return func(c *Client) {
+		c.logger = l
+	}
+}
+
 // Dial connects to the named amqp broker and returns an eventhub client.
-func Dial(addr string, opts ...amqp.ConnOption) (*Client, error) {
-	conn, err := amqp.Dial(addr, opts...)
-	if err != nil {
-		return nil, err
-	}
-	sess, err := conn.NewSession()
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	return &Client{
-		conn: conn,
-		sess: sess,
+func Dial(addr string, opts ...Option) (*Client, error) {
+	c := &Client{
 		done: make(chan struct{}),
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	var err error
+	c.conn, err = amqp.Dial(addr, c.opts...)
+	if err != nil {
+		return nil, err
+	}
+	c.sess, err = c.conn.NewSession()
+	if err != nil {
+		_ = c.conn.Close()
+		return nil, err
+	}
+	return c, nil
 }
 
 // Client is eventhub client.
 type Client struct {
-	mu   sync.Mutex
-	conn *amqp.Client
-	sess *amqp.Session
-	done chan struct{}
+	mu     sync.Mutex
+	conn   *amqp.Client
+	opts   []amqp.ConnOption
+	sess   *amqp.Session
+	done   chan struct{}
+	logger common.Logger
 }
 
 func (c *Client) Sess() *amqp.Session {
@@ -226,10 +255,10 @@ func (c *Client) PutToken(ctx context.Context, audience, token string) error {
 	if err != nil {
 		return err
 	}
-	if err = CheckMessageResponse(msg); err != nil {
+	if err = msg.Accept(); err != nil {
 		return err
 	}
-	return msg.Accept()
+	return checkMessageResponse(msg)
 }
 
 // Close closes amqp session and connection.
@@ -303,7 +332,7 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	if err != nil {
 		return nil, err
 	}
-	if err = CheckMessageResponse(msg); err != nil {
+	if err = checkMessageResponse(msg); err != nil {
 		return nil, err
 	}
 	if msg.Properties.CorrelationID != mid {
@@ -324,8 +353,8 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	return ids, nil
 }
 
-// CheckMessageResponse checks for 200 response code otherwise returns an error.
-func CheckMessageResponse(msg *amqp.Message) error {
+// checkMessageResponse checks for 200 response code otherwise returns an error.
+func checkMessageResponse(msg *amqp.Message) error {
 	rc, ok := msg.ApplicationProperties["status-code"].(int32)
 	if !ok {
 		return errors.New("unable to typecast status-code")
