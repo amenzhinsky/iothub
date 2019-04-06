@@ -42,8 +42,13 @@ func FromAMQPMessage(msg *amqp.Message) *common.Message {
 			m.Properties[k.(string)] = fmt.Sprint(v)
 		}
 	}
+
 	for k, v := range msg.ApplicationProperties {
-		m.Properties[k] = v.(string)
+		if v, ok := v.(string); ok {
+			m.Properties[k] = v
+		} else {
+			m.Properties[k] = ""
+		}
 	}
 	return m
 }
