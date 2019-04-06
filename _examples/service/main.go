@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	c, err := iotservice.NewClient(
+	c, err := iotservice.New(
 		iotservice.WithConnectionString(os.Getenv("SERVICE_CONNECTION_STRING")),
 	)
 	if err != nil {

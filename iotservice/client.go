@@ -61,8 +61,8 @@ func WithLogger(l common.Logger) ClientOption {
 	}
 }
 
-// NewClient creates new iothub service client.
-func NewClient(opts ...ClientOption) (*Client, error) {
+// New creates new iothub service client.
+func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		done:   make(chan struct{}),
 		logger: common.NewLogWrapper(false),
@@ -697,15 +697,11 @@ func (c *Client) call(
 	if err != nil {
 		return err
 	}
-	rid, err := eventhub.RandString()
-	if err != nil {
-		return err
-	}
 
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Authorization", sas)
-	req.Header.Set("Request-Id", rid)
+	req.Header.Set("Request-Id", common.GenID())
 	if headers != nil {
 		for k, v := range headers {
 			if len(v) != 1 {

@@ -215,7 +215,7 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotservice.Client) error) int
 		if cs == "" {
 			return errors.New("SERVICE_CONNECTION_STRING is blank")
 		}
-		c, err := iotservice.NewClient(
+		c, err := iotservice.New(
 			iotservice.WithConnectionString(cs),
 			iotservice.WithLogger(common.NewLogWrapper(debugFlag)),
 		)

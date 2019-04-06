@@ -2,7 +2,6 @@ package eventhub
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -277,21 +276,9 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-// RandString generates a random 32 bytes long string.
-func RandString() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", b), nil
-}
-
 // getPartitionIDs returns partition ids for the named eventhub.
 func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]string, error) {
-	replyTo, err := RandString()
-	if err != nil {
-		return nil, err
-	}
+	replyTo := common.GenID()
 	recv, err := sess.NewReceiver(
 		amqp.LinkSourceAddress("$management"),
 		amqp.LinkTargetAddress(replyTo),
@@ -310,10 +297,7 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	}
 	defer send.Close(context.Background())
 
-	mid, err := RandString()
-	if err != nil {
-		return nil, err
-	}
+	mid := common.GenID()
 	if err := send.Send(ctx, &amqp.Message{
 		Properties: &amqp.MessageProperties{
 			MessageID: mid,

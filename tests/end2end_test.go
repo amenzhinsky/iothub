@@ -3,7 +3,6 @@ package tests
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"os"
@@ -28,7 +27,7 @@ func TestEnd2End(t *testing.T) {
 
 	// delete previously created devices that weren't cleaned up
 	for _, did := range []string{"golang-iothub-sas", "golang-iothub-x509"} {
-		sc.DeleteDevice(context.Background(), did)
+		_ = sc.DeleteDevice(context.Background(), did)
 	}
 
 	// create a device with sas authentication
@@ -159,14 +158,6 @@ func (c *thirdPartyCreds) Token(ctx context.Context, uri string, d time.Duration
 	return c.creds.SAS(uri, d)
 }
 
-func randString() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("%x", b)
-}
-
 func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -191,8 +182,8 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	go func() {
 		for {
 			if err := dc.SendEvent(ctx, payload,
-				iotdevice.WithSendMessageID(randString()),
-				iotdevice.WithSendCorrelationID(randString()),
+				iotdevice.WithSendMessageID(common.GenID()),
+				iotdevice.WithSendCorrelationID(common.GenID()),
 				iotdevice.WithSendProperties(props),
 			); err != nil {
 				errc <- err
@@ -292,13 +283,13 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	// send events until one of them received.
 	go func() {
 		for {
-			msgID := randString()
+			msgID := common.GenID()
 			if err := sc.SendEvent(ctx, dc.DeviceID(), payload,
 				iotservice.WithSendAck("full"),
 				iotservice.WithSendProperties(props),
 				iotservice.WithSendUserID(uid),
 				iotservice.WithSendMessageID(msgID),
-				iotservice.WithSendCorrelationID(randString()),
+				iotservice.WithSendCorrelationID(common.GenID()),
 				iotservice.WithSentExpiryTime(time.Now().Add(5*time.Second)),
 			); err != nil {
 				errc <- err
@@ -492,7 +483,7 @@ func newServiceClient(t *testing.T) *iotservice.Client {
 	if cs == "" {
 		t.Fatal("TEST_SERVICE_CONNECTION_STRING is empty")
 	}
-	c, err := iotservice.NewClient(
+	c, err := iotservice.New(
 		iotservice.WithConnectionString(cs),
 	)
 	if err != nil {
