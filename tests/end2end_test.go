@@ -242,6 +242,7 @@ func testProperties(t *testing.T, got, want map[string]string) {
 	}
 }
 
+// TODO: very flaky
 func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -259,7 +260,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 
 	// track send message ids
 	mu := sync.Mutex{}
-	msgIDs := make([]string, 10)
+	msgIDs := make([]string, 0, 10)
 
 	// subscribe to feedback and report first registered message id
 	go func() {

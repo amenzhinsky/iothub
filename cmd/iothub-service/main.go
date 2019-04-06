@@ -11,7 +11,6 @@ import (
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
 	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/common/commonamqp"
 	"github.com/amenzhinsky/iothub/eventhub"
 	"github.com/amenzhinsky/iothub/iotservice"
 	"pack.ag/amqp"
@@ -474,7 +473,7 @@ func watchEventHubEvents(ctx context.Context, cs, group string) error {
 		return err
 	}
 	return eh.SubscribePartitions(ctx, creds.EntityPath, group, func(m *amqp.Message) {
-		msg := commonamqp.FromAMQPMessage(m)
+		msg := iotservice.FromAMQPMessage(m)
 		if err := internal.OutputJSON(msg, compressFlag); err != nil {
 			panic(err)
 		}

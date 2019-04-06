@@ -12,8 +12,6 @@ import (
 )
 
 func TestRun(t *testing.T) {
-	t.Parallel()
-
 	commonFlag := ""
 	commandFlag := ""
 
@@ -79,8 +77,6 @@ func capture(fn func() error) ([]byte, error) {
 }
 
 func TestArgsToMap(t *testing.T) {
-	t.Parallel()
-
 	for _, s := range []struct {
 		args []string
 		want map[string]string

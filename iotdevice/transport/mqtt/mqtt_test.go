@@ -6,8 +6,6 @@ import (
 )
 
 func TestParseCloudToDeviceTopic(t *testing.T) {
-	t.Parallel()
-
 	s := "devices/mydev/messages/devicebound/%24.to=%2Fdevices%2Fmydev%2Fmessages%2FdeviceBound&a[]=b&b=c"
 	g, err := parseCloudToDeviceTopic(s)
 	if err != nil {
@@ -25,8 +23,6 @@ func TestParseCloudToDeviceTopic(t *testing.T) {
 }
 
 func TestParseDirectMethodTopic(t *testing.T) {
-	t.Parallel()
-
 	s := "$iothub/methods/POST/add/?$rid=666"
 	m, r, err := parseDirectMethodTopic(s)
 	if err != nil {
@@ -38,8 +34,6 @@ func TestParseDirectMethodTopic(t *testing.T) {
 }
 
 func TestParseTwinPropsTopic(t *testing.T) {
-	t.Parallel()
-
 	s := "$iothub/twin/res/200/?$rid=12&$version=4"
 	c, r, v, err := parseTwinPropsTopic(s)
 	if err != nil {

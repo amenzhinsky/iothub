@@ -1,4 +1,4 @@
-package commonamqp
+package iotservice
 
 import (
 	"fmt"
@@ -9,6 +9,9 @@ import (
 )
 
 // FromAMQPMessage converts a amqp.Message into common.Message.
+//
+// Exported to use with a custom stream when devices telemetry is
+// routed for example to an EventhHub instance.
 func FromAMQPMessage(msg *amqp.Message) *common.Message {
 	m := &common.Message{
 		Payload:    msg.Data[0],
@@ -53,8 +56,8 @@ func FromAMQPMessage(msg *amqp.Message) *common.Message {
 	return m
 }
 
-// ToAMQPMessage converts amqp.Message into common.Message.
-func ToAMQPMessage(msg *common.Message) *amqp.Message {
+// toAMQPMessage converts amqp.Message into common.Message.
+func toAMQPMessage(msg *common.Message) *amqp.Message {
 	props := make(map[string]interface{}, len(msg.Properties))
 	for k, v := range msg.Properties {
 		props[k] = v

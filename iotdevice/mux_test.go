@@ -48,8 +48,6 @@ func TestEventsMuxClose(t *testing.T) {
 }
 
 func TestMethodMux(t *testing.T) {
-	t.Parallel()
-
 	m := methodMux{}
 	if err := m.handle("add", func(v map[string]interface{}) (map[string]interface{}, error) {
 		v["b"] = 2

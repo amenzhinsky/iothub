@@ -6,8 +6,6 @@ import (
 )
 
 func TestParseConnectionString(t *testing.T) {
-	t.Parallel()
-
 	for s, w := range map[string]*Credentials{
 		"HostName=test.azure-devices.net;DeviceId=devnull;SharedAccessKey=c2VjcmV0": {
 			HostName:            "test.azure-devices.net",
@@ -33,8 +31,6 @@ func TestParseConnectionString(t *testing.T) {
 }
 
 func TestCredentials_SAS(t *testing.T) {
-	t.Parallel()
-
 	c, err := ParseConnectionString("HostName=test.azure-devices.net;DeviceId=devnull;SharedAccessKey=c2VjcmV0")
 	if err != nil {
 		t.Fatal(err)

@@ -6,8 +6,6 @@ import (
 )
 
 func TestTLSConfig(t *testing.T) {
-	t.Parallel()
-
 	r, err := http.NewRequest(http.MethodGet, "https://portal.azure.com", nil)
 	if err != nil {
 		t.Fatal(err)

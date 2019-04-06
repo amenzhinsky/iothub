@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/common/commonamqp"
 	"github.com/amenzhinsky/iothub/eventhub"
 	"pack.ag/amqp"
 )
@@ -203,7 +202,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
 	defer eh.Close()
 
 	return eh.SubscribePartitions(ctx, group, "$Default", func(msg *amqp.Message) {
-		go fn(commonamqp.FromAMQPMessage(msg))
+		go fn(FromAMQPMessage(msg))
 	})
 }
 
@@ -332,7 +331,7 @@ func (c *Client) SendEvent(
 		return err
 	}
 	defer send.Close(context.Background())
-	return send.Send(ctx, commonamqp.ToAMQPMessage(msg))
+	return send.Send(ctx, toAMQPMessage(msg))
 }
 
 // FeedbackHandler handles message feedback.
