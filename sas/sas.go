@@ -1,4 +1,4 @@
-package common
+package sas
 
 import (
 	"crypto/hmac"
@@ -23,6 +23,10 @@ func ParseConnectionString(cs string) (*Credentials, error) {
 	m := &Credentials{}
 	for _, chunk := range chunks {
 		c := strings.SplitN(chunk, "=", 2)
+		if len(c) != 2 {
+			return nil, errors.New("malformed connection string")
+		}
+
 		switch c[0] {
 		case "HostName":
 			m.HostName = c[1]
@@ -49,8 +53,8 @@ type Credentials struct {
 	now time.Time
 }
 
-// SAS generates an access token for the given uri and duration.
-func (c *Credentials) SAS(uri string, duration time.Duration) (string, error) {
+// GenerateToken generates a SAS token for the given uri and duration.
+func (c *Credentials) GenerateToken(uri string, duration time.Duration) (string, error) {
 	if uri == "" {
 		return "", errors.New("uri is blank")
 	}

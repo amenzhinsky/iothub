@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/amenzhinsky/iothub/sas"
 	"os"
 	"reflect"
 	"sync"
@@ -65,7 +66,7 @@ func TestEnd2End(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	creds, err := common.ParseConnectionString(dcs)
+	creds, err := sas.ParseConnectionString(dcs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +133,7 @@ func TestEnd2End(t *testing.T) {
 
 // we're just simulating that sas token is requested some other way, like an external API.
 type thirdPartyCreds struct {
-	creds *common.Credentials
+	creds *sas.Credentials
 }
 
 func (c *thirdPartyCreds) DeviceID() string {
@@ -155,7 +156,7 @@ func (c *thirdPartyCreds) TLSConfig() *tls.Config {
 }
 
 func (c *thirdPartyCreds) Token(ctx context.Context, uri string, d time.Duration) (string, error) {
-	return c.creds.SAS(uri, d)
+	return c.creds.GenerateToken(uri, d)
 }
 
 func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {

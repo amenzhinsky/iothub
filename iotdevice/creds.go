@@ -8,10 +8,11 @@ import (
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/sas"
 )
 
 func NewSASCredentials(cs string) (transport.Credentials, error) {
-	creds, err := common.ParseConnectionString(cs)
+	creds, err := sas.ParseConnectionString(cs)
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +20,7 @@ func NewSASCredentials(cs string) (transport.Credentials, error) {
 }
 
 type sasCreds struct {
-	creds *common.Credentials
+	creds *sas.Credentials
 }
 
 func (c *sasCreds) DeviceID() string {
@@ -42,7 +43,7 @@ func (c *sasCreds) TLSConfig() *tls.Config {
 }
 
 func (c *sasCreds) Token(ctx context.Context, uri string, d time.Duration) (string, error) {
-	return c.creds.SAS(uri, d)
+	return c.creds.GenerateToken(uri, d)
 }
 
 func NewX509Credentials(deviceID, hostname string, crt *tls.Certificate) (transport.Credentials, error) {

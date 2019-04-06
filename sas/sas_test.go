@@ -1,4 +1,4 @@
-package common
+package sas
 
 import (
 	"testing"
@@ -37,13 +37,13 @@ func TestCredentials_SAS(t *testing.T) {
 	}
 	c.now = time.Date(2017, 1, 1, 1, 1, 1, 0, time.UTC)
 
-	g, err := c.SAS(c.HostName+"/devices/test", time.Hour)
+	g, err := c.GenerateToken(c.HostName+"/devices/test", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	w := "SharedAccessSignature sr=test.azure-devices.net%2Fdevices%2Ftest&sig=IMr3Y5GKbdixQSt96QgIEymAURnu3qzLvEHhGHPLxrU%3D&se=1483236061&skn="
 	if g != w {
-		t.Errorf("SAS(time.Hour) = %q, want %q", g, w)
+		t.Errorf("GenerateToken(time.Hour) = %q, want %q", g, w)
 	}
 }

@@ -18,6 +18,7 @@ import (
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/eventhub"
+	"github.com/amenzhinsky/iothub/sas"
 	"pack.ag/amqp"
 )
 
@@ -27,7 +28,7 @@ type ClientOption func(c *Client) error
 // WithConnectionString parses the given connection string instead of using `WithCredentials`.
 func WithConnectionString(cs string) ClientOption {
 	return func(c *Client) error {
-		creds, err := common.ParseConnectionString(cs)
+		creds, err := sas.ParseConnectionString(cs)
 		if err != nil {
 			return err
 		}
@@ -36,8 +37,8 @@ func WithConnectionString(cs string) ClientOption {
 	}
 }
 
-// WithCredentials uses the given credentials to generate SAS tokens.
-func WithCredentials(creds *common.Credentials) ClientOption {
+// WithCredentials uses the given credentials to generate GenerateToken tokens.
+func WithCredentials(creds *sas.Credentials) ClientOption {
 	return func(c *Client) error {
 		c.creds = creds
 		return nil
@@ -95,7 +96,7 @@ type Client struct {
 	mu     sync.Mutex
 	conn   *eventhub.Client
 	done   chan struct{}
-	creds  *common.Credentials
+	creds  *sas.Credentials
 	logger common.Logger
 	http   *http.Client // REST client
 }
@@ -135,7 +136,7 @@ func (c *Client) ConnectToAMQP(ctx context.Context) error {
 func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, string, error) {
 	user := c.creds.SharedAccessKeyName + "@sas.root." + c.creds.HostName
 	user = user[:len(user)-18] // sub .azure-devices.net"
-	pass, err := c.creds.SAS(c.creds.HostName, time.Hour)
+	pass, err := c.creds.GenerateToken(c.creds.HostName, time.Hour)
 	if err != nil {
 		return nil, "", err
 	}
@@ -406,7 +407,7 @@ func (c *Client) DeviceConnectionString(device *Device, secondary bool) (string,
 		c.creds.HostName, device.DeviceID, key), nil
 }
 
-// DeviceSAS generates a SAS token for the named device.
+// DeviceSAS generates a GenerateToken token for the named device.
 func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary bool) (string, error) {
 	if device == nil {
 		panic("device is nil")
@@ -421,12 +422,12 @@ func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary boo
 	if duration == 0 {
 		duration = time.Hour
 	}
-	creds := common.Credentials{
+	creds := sas.Credentials{
 		HostName:        c.creds.HostName,
 		DeviceID:        device.DeviceID,
 		SharedAccessKey: key,
 	}
-	return creds.SAS(creds.HostName, duration)
+	return creds.GenerateToken(creds.HostName, duration)
 }
 
 func deviceKey(device *Device, secondary bool) string {
@@ -692,7 +693,7 @@ func (c *Client) call(
 		return err
 	}
 
-	sas, err := c.creds.SAS(c.creds.HostName, time.Hour)
+	sas, err := c.creds.GenerateToken(c.creds.HostName, time.Hour)
 	if err != nil {
 		return err
 	}

@@ -192,7 +192,7 @@ func run() error {
 		},
 		{
 			"access-signature", "sas",
-			"DEVICE", "generate a SAS token",
+			"DEVICE", "generate a GenerateToken token",
 			wrap(sas),
 			func(f *flag.FlagSet) {
 				f.StringVar(&uriFlag, "uri", "", "storage resource uri")

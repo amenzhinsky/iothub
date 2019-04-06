@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/sas"
 	"pack.ag/amqp"
 )
 
@@ -181,10 +182,10 @@ const (
 func (c *Client) PutTokenContinuously(
 	ctx context.Context,
 	audience string,
-	cred *common.Credentials,
+	cred *sas.Credentials,
 	done <-chan struct{},
 ) error {
-	token, err := cred.SAS(cred.HostName, tokenUpdateInterval)
+	token, err := cred.GenerateToken(cred.HostName, tokenUpdateInterval)
 	if err != nil {
 		return err
 	}
@@ -199,9 +200,9 @@ func (c *Client) PutTokenContinuously(
 		for {
 			select {
 			case <-ticker.C:
-				token, err := cred.SAS(cred.HostName, tokenUpdateInterval)
+				token, err := cred.GenerateToken(cred.HostName, tokenUpdateInterval)
 				if err != nil {
-					log.Printf("genegate SAS token error: %s", err)
+					log.Printf("genegate GenerateToken token error: %s", err)
 					return
 				}
 				if err := c.PutToken(context.Background(), audience, token); err != nil {
