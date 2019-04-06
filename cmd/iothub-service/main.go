@@ -69,7 +69,7 @@ func run() error {
 	}, []*internal.Command{
 		{
 			"send", "s",
-			"DEVICE PAYLOAD [KEY VALUE]...",
+			"DEVICE PAYLOAD [[key value]...]",
 			"send a message to the named device (C2D)",
 			wrap(send),
 			func(f *flag.FlagSet) {
@@ -154,7 +154,7 @@ func run() error {
 		},
 		{
 			"update-twin", "ut",
-			"DEVICE [KEY VALUE]...", "update the named twin device",
+			"DEVICE [[key value]...]", "update the named twin device",
 			wrap(updateTwin),
 			nil,
 		},

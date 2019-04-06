@@ -53,8 +53,8 @@ func New(desc string, f FlagFunc, cmds []*Command) (*CLI, error) {
 }
 
 const (
-	commonUsage  = "usage: %s [FLAGS...] {COMMAND} [FLAGS...] [ARGS]...\n\n%s\n\ncommands:\n"
-	commandUsage = "usage: %s [FLAGS...] %s [FLAGS....] %s\n\nflags:\n"
+	commonUsage  = "Usage: %s [flags...] {COMMAND} [flags...] [arg...]\n\n%s\n\nCommands:\n"
+	commandUsage = "Usage: %s [flags...] %s [flags...] %s\n\nFlags:\n"
 )
 
 // Run runs one or the given commands based on argv.
@@ -78,7 +78,7 @@ func (r *CLI) Run(ctx context.Context, argv ...string) error {
 			fmt.Fprintf(os.Stderr, "  %-22s %s\n", cmd.Name+","+cmd.Alias, cmd.Desc)
 		}
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "common flags: ")
+		fmt.Fprintln(os.Stderr, "Common flags: ")
 		sm.PrintDefaults()
 	}
 

@@ -5,12 +5,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/amenzhinsky/iothub/sas"
 	"os"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/amenzhinsky/iothub/sas"
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice"
@@ -243,7 +243,6 @@ func testProperties(t *testing.T, got, want map[string]string) {
 	}
 }
 
-// TODO: very flaky
 func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -259,20 +258,10 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 		t.Fatal(err)
 	}
 
-	// track send message ids
-	mu := sync.Mutex{}
-	msgIDs := make([]string, 0, 10)
-
 	// subscribe to feedback and report first registered message id
 	go func() {
 		if err := sc.SubscribeFeedback(ctx, func(fb *iotservice.Feedback) {
-			mu.Lock()
-			for _, id := range msgIDs {
-				if fb.OriginalMessageID == id {
-					fbsc <- fb
-				}
-			}
-			mu.Unlock()
+			fbsc <- fb
 		}); err != nil {
 			errc <- err
 		}
@@ -282,69 +271,69 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	props := map[string]string{"a": "a", "b": "b"}
 	uid := "golang-iothub"
 
-	// send events until one of them received.
-	go func() {
-		for {
-			msgID := common.GenID()
-			if err := sc.SendEvent(ctx, dc.DeviceID(), payload,
-				iotservice.WithSendAck("full"),
-				iotservice.WithSendProperties(props),
-				iotservice.WithSendUserID(uid),
-				iotservice.WithSendMessageID(msgID),
-				iotservice.WithSendCorrelationID(common.GenID()),
-				iotservice.WithSentExpiryTime(time.Now().Add(5*time.Second)),
-			); err != nil {
-				errc <- err
-				return
-			}
+	mid := common.GenID()
+	if err := sc.SendEvent(ctx, dc.DeviceID(), payload,
+		iotservice.WithSendAck("full"),
+		iotservice.WithSendProperties(props),
+		iotservice.WithSendUserID(uid),
+		iotservice.WithSendMessageID(mid),
+		iotservice.WithSendCorrelationID(common.GenID()),
+		iotservice.WithSentExpiryTime(time.Now().Add(5*time.Second)),
+	); err != nil {
+		errc <- err
+		return
+	}
 
-			mu.Lock()
-			msgIDs = append(msgIDs, msgID)
-			mu.Unlock()
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(500 * time.Millisecond):
-			}
-		}
-	}()
-
-	select {
-	case msg := <-sub.C():
-		// test feedback is received
+	for {
 		select {
-		case fb := <-fbsc:
-			if fb.StatusCode != "Success" {
-				t.Errorf("feedback status = %q, want %q", fb.StatusCode, "Success")
+		case msg := <-sub.C():
+			if msg.MessageID != mid {
+				continue
 			}
-		case <-time.After(30 * time.Second):
-			t.Fatal("feedback timed out")
-		}
 
-		if msg.To == "" {
-			t.Error("To is empty")
+			// validate event feedback
+		Outer:
+			for {
+				select {
+				case fb := <-fbsc:
+					if fb.OriginalMessageID != mid {
+						continue
+					}
+					if fb.StatusCode != "Success" {
+						t.Errorf("feedback status = %q, want %q", fb.StatusCode, "Success")
+					}
+					break Outer
+				case <-time.After(30 * time.Second):
+					t.Fatal("feedback timed out")
+				}
+			}
+
+			// validate message content
+			if msg.To == "" {
+				t.Error("To is empty")
+			}
+			if msg.UserID != uid {
+				t.Errorf("UserID = %q, want %q", msg.UserID, uid)
+			}
+			if !bytes.Equal(msg.Payload, payload) {
+				t.Errorf("Payload = %v, want %v", msg.Payload, payload)
+			}
+			if msg.MessageID == "" {
+				t.Error("MessageID is empty")
+			}
+			if msg.CorrelationID == "" {
+				t.Error("CorrelationID is empty")
+			}
+			if msg.ExpiryTime.IsZero() {
+				t.Error("ExpiryTime is zero")
+			}
+			testProperties(t, msg.Properties, props)
+			return
+		case err := <-errc:
+			t.Fatal(err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("c2d timed out")
 		}
-		if msg.UserID != uid {
-			t.Errorf("UserID = %q, want %q", msg.UserID, uid)
-		}
-		if !bytes.Equal(msg.Payload, payload) {
-			t.Errorf("Payload = %v, want %v", msg.Payload, payload)
-		}
-		if msg.MessageID == "" {
-			t.Error("MessageID is empty")
-		}
-		if msg.CorrelationID == "" {
-			t.Error("CorrelationID is empty")
-		}
-		if msg.ExpiryTime.IsZero() {
-			t.Error("ExpiryTime is zero")
-		}
-		testProperties(t, msg.Properties, props)
-	case err := <-errc:
-		t.Fatal(err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("c2d timed out")
 	}
 }
 

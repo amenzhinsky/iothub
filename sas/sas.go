@@ -80,8 +80,7 @@ func (c *Credentials) GenerateToken(uri string, duration time.Duration) (string,
 	// generate signature from uri and expiration time.
 	e := fmt.Sprintf("%s\n%d", sr, se)
 	h := hmac.New(sha256.New, b)
-	_, err = h.Write([]byte(e))
-	if err != nil {
+	if _, err = h.Write([]byte(e)); err != nil {
 		return "", err
 	}
 
