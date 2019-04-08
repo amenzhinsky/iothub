@@ -41,8 +41,7 @@ func ParseConnectionString(cs string) (*Credentials, error) {
 	return m, nil
 }
 
-// Credentials contains all the required credentials
-// to access iothub from a device's prospective.
+// Credentials is a IoT Hub authorization entity.
 type Credentials struct {
 	HostName            string
 	DeviceID            string
@@ -55,18 +54,18 @@ type options struct {
 	time     time.Time
 }
 
-// Option is token generation option.
-type Option func(opts *options)
+// TokenOption is token generation option.
+type TokenOption func(opts *options)
 
 // WithDuration sets token duration.
-func WithDuration(d time.Duration) Option {
+func WithDuration(d time.Duration) TokenOption {
 	return func(opts *options) {
 		opts.duration = d
 	}
 }
 
 // WithCurrentTime overrides current time clock.
-func WithCurrentTime(t time.Time) Option {
+func WithCurrentTime(t time.Time) TokenOption {
 	return func(opts *options) {
 		opts.time = t
 	}
@@ -75,7 +74,7 @@ func WithCurrentTime(t time.Time) Option {
 // GenerateToken generates a SAS token for the given uri.
 //
 // Default token duration is one hour.
-func (c *Credentials) GenerateToken(uri string, opts ...Option) (string, error) {
+func (c *Credentials) GenerateToken(uri string, opts ...TokenOption) (string, error) {
 	if uri == "" {
 		return "", errors.New("uri is blank")
 	}
