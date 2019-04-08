@@ -48,29 +48,51 @@ type Credentials struct {
 	DeviceID            string
 	SharedAccessKey     string
 	SharedAccessKeyName string
-
-	// needed for testing
-	now time.Time
 }
 
-// GenerateToken generates a SAS token for the given uri and duration.
-func (c *Credentials) GenerateToken(uri string, duration time.Duration) (string, error) {
+type options struct {
+	duration time.Duration
+	time     time.Time
+}
+
+// Option is token generation option.
+type Option func(opts *options)
+
+// WithDuration sets token duration.
+func WithDuration(d time.Duration) Option {
+	return func(opts *options) {
+		opts.duration = d
+	}
+}
+
+// WithCurrentTime overrides current time clock.
+func WithCurrentTime(t time.Time) Option {
+	return func(opts *options) {
+		opts.time = t
+	}
+}
+
+// GenerateToken generates a SAS token for the given uri.
+//
+// Default token duration is one hour.
+func (c *Credentials) GenerateToken(uri string, opts ...Option) (string, error) {
 	if uri == "" {
 		return "", errors.New("uri is blank")
-	}
-	if duration == 0 {
-		return "", errors.New("duration is zero")
 	}
 	if c.SharedAccessKey == "" {
 		return "", errors.New("SharedAccessKey is blank")
 	}
 
-	sr := url.QueryEscape(uri)
-	ts := time.Now()
-	if !c.now.IsZero() {
-		ts = c.now
+	topts := &options{
+		duration: time.Hour,
+		time:     time.Now(),
 	}
-	se := ts.Add(duration).Unix()
+	for _, opt := range opts {
+		opt(topts)
+	}
+
+	sr := url.QueryEscape(uri)
+	se := topts.time.Add(topts.duration).Unix()
 
 	b, err := base64.StdEncoding.DecodeString(c.SharedAccessKey)
 	if err != nil {

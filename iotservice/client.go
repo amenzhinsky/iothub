@@ -136,7 +136,7 @@ func (c *Client) ConnectToAMQP(ctx context.Context) error {
 func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, string, error) {
 	user := c.creds.SharedAccessKeyName + "@sas.root." + c.creds.HostName
 	user = user[:len(user)-18] // sub .azure-devices.net"
-	pass, err := c.creds.GenerateToken(c.creds.HostName, time.Hour)
+	pass, err := c.creds.GenerateToken(c.creds.HostName)
 	if err != nil {
 		return nil, "", err
 	}
@@ -427,7 +427,7 @@ func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary boo
 		DeviceID:        device.DeviceID,
 		SharedAccessKey: key,
 	}
-	return creds.GenerateToken(creds.HostName, duration)
+	return creds.GenerateToken(creds.HostName, sas.WithDuration(duration))
 }
 
 func deviceKey(device *Device, secondary bool) string {
@@ -693,14 +693,14 @@ func (c *Client) call(
 		return err
 	}
 
-	sas, err := c.creds.GenerateToken(c.creds.HostName, time.Hour)
+	token, err := c.creds.GenerateToken(c.creds.HostName)
 	if err != nil {
 		return err
 	}
 
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("Authorization", sas)
+	req.Header.Set("Authorization", token)
 	req.Header.Set("Request-Id", common.GenID())
 	if headers != nil {
 		for k, v := range headers {

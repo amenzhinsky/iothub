@@ -35,9 +35,11 @@ func TestCredentials_SAS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.now = time.Date(2017, 1, 1, 1, 1, 1, 0, time.UTC)
 
-	g, err := c.GenerateToken(c.HostName+"/devices/test", time.Hour)
+	g, err := c.GenerateToken(c.HostName+"/devices/test",
+		WithDuration(time.Hour),
+		WithCurrentTime(time.Date(2017, 1, 1, 1, 1, 1, 0, time.UTC)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

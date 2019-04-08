@@ -185,7 +185,9 @@ func (c *Client) PutTokenContinuously(
 	cred *sas.Credentials,
 	done <-chan struct{},
 ) error {
-	token, err := cred.GenerateToken(cred.HostName, tokenUpdateInterval)
+	token, err := cred.GenerateToken(
+		cred.HostName, sas.WithDuration(tokenUpdateInterval),
+	)
 	if err != nil {
 		return err
 	}
@@ -200,7 +202,9 @@ func (c *Client) PutTokenContinuously(
 		for {
 			select {
 			case <-ticker.C:
-				token, err := cred.GenerateToken(cred.HostName, tokenUpdateInterval)
+				token, err := cred.GenerateToken(
+					cred.HostName, sas.WithDuration(tokenUpdateInterval),
+				)
 				if err != nil {
 					log.Printf("genegate GenerateToken token error: %s", err)
 					return

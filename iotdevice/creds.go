@@ -43,7 +43,7 @@ func (c *sasCreds) TLSConfig() *tls.Config {
 }
 
 func (c *sasCreds) Token(ctx context.Context, uri string, d time.Duration) (string, error) {
-	return c.creds.GenerateToken(uri, d)
+	return c.creds.GenerateToken(uri, sas.WithDuration(d))
 }
 
 func NewX509Credentials(deviceID, hostname string, crt *tls.Certificate) (transport.Credentials, error) {

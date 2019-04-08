@@ -156,7 +156,7 @@ func (c *thirdPartyCreds) TLSConfig() *tls.Config {
 }
 
 func (c *thirdPartyCreds) Token(ctx context.Context, uri string, d time.Duration) (string, error) {
-	return c.creds.GenerateToken(uri, d)
+	return c.creds.GenerateToken(uri, sas.WithDuration(d))
 }
 
 func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
