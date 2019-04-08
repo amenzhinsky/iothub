@@ -150,7 +150,7 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		if err != nil {
 			return err
 		}
-		c, err := iotdevice.NewClient(
+		c, err := iotdevice.New(
 			iotdevice.WithLogger(common.NewLogWrapper(debugFlag)),
 			iotdevice.WithTransport(t),
 			auth,

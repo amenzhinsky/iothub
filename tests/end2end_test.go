@@ -459,7 +459,7 @@ func newDeviceAndServiceClient(
 ) (*iotdevice.Client, *iotservice.Client) {
 	sc := newServiceClient(t)
 
-	dc, err := iotdevice.NewClient(opts...)
+	dc, err := iotdevice.New(opts...)
 	if err != nil {
 		t.Fatal(err)
 	}

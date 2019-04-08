@@ -6,12 +6,12 @@ import (
 	"os"
 
 	"github.com/amenzhinsky/iothub/iotdevice"
-	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
+	iotmqtt "github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
 )
 
 func main() {
-	c, err := iotdevice.NewClient(
-		iotdevice.WithTransport(mqtt.New()),
+	c, err := iotdevice.New(
+		iotdevice.WithTransport(iotmqtt.New()),
 		iotdevice.WithConnectionString(os.Getenv("DEVICE_CONNECTION_STRING")),
 	)
 	if err != nil {

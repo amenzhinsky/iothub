@@ -1,12 +1,12 @@
-# iothub
+# iothub SDK for Golang
 
 This repository provides Azure IoT Hub SDK for golang and command line tools for device-to-cloud (`iotdevice`) and cloud-to-device (`iotservice`) functionality.
 
-This project in the active development state and if you decided to use it anyway, please vendor the source code.
+This project in active development state and if you decided to use it anyway, please vendor the source code. API is subject to change until `v0.1.0`. 
 
-Only MQTT is available for device-to-cloud communication for because it has many advantages over AMQP and REST: it's stable, widespread, compact and provide many out-of-box features like auto-reconnects.
+Only **MQTT** is available for device-to-cloud communication at the moment.
 
-See [TODO](https://github.com/amenzhinsky/iothub#todo) list to learn what is missing.
+See [TODO](https://github.com/amenzhinsky/iothub#todo) list to learn what is missing in the current implementation.
 
 ## Examples
 
@@ -21,12 +21,12 @@ import (
 	"os"
 
 	"github.com/amenzhinsky/iothub/iotdevice"
-	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
+	iotmqtt "github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
 )
 
 func main() {
-	c, err := iotdevice.NewClient(
-		iotdevice.WithTransport(mqtt.New()),
+	c, err := iotdevice.New(
+		iotdevice.WithTransport(iotmqtt.New()),
 		iotdevice.WithConnectionString(os.Getenv("DEVICE_CONNECTION_STRING")),
 	)
 	if err != nil {
@@ -63,7 +63,7 @@ import (
 )
 
 func main() {
-	c, err := iotservice.NewClient(
+	c, err := iotservice.New(
 		iotservice.WithConnectionString(os.Getenv("SERVICE_CONNECTION_STRING")),
 	)
 	if err != nil {
@@ -79,7 +79,7 @@ func main() {
 
 The project provides two command line utilities: `iothub-device` and `iothub-sevice`. First is for using it on IoT devices and the second manages and interacts with them. 
 
-You can perform operations like publishing, subscribing to events and feedback, registering and invoking direct method, etc. straight from the command line.
+You can perform operations like publishing, subscribing to events and feedback, registering and invoking direct methods and so on straight from the command line.
 
 `iothub-service` is a [iothub-explorer](https://github.com/Azure/iothub-explorer) replacement that can be distributed as a single binary opposed to typical nodejs app.
 

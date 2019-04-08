@@ -80,8 +80,8 @@ func WithX509FromFile(deviceID, hostname, certFile, keyFile string) ClientOption
 	}
 }
 
-// NewClient returns new iothub client.
-func NewClient(opts ...ClientOption) (*Client, error) {
+// New returns new iothub client.
+func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		ready:  make(chan struct{}),
 		done:   make(chan struct{}),
