@@ -62,6 +62,10 @@ func toAMQPMessage(msg *common.Message) *amqp.Message {
 	for k, v := range msg.Properties {
 		props[k] = v
 	}
+	var expiryTime time.Time
+	if msg.ExpiryTime != nil {
+		expiryTime = *msg.ExpiryTime
+	}
 	return &amqp.Message{
 		Data: [][]byte{msg.Payload},
 		Properties: &amqp.MessageProperties{
@@ -69,7 +73,7 @@ func toAMQPMessage(msg *common.Message) *amqp.Message {
 			UserID:             []byte(msg.UserID),
 			MessageID:          msg.MessageID,
 			CorrelationID:      msg.CorrelationID,
-			AbsoluteExpiryTime: *msg.ExpiryTime,
+			AbsoluteExpiryTime: expiryTime,
 		},
 		ApplicationProperties: props,
 	}
