@@ -1,17 +1,19 @@
+// The package implements a minimal set of Azure Event Hubs functionality.
+//
+// We could use https://github.com/Azure/azure-event-hubs-go but it's too huge
+// and also it has a number of dependencies that aren't desired in the project.
 package eventhub
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/sas"
 	"pack.ag/amqp"
 )
 
@@ -49,103 +51,158 @@ func ParseConnectionString(cs string) (*Credentials, error) {
 	return &c, nil
 }
 
+// Option is a client configuration option.
 type Option func(c *Client)
 
+// WithTLSConfig sets connection TLS configuration.
 func WithTLSConfig(tc *tls.Config) Option {
 	return WithConnOption(amqp.ConnTLSConfig(tc))
 }
 
+// WithSASLPlain configures connection username and password.
 func WithSASLPlain(username, password string) Option {
 	return WithConnOption(amqp.ConnSASLPlain(username, password))
 }
 
+// WithConnOption sets a low-level connection option.
 func WithConnOption(opt amqp.ConnOption) Option {
 	return func(c *Client) {
 		c.opts = append(c.opts, opt)
 	}
 }
 
-func WithLogger(l common.Logger) Option {
+// WithLogger sets client logger.
+func WithLogger(l Logger) Option {
 	return func(c *Client) {
 		c.logger = l
 	}
 }
 
-// Dial connects to the named amqp broker and returns an eventhub client.
-func Dial(addr string, opts ...Option) (*Client, error) {
-	c := &Client{
-		done: make(chan struct{}),
-	}
+// Logger is a logging instance.
+type Logger interface {
+	Debugf(format string, v ...interface{})
+}
+
+// Dial connects to the named EventHub and returns a client instance.
+func Dial(host, name string, opts ...Option) (*Client, error) {
+	c := &Client{name: name}
 	for _, opt := range opts {
 		opt(c)
 	}
 
 	var err error
-	c.conn, err = amqp.Dial(addr, c.opts...)
+	c.conn, err = amqp.Dial("amqps://"+host, c.opts...)
 	if err != nil {
 		return nil, err
 	}
-	c.sess, err = c.conn.NewSession()
-	if err != nil {
-		_ = c.conn.Close()
-		return nil, err
-	}
+
+	c.debugf("connected to %s", host)
 	return c, nil
 }
 
-// Client is eventhub client.
+// DialConnectionString dials an EventHub instance using the given connection string.
+func DialConnectionString(cs string, opts ...Option) (*Client, error) {
+	creds, err := ParseConnectionString(cs)
+	if err != nil {
+		return nil, err
+	}
+	return Dial(creds.Endpoint, creds.EntityPath, append([]Option{
+		WithSASLPlain(creds.SharedAccessKeyName, creds.SharedAccessKey),
+	}, opts...)...)
+}
+
+// Client is an EventHub client.
 type Client struct {
-	mu     sync.Mutex
+	name   string
 	conn   *amqp.Client
 	opts   []amqp.ConnOption
-	sess   *amqp.Session
-	done   chan struct{}
-	logger common.Logger
+	logger Logger
 }
 
-func (c *Client) Sess() *amqp.Session {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.sess
+// SubscribeOption is a Subscribe option.
+type SubscribeOption func(r *sub)
+
+// WithSubscribeConsumerGroup overrides default consumer group, default is `$Default`.
+func WithSubscribeConsumerGroup(name string) SubscribeOption {
+	return func(s *sub) {
+		s.group = name
+	}
 }
 
-func (c *Client) SubscribePartitions(ctx context.Context, name, group string, f func(*amqp.Message)) error {
+// WithSubscribeSince requests events that occurred after the given time.
+func WithSubscribeSince(t time.Time) SubscribeOption {
+	return WithSubscribeLinkOption(amqp.LinkSelectorFilter(
+		fmt.Sprintf("amqp.annotation.x-opt-enqueuedtimeutc > '%d'",
+			t.UnixNano()/int64(time.Millisecond)),
+	))
+}
+
+// WithSubscribeLinkOption is a low-level subscription configuration option.
+func WithSubscribeLinkOption(opt amqp.LinkOption) SubscribeOption {
+	return func(s *sub) {
+		s.opts = append(s.opts, opt)
+	}
+}
+
+type sub struct {
+	group string
+	opts  []amqp.LinkOption
+}
+
+// Event is an Event Hub event, simply wraps an AMQP message.
+type Event struct {
+	*amqp.Message
+}
+
+// Subscribe subscribes to all hub's partitions and registers the given
+// handler and blocks until it encounters an error or the context is cancelled.
+func (c *Client) Subscribe(
+	ctx context.Context,
+	fn func(msg *Event) error,
+	opts ...SubscribeOption,
+) error {
+	var s sub
+	for _, opt := range opts {
+		opt(&s)
+	}
+	if s.group == "" {
+		s.group = "$Default"
+	}
+
+	// initialize new session for each subscribe session
 	sess, err := c.conn.NewSession()
 	if err != nil {
 		return err
 	}
 	defer sess.Close(context.Background())
 
-	ids, err := getPartitionIDs(ctx, sess, name)
+	ids, err := c.getPartitionIDs(ctx, sess)
 	if err != nil {
 		return err
 	}
 
-	// stop all goroutines at return.
+	// stop all goroutines at return
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	msgc := make(chan *amqp.Message, len(ids))
 	errc := make(chan error, len(ids))
-	for _, id := range ids {
-		recv, err := sess.NewReceiver(
-			amqp.LinkSourceAddress(
-				fmt.Sprintf("/%s/ConsumerGroups/%s/Partitions/%s", name, group, id),
-			),
 
-			// TODO: make it configurable
-			amqp.LinkSelectorFilter(fmt.Sprintf("amqp.annotation.x-opt-enqueuedtimeutc > '%d'",
-				time.Now().UnixNano()/int64(time.Millisecond)),
-			),
+	for _, id := range ids {
+		addr := fmt.Sprintf("/%s/ConsumerGroups/%s/Partitions/%s", c.name, s.group, id)
+		c.debugf("subscribing to %s", addr)
+
+		recv, err := sess.NewReceiver(
+			append([]amqp.LinkOption{amqp.LinkSourceAddress(addr)}, s.opts...)...,
 		)
 		if err != nil {
 			return err
 		}
 
-		go func(r *amqp.Receiver) {
+		go func(recv *amqp.Receiver) {
 			defer recv.Close(context.Background())
 			for {
-				msg, err := r.Receive(ctx)
+				msg, err := recv.Receive(ctx)
 				if err != nil {
 					errc <- err
 					return
@@ -162,128 +219,20 @@ func (c *Client) SubscribePartitions(ctx context.Context, name, group string, f 
 	for {
 		select {
 		case msg := <-msgc:
-			go f(msg)
+			if err := fn(&Event{msg}); err != nil {
+				return err
+			}
 		case err := <-errc:
 			return err
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 }
 
-const (
-	tokenUpdateInterval = time.Hour
-
-	// we need to update tokens before they expire to prevent disconnects
-	// from azure, without interrupting the message flow
-	tokenUpdateSpan = 10 * time.Minute
-)
-
-// PutTokenContinuously writes token first time in blocking mode and returns
-// maintaining token updates in the background until stopCh is closed.
-func (c *Client) PutTokenContinuously(
-	ctx context.Context,
-	audience string,
-	cred *sas.Credentials,
-	done <-chan struct{},
-) error {
-	token, err := cred.GenerateToken(
-		cred.HostName, sas.WithDuration(tokenUpdateInterval),
-	)
-	if err != nil {
-		return err
-	}
-	if err := c.PutToken(ctx, audience, token); err != nil {
-		return err
-	}
-
-	go func() {
-		ticker := time.NewTimer(tokenUpdateInterval - tokenUpdateSpan)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				token, err := cred.GenerateToken(
-					cred.HostName, sas.WithDuration(tokenUpdateInterval),
-				)
-				if err != nil {
-					log.Printf("genegate GenerateToken token error: %s", err)
-					return
-				}
-				if err := c.PutToken(context.Background(), audience, token); err != nil {
-					log.Printf("put token error: %s", err)
-					return
-				}
-				ticker.Reset(tokenUpdateInterval - tokenUpdateSpan)
-			case <-done:
-				return
-			}
-		}
-	}()
-	return nil
-}
-
-func (c *Client) PutToken(ctx context.Context, audience, token string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	send, err := c.sess.NewSender(
-		amqp.LinkTargetAddress("$cbs"),
-	)
-	if err != nil {
-		return err
-	}
-	defer send.Close(context.Background())
-
-	recv, err := c.sess.NewReceiver(amqp.LinkSourceAddress("$cbs"))
-	if err != nil {
-		return err
-	}
-	defer recv.Close(context.Background())
-
-	if err = send.Send(ctx, &amqp.Message{
-		Value: token,
-		Properties: &amqp.MessageProperties{
-			To:      "$cbs",
-			ReplyTo: "cbs",
-		},
-		ApplicationProperties: map[string]interface{}{
-			"operation": "put-token",
-			"type":      "servicebus.windows.net:sastoken",
-			"name":      audience,
-		},
-	}); err != nil {
-		return err
-	}
-
-	msg, err := recv.Receive(ctx)
-	if err != nil {
-		return err
-	}
-	if err = msg.Accept(); err != nil {
-		return err
-	}
-	return checkMessageResponse(msg)
-}
-
-// Close closes amqp session and connection.
-func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	select {
-	case <-c.done:
-		return nil
-	default:
-		close(c.done)
-	}
-	if err := c.sess.Close(context.Background()); err != nil {
-		return err
-	}
-	return c.conn.Close()
-}
-
-// getPartitionIDs returns partition ids for the named eventhub.
-func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]string, error) {
-	replyTo := common.GenID()
+// getPartitionIDs returns partition ids of the hub.
+func (c *Client) getPartitionIDs(ctx context.Context, sess *amqp.Session) ([]string, error) {
+	replyTo := genID()
 	recv, err := sess.NewReceiver(
 		amqp.LinkSourceAddress("$management"),
 		amqp.LinkTargetAddress(replyTo),
@@ -302,7 +251,7 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	}
 	defer send.Close(context.Background())
 
-	mid := common.GenID()
+	mid := genID()
 	if err := send.Send(ctx, &amqp.Message{
 		Properties: &amqp.MessageProperties{
 			MessageID: mid,
@@ -310,7 +259,7 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 		},
 		ApplicationProperties: map[string]interface{}{
 			"operation": "READ",
-			"name":      name,
+			"name":      c.name,
 			"type":      "com.microsoft:eventhub",
 		},
 	}); err != nil {
@@ -321,7 +270,7 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	if err != nil {
 		return nil, err
 	}
-	if err = checkMessageResponse(msg); err != nil {
+	if err = CheckMessageResponse(msg); err != nil {
 		return nil, err
 	}
 	if msg.Properties.CorrelationID != mid {
@@ -342,8 +291,19 @@ func getPartitionIDs(ctx context.Context, sess *amqp.Session, name string) ([]st
 	return ids, nil
 }
 
-// checkMessageResponse checks for 200 response code otherwise returns an error.
-func checkMessageResponse(msg *amqp.Message) error {
+func (c *Client) debugf(format string, v ...interface{}) {
+	if c.logger != nil {
+		c.logger.Debugf(format, v...)
+	}
+}
+
+// Close closes underlying AMQP connection.
+func (c *Client) Close() error {
+	return c.conn.Close()
+}
+
+// CheckMessageResponse checks for 200 response code otherwise returns an error.
+func CheckMessageResponse(msg *amqp.Message) error {
 	rc, ok := msg.ApplicationProperties["status-code"].(int32)
 	if !ok {
 		return errors.New("unable to typecast status-code")
@@ -353,4 +313,12 @@ func checkMessageResponse(msg *amqp.Message) error {
 	}
 	rd, _ := msg.ApplicationProperties["status-description"].(string)
 	return fmt.Errorf("code = %d, description = %q", rc, rd)
+}
+
+func genID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }

@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +23,7 @@ import (
 	"pack.ag/amqp"
 )
 
-// ClientOption is a client connectivity option.
+// ClientOption is a client configuration option.
 type ClientOption func(c *Client) error
 
 // WithConnectionString parses the given connection string instead of using `WithCredentials`.
@@ -61,25 +62,42 @@ func WithLogger(l common.Logger) ClientOption {
 	}
 }
 
+// WithTLSConfig sets TLS config that's used by REST HTTP and AMQP clients.
+func WithTLSConfig(config *tls.Config) ClientOption {
+	return func(c *Client) error {
+		c.tls = config
+		return nil
+	}
+}
+
 // New creates new iothub service client.
 func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		done:   make(chan struct{}),
 		logger: common.NewLogWrapper(false),
 	}
+
+	var err error
 	for _, opt := range opts {
-		if err := opt(c); err != nil {
+		if err = opt(c); err != nil {
 			return nil, err
 		}
 	}
 
 	if c.creds == nil {
-		return nil, errors.New("credentials are missing, consider using `WithCredentials` or `WithConnectionString` option")
+		cs := os.Getenv("IOTHUB_SERVICE_CONNECTION_STRING")
+		if cs == "" {
+			return nil, errors.New("$IOTHUB_SERVICE_CONNECTION_STRING is empty")
+		}
+		c.creds, err = sas.ParseConnectionString(cs)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// set the default rest client, it uses only bundled ca-certificates
-	// it's useful when the ca-certificates package is not present on
-	// a very slim host systems like alpine or busybox.
+	if c.tls == nil {
+		c.tls = &tls.Config{RootCAs: common.RootCAs()}
+	}
 	if c.http == nil {
 		c.http = &http.Client{
 			Transport: &http.Transport{
@@ -94,84 +112,169 @@ func New(opts ...ClientOption) (*Client, error) {
 
 type Client struct {
 	mu     sync.Mutex
-	conn   *eventhub.Client
+	tls    *tls.Config
+	conn   *amqp.Client
 	done   chan struct{}
 	creds  *sas.Credentials
 	logger common.Logger
 	http   *http.Client // REST client
+
+	sendMu   sync.Mutex
+	sendLink *amqp.Sender
 }
 
-// ConnectToAMQP connects to the iothub AMQP broker, it's done automatically before
-// publishing events or subscribing to the feedback topic.
-func (c *Client) ConnectToAMQP(ctx context.Context) error {
+// connectToIoTHub connects to IoT Hub's AMQP broker,
+// it's needed for sending C2S events and subscribing to events feedback.
+//
+// It establishes connection only once, subsequent calls return immediately.
+func (c *Client) connectToIoTHub(ctx context.Context) (*amqp.Client, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn != nil {
-		return nil // already connected
+		return c.conn, nil // already connected
 	}
-
-	c.logger.Debugf("connecting to %s", c.creds.HostName)
-	eh, err := eventhub.Dial("amqps://"+c.creds.HostName,
-		eventhub.WithTLSConfig(common.TLSConfig(c.creds.HostName)),
+	conn, err := amqp.Dial("amqps://"+c.creds.HostName,
+		amqp.ConnTLSConfig(c.tls),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer func() {
-		if err != nil {
-			err = eh.Close()
-		}
-	}()
 
-	if err = eh.PutTokenContinuously(ctx, c.creds.HostName, c.creds, c.done); err != nil {
-		return err
+	c.logger.Debugf("connected to %s", c.creds.HostName)
+	if err = c.putTokenContinuously(ctx, conn); err != nil {
+		_ = conn.Close()
+		return nil, err
 	}
-	c.conn = eh
-	return nil
+
+	c.conn = conn
+	return conn, nil
 }
 
-// Subscribing to C2D events requires connection to an eventhub instance,
-// that's hostname and authentication mechanism is absolutely different
-// from raw connection to an AMQP broker.
-func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, string, error) {
-	user := c.creds.SharedAccessKeyName + "@sas.root." + c.creds.HostName
-	user = user[:len(user)-18] // sub .azure-devices.net"
-	pass, err := c.creds.GenerateToken(c.creds.HostName)
-	if err != nil {
-		return nil, "", err
-	}
+// putTokenContinuously writes token first time in blocking mode and returns
+// maintaining token updates in the background until the client is closed.
+func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) error {
+	const (
+		tokenUpdateInterval = time.Hour
 
-	addr := "amqps://" + c.creds.HostName
-	eh, err := amqp.Dial(addr,
-		amqp.ConnTLSConfig(common.TLSConfig(c.creds.HostName)),
-		amqp.ConnSASLPlain(user, pass),
+		// we need to update tokens before they expire to prevent disconnects
+		// from azure, without interrupting the message flow
+		tokenUpdateSpan = 10 * time.Minute
 	)
 
+	token, err := c.creds.GenerateToken(
+		c.creds.HostName, sas.WithDuration(tokenUpdateInterval),
+	)
 	if err != nil {
-		return nil, "", err
+		return err
 	}
-	defer eh.Close()
 
-	sess, err := eh.NewSession()
+	sess, err := conn.NewSession()
 	if err != nil {
-		return nil, "", err
+		return err
 	}
 	defer sess.Close(context.Background())
 
-	// trigger redirect error
+	if err := c.putToken(ctx, sess, token); err != nil {
+		return err
+	}
+
+	go func() {
+		ticker := time.NewTimer(tokenUpdateInterval - tokenUpdateSpan)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				token, err := c.creds.GenerateToken(
+					c.creds.HostName, sas.WithDuration(tokenUpdateInterval),
+				)
+				if err != nil {
+					c.logger.Errorf("generate token error: %s", err)
+					return
+				}
+				if err := c.putToken(context.Background(), sess, token); err != nil {
+					c.logger.Errorf("put token error: %s", err)
+					return
+				}
+				ticker.Reset(tokenUpdateInterval - tokenUpdateSpan)
+			case <-c.done:
+				return
+			}
+		}
+	}()
+	return nil
+}
+
+func (c *Client) putToken(ctx context.Context, sess *amqp.Session, token string) error {
+	send, err := sess.NewSender(
+		amqp.LinkTargetAddress("$cbs"),
+	)
+	if err != nil {
+		return err
+	}
+	defer send.Close(context.Background())
+
+	recv, err := sess.NewReceiver(amqp.LinkSourceAddress("$cbs"))
+	if err != nil {
+		return err
+	}
+	defer recv.Close(context.Background())
+
+	if err = send.Send(ctx, &amqp.Message{
+		Value: token,
+		Properties: &amqp.MessageProperties{
+			To:      "$cbs",
+			ReplyTo: "cbs",
+		},
+		ApplicationProperties: map[string]interface{}{
+			"operation": "put-token",
+			"type":      "servicebus.windows.net:sastoken",
+			"name":      c.creds.HostName,
+		},
+	}); err != nil {
+		return err
+	}
+
+	msg, err := recv.Receive(ctx)
+	if err != nil {
+		return err
+	}
+	if err = msg.Accept(); err != nil {
+		return err
+	}
+	return eventhub.CheckMessageResponse(msg)
+}
+
+// connectToEventHub connects to IoT Hub endpoint compatible with Eventhub
+// for receiving D2C events, it uses different endpoints and authentication
+// mechanisms than connectToIoTHub.
+func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error) {
+	conn, err := c.connectToIoTHub(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// iothub broker should redirect us to an eventhub compatible instance
+	// straight after subscribing to events stream, for that we need to connect twice
+	sess, err := conn.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	defer sess.Close(context.Background())
+
 	recv, err := sess.NewReceiver(amqp.LinkSourceAddress("messages/events/"))
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	defer recv.Close(context.Background())
 	_, err = recv.Receive(ctx)
 	if err == nil {
-		return nil, "", errors.New("expected redirect error")
+		return nil, errors.New("expected redirect error")
 	}
 
 	rerr, ok := err.(*amqp.DetachError)
 	if !ok || rerr.RemoteError.Condition != amqp.ErrorLinkRedirect {
-		return nil, "", err
+		return nil, err
 	}
 
 	// "amqps://{host}:5671/{consumerGroup}/"
@@ -179,32 +282,47 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, strin
 	group = group[strings.Index(group, ":5671/")+6 : len(group)-1]
 
 	host := rerr.RemoteError.Info["hostname"].(string)
-	conn, err := eventhub.Dial("amqps://"+host,
-		eventhub.WithTLSConfig(common.TLSConfig(host)),
+	c.logger.Debugf("redirected to %s eventhub", host)
+
+	tlsCfg := c.tls.Clone()
+	tlsCfg.ServerName = host
+
+	eh, err := eventhub.Dial(host, group,
+		eventhub.WithLogger(c.logger),
+		eventhub.WithTLSConfig(tlsCfg),
 		eventhub.WithSASLPlain(c.creds.SharedAccessKeyName, c.creds.SharedAccessKey),
 	)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return conn, group, nil
+	return eh, nil
 }
 
-// MessageHandler handles incoming cloud-to-device events.
-type MessageHandler func(e *common.Message)
+// EventHandler handles incoming cloud-to-device events.
+type EventHandler func(e *Event) error
 
-// SubscribeEvents subscribes to device events.
-// No need to call Connect first, because this method different connect
-// method that dials an eventhub instance first opposed to SendEvent func.
-func (c *Client) SubscribeEvents(ctx context.Context, fn MessageHandler) error {
-	eh, group, err := c.connectToEventHub(ctx)
+// Event is a device-to-cloud message.
+type Event struct {
+	*common.Message
+}
+
+// SubscribeEvents subscribes to D2C events.
+//
+// Event handler is blocking, handle asynchronous processing on your own.
+func (c *Client) SubscribeEvents(ctx context.Context, fn EventHandler) error {
+	// a new connection is established for every invocation,
+	// this made on purpose because normally an app calls the method once
+	eh, err := c.connectToEventHub(ctx)
 	if err != nil {
 		return err
 	}
 	defer eh.Close()
 
-	return eh.SubscribePartitions(ctx, group, "$Default", func(msg *amqp.Message) {
-		go fn(FromAMQPMessage(msg))
-	})
+	return eh.Subscribe(ctx, func(msg *eventhub.Event) error {
+		return fn(&Event{FromAMQPMessage(msg.Message)})
+	},
+		eventhub.WithSubscribeSince(time.Now()),
+	)
 }
 
 // SendOption is a send option.
@@ -310,10 +428,6 @@ func (c *Client) SendEvent(
 		return errors.New("payload is nil")
 	}
 
-	if err := c.ConnectToAMQP(ctx); err != nil {
-		return err
-	}
-
 	msg := &common.Message{
 		Payload: payload,
 		To:      "/devices/" + deviceID + "/messages/devicebound",
@@ -324,15 +438,38 @@ func (c *Client) SendEvent(
 		}
 	}
 
-	// TODO: opening a new link for every message is not the most efficient way
-	send, err := c.conn.Sess().NewSender(
-		amqp.LinkTargetAddress("/messages/devicebound"),
-	)
+	send, err := c.getSendLink(ctx)
 	if err != nil {
 		return err
 	}
-	defer send.Close(context.Background())
 	return send.Send(ctx, toAMQPMessage(msg))
+}
+
+// getSendLink caches sender link between calls to speed up sending events.
+func (c *Client) getSendLink(ctx context.Context) (*amqp.Sender, error) {
+	conn, err := c.connectToIoTHub(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if c.sendLink != nil {
+		return c.sendLink, nil
+	}
+
+	sess, err := conn.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	c.sendLink, err = sess.NewSender(
+		amqp.LinkTargetAddress("/messages/devicebound"),
+	)
+	if err != nil {
+		_ = sess.Close(context.Background())
+		return nil, err
+	}
+	return c.sendLink, nil
 }
 
 // FeedbackHandler handles message feedback.
@@ -340,10 +477,17 @@ type FeedbackHandler func(f *Feedback)
 
 // SubscribeFeedback subscribes to feedback of messages that ack was requested.
 func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) error {
-	if err := c.ConnectToAMQP(ctx); err != nil {
+	conn, err := c.connectToIoTHub(ctx)
+	if err != nil {
 		return err
 	}
-	recv, err := c.conn.Sess().NewReceiver(
+	sess, err := conn.NewSession()
+	if err != nil {
+		return err
+	}
+	defer sess.Close(context.Background())
+
+	recv, err := sess.NewReceiver(
 		amqp.LinkSourceAddress("/messages/servicebound/feedback"),
 	)
 	if err != nil {

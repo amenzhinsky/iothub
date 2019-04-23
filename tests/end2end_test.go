@@ -166,13 +166,14 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
 	defer closeDeviceService(t, dc, sc)
 
-	msgc := make(chan *common.Message, 1)
+	evsc := make(chan *iotservice.Event, 1)
 	errc := make(chan error, 2)
 	go func() {
-		errc <- sc.SubscribeEvents(ctx, func(msg *common.Message) {
-			if msg.ConnectionDeviceID == dc.DeviceID() {
-				msgc <- msg
+		errc <- sc.SubscribeEvents(ctx, func(ev *iotservice.Event) error {
+			if ev.ConnectionDeviceID == dc.DeviceID() {
+				evsc <- ev
 			}
+			return nil
 		})
 	}()
 
@@ -199,7 +200,7 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 	}()
 
 	select {
-	case msg := <-msgc:
+	case msg := <-evsc:
 		if msg.MessageID == "" {
 			t.Error("MessageID is empty")
 		}
@@ -378,6 +379,9 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 	defer dc.UnsubscribeTwinUpdates(sub)
 
+	// TODO: hacky, but reduces flakiness
+	time.Sleep(time.Second)
+
 	twin, err := sc.UpdateTwin(ctx, dc.DeviceID(), &iotservice.Twin{
 		Tags: map[string]interface{}{
 			"test-device": true,
@@ -470,9 +474,9 @@ func newDeviceAndServiceClient(
 }
 
 func newServiceClient(t *testing.T) *iotservice.Client {
-	cs := os.Getenv("TEST_SERVICE_CONNECTION_STRING")
+	cs := os.Getenv("TEST_IOTHUB_SERVICE_CONNECTION_STRING")
 	if cs == "" {
-		t.Fatal("TEST_SERVICE_CONNECTION_STRING is empty")
+		t.Fatal("$TEST_IOTHUB_SERVICE_CONNECTION_STRING is empty")
 	}
 	c, err := iotservice.New(
 		iotservice.WithConnectionString(cs),

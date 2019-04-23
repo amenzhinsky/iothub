@@ -1,7 +1,10 @@
 package eventhub
 
 import (
+	"context"
+	"os"
 	"testing"
+	"time"
 )
 
 func TestParseConnectionString(t *testing.T) {
@@ -23,5 +26,29 @@ func TestParseConnectionString(t *testing.T) {
 	}
 	if *want != *have {
 		t.Fatalf("ParseConnectionString = %#v, want %#v", have, want)
+	}
+}
+
+func TestClient_Subscribe(t *testing.T) {
+	cs := os.Getenv("TEST_EVENTHUB_CONNECTION_STRING")
+	if cs == "" {
+		t.Fatal("$TEST_EVENTHUB_CONNECTION_STRING is empty")
+	}
+	c, err := DialConnectionString(cs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// subscribe to the eventhub for a second to validate that we don't get any errors
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if err := c.Subscribe(ctx, func(msg *Event) error {
+		return nil
+	},
+		WithSubscribeSince(time.Now()),
+	); err != nil && err != context.DeadlineExceeded {
+		t.Fatal(err)
 	}
 }

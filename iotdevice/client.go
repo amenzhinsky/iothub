@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"os"
 	"sync"
 
 	"github.com/amenzhinsky/iothub/common"
@@ -92,13 +93,23 @@ func New(opts ...ClientOption) (*Client, error) {
 		dmMux: newMethodMux(),
 	}
 
+	var err error
 	for _, opt := range opts {
-		if err := opt(c); err != nil {
+		if err = opt(c); err != nil {
 			return nil, err
 		}
 	}
 	if c.creds == nil {
-		return nil, errors.New("credentials required")
+		if c.creds == nil {
+			cs := os.Getenv("IOTHUB_DEVICE_CONNECTION_STRING")
+			if cs == "" {
+				return nil, errors.New("$IOTHUB_DEVICE_CONNECTION_STRING is empty")
+			}
+			c.creds, err = NewSASCredentials(cs)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	if c.tr == nil {
 		return nil, errors.New("transport required")

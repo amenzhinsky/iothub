@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/eventhub"
 	"github.com/amenzhinsky/iothub/iotservice"
-	"pack.ag/amqp"
 )
 
 // globally accessible by command handlers, is it a good idea?
@@ -60,7 +58,7 @@ func main() {
 }
 
 const help = `Helps with interacting and managing your iothub devices. 
-The $SERVICE_CONNECTION_STRING environment variable is required for authentication.`
+The $IOTHUB_SERVICE_CONNECTION_STRING environment variable is required for authentication.`
 
 func run() error {
 	cli, err := internal.New(help, func(f *flag.FlagSet) {
@@ -225,13 +223,7 @@ func run() error {
 
 func wrap(fn func(context.Context, *flag.FlagSet, *iotservice.Client) error) internal.HandlerFunc {
 	return func(ctx context.Context, f *flag.FlagSet) error {
-		// accept only from environment
-		cs := os.Getenv("SERVICE_CONNECTION_STRING")
-		if cs == "" {
-			return errors.New("SERVICE_CONNECTION_STRING is blank")
-		}
 		c, err := iotservice.New(
-			iotservice.WithConnectionString(cs),
 			iotservice.WithLogger(common.NewLogWrapper(debugFlag)),
 		)
 		if err != nil {
@@ -455,45 +447,22 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) err
 	if ehcsFlag != "" {
 		return watchEventHubEvents(ctx, ehcsFlag, ehcgFlag)
 	}
-
-	errc := make(chan error, 1)
-	if err := c.SubscribeEvents(ctx, func(msg *common.Message) {
-		if err := internal.OutputJSON(msg, compressFlag); err != nil {
-			errc <- err
-		}
-	}); err != nil {
-		return err
-	}
-	return <-errc
+	return c.SubscribeEvents(ctx, func(msg *iotservice.Event) error {
+		return internal.OutputJSON(msg, compressFlag)
+	})
 }
 
 func watchEventHubEvents(ctx context.Context, cs, group string) error {
-	creds, err := eventhub.ParseConnectionString(cs)
+	c, err := eventhub.DialConnectionString(cs)
 	if err != nil {
 		return err
 	}
-
-	addr := fmt.Sprintf("amqps://%s/%s", creds.Endpoint, creds.EntityPath)
-	eh, err := eventhub.Dial(addr,
-		eventhub.WithLogger(common.NewLogWrapper(debugFlag)),
-		eventhub.WithTLSConfig(common.TLSConfig(creds.Endpoint)),
-
-		// we cannot use username and password as a part of Dial connection string
-		// because access key is base64 (not base64url) encoded and may contain
-		// '=' or '+' chars that break URL parsing, simply replacing them with
-		// '_' and '+' won't do the job because amqp.Dial uses them as is and
-		// Azure will reject them afterwards
-		eventhub.WithSASLPlain(creds.SharedAccessKeyName, creds.SharedAccessKey),
+	return c.Subscribe(ctx, func(m *eventhub.Event) error {
+		return internal.OutputJSON(iotservice.FromAMQPMessage(m.Message), compressFlag)
+	},
+		eventhub.WithSubscribeConsumerGroup(group),
+		eventhub.WithSubscribeSince(time.Now()),
 	)
-	if err != nil {
-		return err
-	}
-	return eh.SubscribePartitions(ctx, creds.EntityPath, group, func(m *amqp.Message) {
-		msg := iotservice.FromAMQPMessage(m)
-		if err := internal.OutputJSON(msg, compressFlag); err != nil {
-			panic(err)
-		}
-	})
 }
 
 func watchFeedback(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {

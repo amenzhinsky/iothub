@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 // DefaultQoS is the default quality of service value.
@@ -107,13 +107,8 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	})
 	o.SetWriteTimeout(30 * time.Second)
 	o.SetMaxReconnectInterval(30 * time.Second) // default is 15min, way to long
-	o.SetOnConnectHandler(func(_ mqtt.Client) {
-		tr.logger.Debugf("connection established")
-	})
-	o.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
-		tr.logger.Debugf("connection lost: %v", err)
-	})
 	o.SetOnConnectHandler(func(c mqtt.Client) {
+		tr.logger.Debugf("connection established")
 		tr.subm.RLock()
 		for _, sub := range tr.subs {
 			if err := sub(); err != nil {
@@ -121,6 +116,9 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 			}
 		}
 		tr.subm.RUnlock()
+	})
+	o.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
+		tr.logger.Debugf("connection lost: %v", err)
 	})
 
 	if tr.cocfg != nil {

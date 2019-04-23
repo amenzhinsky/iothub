@@ -55,7 +55,7 @@ func main() {
 }
 
 const help = `iothub-device helps iothub devices to communicate with the cloud.
-The $DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
+$IOTHUB_DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
 
 func run() error {
 	cli, err := internal.New(help, func(f *flag.FlagSet) {
@@ -123,24 +123,6 @@ func run() error {
 
 func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) internal.HandlerFunc {
 	return func(ctx context.Context, f *flag.FlagSet) error {
-		var auth iotdevice.ClientOption
-		if tlsCertFlag != "" && tlsKeyFlag != "" {
-			if hostnameFlag == "" {
-				return errors.New("hostname is required for x509 authentication")
-			}
-			if deviceIDFlag == "" {
-				return errors.New("device-id is required for x509 authentication")
-			}
-			auth = iotdevice.WithX509FromFile(deviceIDFlag, hostnameFlag, tlsCertFlag, tlsKeyFlag)
-		} else {
-			// we cannot accept connection string from parameters
-			cs := os.Getenv("DEVICE_CONNECTION_STRING")
-			if cs == "" {
-				return errors.New("$DEVICE_CONNECTION_STRING is empty")
-			}
-			auth = iotdevice.WithConnectionString(cs)
-		}
-
 		mk, ok := transports[transportFlag]
 		if !ok {
 			return fmt.Errorf("unknown transport %q", transportFlag)
@@ -149,11 +131,24 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		if err != nil {
 			return err
 		}
-		c, err := iotdevice.New(
+
+		opts := []iotdevice.ClientOption{
 			iotdevice.WithLogger(common.NewLogWrapper(debugFlag)),
 			iotdevice.WithTransport(t),
-			auth,
-		)
+		}
+		if tlsCertFlag != "" && tlsKeyFlag != "" {
+			if hostnameFlag == "" {
+				return errors.New("hostname is required for x509 authentication")
+			}
+			if deviceIDFlag == "" {
+				return errors.New("device-id is required for x509 authentication")
+			}
+			opts = append(opts,
+				iotdevice.WithX509FromFile(deviceIDFlag, hostnameFlag, tlsCertFlag, tlsKeyFlag),
+			)
+		}
+
+		c, err := iotdevice.New(opts...)
 		if err != nil {
 			return err
 		}

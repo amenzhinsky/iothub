@@ -4,20 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
-	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotservice"
 )
 
 func main() {
-	c, err := iotservice.New(
-		iotservice.WithConnectionString(os.Getenv("SERVICE_CONNECTION_STRING")),
-	)
+	c, err := iotservice.New()
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Fatal(c.SubscribeEvents(context.Background(), func(msg *common.Message) {
+
+	// subscribe to device-to-cloud events
+	log.Fatal(c.SubscribeEvents(context.Background(), func(msg *iotservice.Event) error {
 		fmt.Printf("%q sends %q", msg.ConnectionDeviceID, msg.Payload)
+		return nil
 	}))
 }
