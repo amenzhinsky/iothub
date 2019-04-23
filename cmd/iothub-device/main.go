@@ -68,52 +68,51 @@ func run() error {
 		f.StringVar(&hostnameFlag, "hostname", "", "hostname to connect to, required for x509")
 	}, []*internal.Command{
 		{
-			"send", "s",
-			"PAYLOAD [KEY VALUE]...",
-			"send a message to the cloud (D2C)",
-			wrap(send),
-			func(f *flag.FlagSet) {
+			Name:    "send",
+			Alias:   "s",
+			Help:    "PAYLOAD [KEY VALUE]...",
+			Desc:    "send a message to the cloud (D2C)",
+			Handler: wrap(send),
+			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&midFlag, "mid", "", "identifier for the message")
 				f.StringVar(&cidFlag, "cid", "", "message identifier in a request-reply")
 				f.IntVar(&qosFlag, "qos", mqtt.DefaultQoS, "QoS value, 0 or 1 (mqtt only)")
 			},
 		},
 		{
-			"watch-events", "we",
-			"",
-			"subscribe to messages sent from the cloud (C2D)",
-			wrap(watchEvents),
-			nil,
+			Name:    "watch-events",
+			Alias:   "we",
+			Desc:    "subscribe to messages sent from the cloud (C2D)",
+			Handler: wrap(watchEvents),
 		},
 		{
-			"watch-twin", "wt",
-			"",
-			"subscribe to desired twin state updates",
-			wrap(watchTwin),
-			nil,
+			Name:    "watch-twin",
+			Alias:   "wt",
+			Desc:    "subscribe to desired twin state updates",
+			Handler: wrap(watchTwin),
 		},
 		{
-			"direct-method", "dm",
-			"NAME",
-			"handle the named direct method, reads responses from STDIN",
-			wrap(directMethod),
-			func(f *flag.FlagSet) {
+			Name:    "direct-method",
+			Alias:   "dm",
+			Help:    "NAME",
+			Desc:    "handle the named direct method, reads responses from STDIN",
+			Handler: wrap(directMethod),
+			ParseFunc: func(f *flag.FlagSet) {
 				f.BoolVar(&quiteFlag, "quite", false, "disable additional hints")
 			},
 		},
 		{
-			"twin-state", "ts",
-			"",
-			"retrieve desired and reported states",
-			wrap(twin),
-			nil,
+			Name:    "twin-state",
+			Alias:   "ts",
+			Desc:    "retrieve desired and reported states",
+			Handler: wrap(twin),
 		},
 		{
-			"update-twin", "ut",
-			"[KEY VALUE]...",
-			"updates the twin device deported state, null means delete the key",
-			wrap(updateTwin),
-			nil,
+			Name:    "update-twin",
+			Alias:   "ut",
+			Help:    "[KEY VALUE]...",
+			Desc:    "updates the twin device deported state, null means delete the key",
+			Handler: wrap(updateTwin),
 		},
 	})
 	if err != nil {

@@ -140,12 +140,12 @@ func (m *twinStateMux) Dispatch(b []byte) {
 	}
 	close(m.done)
 	for _, sub := range m.subs {
-		go func() {
+		go func(sub *TwinStateSub) {
 			select {
 			case sub.ch <- v:
 			case <-m.done:
 			}
-		}()
+		}(sub)
 	}
 	m.mu.RUnlock()
 }

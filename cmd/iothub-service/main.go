@@ -68,11 +68,12 @@ func run() error {
 		f.BoolVar(&compressFlag, "compress", false, "compress data (remove JSON indentations)")
 	}, []*internal.Command{
 		{
-			"send", "s",
-			"DEVICE PAYLOAD [[key value]...]",
-			"send a message to the named device (C2D)",
-			wrap(send),
-			func(f *flag.FlagSet) {
+			Name:    "send",
+			Alias:   "s",
+			Help:    "DEVICE PAYLOAD [[key value]...]",
+			Desc:    "send a message to the named device (C2D)",
+			Handler: wrap(send),
+			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&ackFlag, "ack", "", "type of ack feedback")
 				f.StringVar(&uidFlag, "uid", "golang-iothub", "origin of the message")
 				f.StringVar(&midFlag, "mid", "", "identifier for the message")
@@ -81,46 +82,52 @@ func run() error {
 			},
 		},
 		{
-			"watch-events", "we",
-			"", "subscribe to device messages (D2C)",
-			wrap(watchEvents),
-			func(f *flag.FlagSet) {
+			Name:    "watch-events",
+			Alias:   "we",
+			Desc:    "subscribe to device messages (D2C)",
+			Handler: wrap(watchEvents),
+			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&ehcsFlag, "ehcs", "", "custom eventhub connection string")
 				f.StringVar(&ehcgFlag, "ehcg", "$Default", "eventhub consumer group")
 			},
 		},
 		{
-			"watch-feedback", "wf",
-			"", "monitor message feedback send by devices",
-			wrap(watchFeedback),
-			nil,
+			Name:    "watch-feedback",
+			Alias:   "wf",
+			Desc:    "monitor message feedback send by devices",
+			Handler: wrap(watchFeedback),
 		},
 		{
-			"call", "c",
-			"DEVICE METHOD PAYLOAD", "call a direct method on a device",
-			wrap(call),
-			func(f *flag.FlagSet) {
+			Name:    "call",
+			Alias:   "c",
+			Help:    "DEVICE METHOD PAYLOAD",
+			Desc:    "call a direct method on a device",
+			Handler: wrap(call),
+			ParseFunc: func(f *flag.FlagSet) {
 				f.IntVar(&connectTimeoutFlag, "c", 0, "connect timeout in seconds")
 				f.IntVar(&responseTimeoutFlag, "r", 30, "response timeout in seconds")
 			},
 		},
 		{
-			"device", "d",
-			"DEVICE", "get device information",
-			wrap(device),
-			nil,
+			Name:    "device",
+			Alias:   "d",
+			Help:    "DEVICE",
+			Desc:    "get device information",
+			Handler: wrap(device),
 		},
 		{
-			"devices", "ds",
-			"", "list all available devices",
-			wrap(devices),
-			nil,
+			Name:    "devices",
+			Alias:   "ds",
+			Desc:    "list all available devices",
+			Handler: wrap(devices),
 		},
 		{
-			"create-device", "cd",
-			"DEVICE", "creates a new device",
-			wrap(createDevice),
-			func(f *flag.FlagSet) {
+			Name:    "create-device",
+			Alias:   "cd",
+			Help:    "DEVICE",
+			Desc:    "creates a new device",
+			Handler: wrap(createDevice),
+			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&primaryKeyFlag, "primary-key", "", "primary key (base64)")
 				f.StringVar(&secondaryKeyFlag, "secondary-key", "", "secondary key (base64)")
 				f.StringVar(&primaryThumbprintFlag, "primary-thumbprint", "", "x509 primary thumbprint")
@@ -129,10 +136,12 @@ func run() error {
 			},
 		},
 		{
-			"update-device", "ud",
-			"DEVICE", "updates the named device",
-			wrap(updateDevice),
-			func(f *flag.FlagSet) {
+			Name:    "update-device",
+			Alias:   "ud",
+			Help:    "DEVICE",
+			Desc:    "updates the named device",
+			Handler: wrap(updateDevice),
+			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&primaryKeyFlag, "primary-key", "", "primary key (base64)")
 				f.StringVar(&secondaryKeyFlag, "secondary-key", "", "secondary key (base64)")
 				f.StringVar(&primaryThumbprintFlag, "primary-thumbprint", "", "x509 primary thumbprint")
@@ -141,60 +150,67 @@ func run() error {
 			},
 		},
 		{
-			"delete-device", "dd",
-			"DEVICE", "delete the named device",
-			wrap(deleteDevice),
-			nil,
+			Name:    "delete-device",
+			Alias:   "dd",
+			Help:    "DEVICE",
+			Desc:    "delete the named device",
+			Handler: wrap(deleteDevice),
 		},
 		{
-			"twin", "t",
-			"", "inspect the named twin device",
-			wrap(twin),
-			nil,
+			Name:    "twin",
+			Alias:   "t",
+			Desc:    "inspect the named twin device",
+			Handler: wrap(twin),
 		},
 		{
-			"update-twin", "ut",
-			"DEVICE [[key value]...]", "update the named twin device",
-			wrap(updateTwin),
-			nil,
+			Name:    "update-twin",
+			Alias:   "ut",
+			Help:    "DEVICE [[key value]...]",
+			Desc:    "update the named twin device",
+			Handler: wrap(updateTwin),
 		},
 		{
-			"stats", "st",
-			"", "get statistics about the devices",
-			wrap(stats),
-			nil,
+			Name:    "stats",
+			Alias:   "st",
+			Desc:    "get statistics about the devices",
+			Handler: wrap(stats),
 		},
 		{
-			"jobs", "js",
-			"", "list the last import/export jobs",
-			wrap(jobs),
-			nil,
+			Name:    "jobs",
+			Alias:   "js",
+			Desc:    "list the last import/export jobs",
+			Handler: wrap(jobs),
 		},
 		{
-			"job", "j",
-			"ID", "get the status of a import/export job",
-			wrap(job),
-			nil,
+			Name:    "job",
+			Alias:   "j",
+			Help:    "ID",
+			Desc:    "get the status of a import/export job",
+			Handler: wrap(job),
 		},
 		{
-			"cancel-job", "cj",
-			"", "cancel a import/export job",
-			wrap(cancelJob),
-			nil,
+			Name:    "cancel-job",
+			Alias:   "cj",
+			Desc:    "cancel a import/export job",
+			Handler: wrap(cancelJob),
 		},
 		{
-			"connection-string", "cs",
-			"DEVICE", "get a device's connection string",
-			wrap(connectionString),
-			func(f *flag.FlagSet) {
+			Name:    "connection-string",
+			Alias:   "cs",
+			Help:    "DEVICE",
+			Desc:    "get a device's connection string",
+			Handler: wrap(connectionString),
+			ParseFunc: func(f *flag.FlagSet) {
 				f.BoolVar(&secondaryFlag, "secondary", false, "use the secondary key instead")
 			},
 		},
 		{
-			"access-signature", "sas",
-			"DEVICE", "generate a GenerateToken token",
-			wrap(sas),
-			func(f *flag.FlagSet) {
+			Name:    "access-signature",
+			Alias:   "sas",
+			Help:    "DEVICE",
+			Desc:    "generate a GenerateToken token",
+			Handler: wrap(sas),
+			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&uriFlag, "uri", "", "storage resource uri")
 				f.DurationVar(&durationFlag, "duration", time.Hour, "token validity time")
 				f.BoolVar(&secondaryFlag, "secondary", false, "use the secondary key instead")
