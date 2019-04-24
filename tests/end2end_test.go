@@ -71,11 +71,12 @@ func TestEnd2End(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for name, tr := range map[string]func() transport.Transport{
+	for name, mktransport := range map[string]func() transport.Transport{
 		"mqtt": func() transport.Transport { return mqtt.New() },
-		// TODO: "amqp": func() transport.Transport { return amqp.NewLogger() },
-		// TODO: "http": func() transport.Transport { return http.NewLogger() },
+		// TODO: "amqp": func() transport.Transport { return amqp.New() },
+		// TODO: "http": func() transport.Transport { return http.New() },
 	} {
+		mktransport := mktransport
 		t.Run(name, func(t *testing.T) {
 			for auth, suite := range map[string]struct {
 				opts []iotdevice.ClientOption
@@ -105,6 +106,9 @@ func TestEnd2End(t *testing.T) {
 					"*",
 				},
 			} {
+
+				suite := suite
+				mktransport := mktransport
 				t.Run(auth, func(t *testing.T) {
 					for name, test := range map[string]func(*testing.T, ...iotdevice.ClientOption){
 						"DeviceToCloud": testDeviceToCloud,
@@ -116,8 +120,11 @@ func TestEnd2End(t *testing.T) {
 						if suite.test != "*" && suite.test != name {
 							continue
 						}
+
+						test := test
+						mktransport := mktransport
 						t.Run(name, func(t *testing.T) {
-							test(t, append(suite.opts, iotdevice.WithTransport(tr()))...)
+							test(t, append(suite.opts, iotdevice.WithTransport(mktransport()))...)
 						})
 					}
 				})

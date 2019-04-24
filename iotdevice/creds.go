@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	"github.com/amenzhinsky/iothub/credentials"
+	"github.com/amenzhinsky/iothub/iotdevice/transport"
 )
 
 func NewSASCredentials(cs string) (transport.Credentials, error) {
