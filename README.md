@@ -24,6 +24,7 @@ import (
 )
 
 func main() {
+	// IOTHUB_DEVICE_CONNECTION_STRING environment variable must be set
 	c, err := iotdevice.New(
 		iotdevice.WithTransport(iotmqtt.New()),
 	)
@@ -57,6 +58,7 @@ import (
 )
 
 func main() {
+	// IOTHUB_SERVICE_CONNECTION_STRING environment variable must be set
 	c, err := iotservice.New()
 	if err != nil {
 		log.Fatal(err)
@@ -74,10 +76,10 @@ func main() {
 
 The following environment variables are used by the library unless corresponding options are set explicitly:
 
-- `IOTHUB_DEVICE_CONNECTION_STRING`
-- `IOTHUB_SERVICE_CONNECTION_STRING`
-- `IOTHUB_DEVICE_LOG_LEVEL`
-- `IOTHUB_SERVICE_LOG_LEVEL`
+- `IOTHUB_DEVICE_CONNECTION_STRING` a device connection string.
+- `IOTHUB_SERVICE_CONNECTION_STRING` a shared access policy connection string.
+- `IOTHUB_DEVICE_LOG_LEVEL` controls `iotdevice` log level.
+- `IOTHUB_SERVICE_LOG_LEVEL` controls `iotservice` log level.
 
 Valid log level values are: `error`, `warn`, `info` and `debug`, default is `warn`.
 

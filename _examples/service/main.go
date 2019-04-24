@@ -9,6 +9,7 @@ import (
 )
 
 func main() {
+	// IOTHUB_SERVICE_CONNECTION_STRING environment variable must be set
 	c, err := iotservice.New()
 	if err != nil {
 		log.Fatal(err)

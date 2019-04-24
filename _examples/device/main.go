@@ -9,6 +9,7 @@ import (
 )
 
 func main() {
+	// IOTHUB_DEVICE_CONNECTION_STRING environment variable must be set
 	c, err := iotdevice.New(
 		iotdevice.WithTransport(iotmqtt.New()),
 	)
