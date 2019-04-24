@@ -99,20 +99,18 @@ func New(opts ...ClientOption) (*Client, error) {
 			return nil, err
 		}
 	}
-	if c.creds == nil {
-		if c.creds == nil {
-			cs := os.Getenv("IOTHUB_DEVICE_CONNECTION_STRING")
-			if cs == "" {
-				return nil, errors.New("$IOTHUB_DEVICE_CONNECTION_STRING is empty")
-			}
-			c.creds, err = NewSASCredentials(cs)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
 	if c.tr == nil {
 		return nil, errors.New("transport required")
+	}
+	if c.creds == nil {
+		cs := os.Getenv("IOTHUB_DEVICE_CONNECTION_STRING")
+		if cs == "" {
+			return nil, errors.New("$IOTHUB_DEVICE_CONNECTION_STRING is empty")
+		}
+		c.creds, err = NewSASCredentials(cs)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return c, nil
 }
