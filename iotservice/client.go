@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/eventhub"
-	"github.com/amenzhinsky/iothub/sas"
 	"pack.ag/amqp"
 )
 
@@ -29,7 +29,7 @@ type ClientOption func(c *Client) error
 // WithConnectionString parses the given connection string instead of using `WithCredentials`.
 func WithConnectionString(cs string) ClientOption {
 	return func(c *Client) error {
-		creds, err := sas.ParseConnectionString(cs)
+		creds, err := credentials.ParseConnectionString(cs)
 		if err != nil {
 			return err
 		}
@@ -39,7 +39,7 @@ func WithConnectionString(cs string) ClientOption {
 }
 
 // WithCredentials uses the given credentials to generate GenerateToken tokens.
-func WithCredentials(creds *sas.Credentials) ClientOption {
+func WithCredentials(creds *credentials.Credentials) ClientOption {
 	return func(c *Client) error {
 		c.creds = creds
 		return nil
@@ -89,7 +89,7 @@ func New(opts ...ClientOption) (*Client, error) {
 		if cs == "" {
 			return nil, errors.New("$IOTHUB_SERVICE_CONNECTION_STRING is empty")
 		}
-		c.creds, err = sas.ParseConnectionString(cs)
+		c.creds, err = credentials.ParseConnectionString(cs)
 		if err != nil {
 			return nil, err
 		}
@@ -115,7 +115,7 @@ type Client struct {
 	tls    *tls.Config
 	conn   *amqp.Client
 	done   chan struct{}
-	creds  *sas.Credentials
+	creds  *credentials.Credentials
 	logger common.Logger
 	http   *http.Client // REST client
 
@@ -162,7 +162,7 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 	)
 
 	token, err := c.creds.GenerateToken(
-		c.creds.HostName, sas.WithDuration(tokenUpdateInterval),
+		c.creds.HostName, credentials.WithDuration(tokenUpdateInterval),
 	)
 	if err != nil {
 		return err
@@ -186,7 +186,7 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 			select {
 			case <-ticker.C:
 				token, err := c.creds.GenerateToken(
-					c.creds.HostName, sas.WithDuration(tokenUpdateInterval),
+					c.creds.HostName, credentials.WithDuration(tokenUpdateInterval),
 				)
 				if err != nil {
 					c.logger.Errorf("generate token error: %s", err)
@@ -566,12 +566,12 @@ func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary boo
 	if duration == 0 {
 		duration = time.Hour
 	}
-	creds := sas.Credentials{
+	creds := credentials.Credentials{
 		HostName:        c.creds.HostName,
 		DeviceID:        device.DeviceID,
 		SharedAccessKey: key,
 	}
-	return creds.GenerateToken(creds.HostName, sas.WithDuration(duration))
+	return creds.GenerateToken(creds.HostName, credentials.WithDuration(duration))
 }
 
 func deviceKey(device *Device, secondary bool) string {

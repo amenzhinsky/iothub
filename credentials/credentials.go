@@ -1,4 +1,4 @@
-package sas
+package credentials
 
 import (
 	"crypto/hmac"
