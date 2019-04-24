@@ -73,8 +73,8 @@ func TestEnd2End(t *testing.T) {
 
 	for name, tr := range map[string]func() transport.Transport{
 		"mqtt": func() transport.Transport { return mqtt.New() },
-		// TODO: "amqp": func() transport.Transport { return amqp.New() },
-		// TODO: "http": func() transport.Transport { return http.New() },
+		// TODO: "amqp": func() transport.Transport { return amqp.NewLogger() },
+		// TODO: "http": func() transport.Transport { return http.NewLogger() },
 	} {
 		t.Run(name, func(t *testing.T) {
 			for auth, suite := range map[string]struct {

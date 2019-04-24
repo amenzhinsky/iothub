@@ -44,12 +44,11 @@ func WithClientOptionsConfig(fn func(opts *mqtt.ClientOptions)) TransportOption 
 	}
 }
 
-// New returns new Transport transport.
+// NewLogger returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 func New(opts ...TransportOption) transport.Transport {
 	tr := &Transport{
-		done:   make(chan struct{}),
-		logger: common.NewLogWrapper(false),
+		done: make(chan struct{}),
 	}
 	for _, opt := range opts {
 		opt(tr)
@@ -79,6 +78,10 @@ type resp struct {
 	body []byte
 
 	ver int // twin response only
+}
+
+func (tr *Transport) SetLogger(logger common.Logger) {
+	tr.logger = logger
 }
 
 func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) error {

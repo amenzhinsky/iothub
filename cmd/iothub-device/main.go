@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
-	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
@@ -19,7 +18,7 @@ import (
 
 var transports = map[string]func() (transport.Transport, error){
 	"mqtt": func() (transport.Transport, error) {
-		return mqtt.New(mqtt.WithLogger(common.NewLogWrapper(debugFlag))), nil
+		return mqtt.New(), nil
 	},
 	"amqp": func() (transport.Transport, error) {
 		return nil, errors.New("not implemented")
@@ -132,10 +131,7 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 			return err
 		}
 
-		opts := []iotdevice.ClientOption{
-			iotdevice.WithLogger(common.NewLogWrapper(debugFlag)),
-			iotdevice.WithTransport(t),
-		}
+		opts := []iotdevice.ClientOption{iotdevice.WithTransport(t)}
 		if tlsCertFlag != "" && tlsKeyFlag != "" {
 			if hostnameFlag == "" {
 				return errors.New("hostname is required for x509 authentication")

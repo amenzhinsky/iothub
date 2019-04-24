@@ -81,12 +81,12 @@ func WithX509FromFile(deviceID, hostname, certFile, keyFile string) ClientOption
 	}
 }
 
-// New returns new iothub client.
+// NewLogger returns new iothub client.
 func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		ready:  make(chan struct{}),
 		done:   make(chan struct{}),
-		logger: common.NewLogWrapper(false),
+		logger: common.NewLoggerFromEnv("iotdevice", "IOTHUB_DEVICE_LOG_LEVEL"),
 
 		evMux: newEventsMux(),
 		tsMux: newTwinStateMux(),
@@ -112,6 +112,9 @@ func New(opts ...ClientOption) (*Client, error) {
 			return nil, err
 		}
 	}
+
+	// transport uses the same logger as the client
+	c.tr.SetLogger(c.logger)
 	return c, nil
 }
 

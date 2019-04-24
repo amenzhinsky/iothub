@@ -1,8 +1,10 @@
 package common
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"strings"
 )
 
 // Logger is common logging interface.
@@ -13,30 +15,89 @@ type Logger interface {
 	Debugf(format string, v ...interface{})
 }
 
-// NewLogWrapper creates a wrapper of the std logger that implements the Logger interface.
-func NewLogWrapper(debug bool) Logger {
-	return &logWrapper{log.New(os.Stderr, "", 0), debug}
+// make sure that LevelLogger implements Logger interface.
+var _ Logger = (*LevelLogger)(nil)
+
+// NewLoggerFromEnv returns a LevelLogger with the name prefix and
+// severity based on the named environment variable or it
+// falls back to LevelWarn if it's missing.
+//
+// It uses the standard log.Print function for output
+// so it can be controlled via the exposed configuration methods.
+func NewLoggerFromEnv(name, key string) *LevelLogger {
+	lvl := LevelWarn
+	switch strings.ToLower(os.Getenv(key)) {
+	case "e", "err", "error":
+		lvl = LevelWarn
+	case "w", "warn", "warning":
+		lvl = LevelWarn
+	case "i", "info":
+		lvl = LevelInfo
+	case "d", "debug":
+		lvl = LevelDebug
+	}
+	return NewLogger(name, lvl, log.Print)
 }
 
-type logWrapper struct {
-	*log.Logger
-	debug bool
+// LogLevel is logging severity.
+type LogLevel uint8
+
+const (
+	LevelError LogLevel = iota
+	LevelWarn
+	LevelInfo
+	LevelDebug
+)
+
+// String returns log level string representation.
+func (lvl LogLevel) String() string {
+	switch lvl {
+	case LevelError:
+		return "ERROR"
+	case LevelWarn:
+		return "WARN"
+	case LevelInfo:
+		return "INFO"
+	case LevelDebug:
+		return "DEBUG"
+	default:
+		return ""
+	}
 }
 
-func (w *logWrapper) Errorf(format string, v ...interface{}) {
-	w.Printf("E "+format, v...)
+// PrintFunc is used for writing logs that works as fmt.Print.
+type PrintFunc func(v ...interface{})
+
+// NewLogger creates a new leveled logger instance with the given parameters.
+func NewLogger(name string, lvl LogLevel, print PrintFunc) *LevelLogger {
+	return &LevelLogger{name: name, lvl: lvl, print: print}
 }
 
-func (w *logWrapper) Warnf(format string, v ...interface{}) {
-	w.Printf("W "+format, v...)
+// LevelLogger is a logger that supports log levels.
+type LevelLogger struct {
+	name  string
+	lvl   LogLevel
+	print PrintFunc
 }
 
-func (w *logWrapper) Infof(format string, v ...interface{}) {
-	w.Printf("I "+format, v...)
+func (l *LevelLogger) Errorf(format string, v ...interface{}) {
+	l.logf(LevelError, format, v...)
 }
 
-func (w *logWrapper) Debugf(format string, v ...interface{}) {
-	if w.debug {
-		w.Printf("D "+format, v...)
+func (l *LevelLogger) Infof(format string, v ...interface{}) {
+	l.logf(LevelInfo, format, v...)
+}
+
+func (l *LevelLogger) Warnf(format string, v ...interface{}) {
+	l.logf(LevelWarn, format, v...)
+}
+
+func (l *LevelLogger) Debugf(format string, v ...interface{}) {
+	l.logf(LevelDebug, format, v...)
+}
+
+func (l *LevelLogger) logf(lvl LogLevel, format string, v ...interface{}) {
+	if l.print != nil && lvl <= l.lvl {
+		l.print(l.name, ": ", lvl.String(), " ", fmt.Sprintf(format, v...))
 	}
 }

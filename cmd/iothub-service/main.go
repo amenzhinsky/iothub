@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
-	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/eventhub"
 	"github.com/amenzhinsky/iothub/iotservice"
 )
@@ -223,9 +222,7 @@ func run() error {
 
 func wrap(fn func(context.Context, *flag.FlagSet, *iotservice.Client) error) internal.HandlerFunc {
 	return func(ctx context.Context, f *flag.FlagSet) error {
-		c, err := iotservice.New(
-			iotservice.WithLogger(common.NewLogWrapper(debugFlag)),
-		)
+		c, err := iotservice.New()
 		if err != nil {
 			return err
 		}

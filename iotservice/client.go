@@ -70,11 +70,11 @@ func WithTLSConfig(config *tls.Config) ClientOption {
 	}
 }
 
-// New creates new iothub service client.
+// NewLogger creates new iothub service client.
 func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		done:   make(chan struct{}),
-		logger: common.NewLogWrapper(false),
+		logger: common.NewLoggerFromEnv("iotservice", "IOTHUB_SERVICE_LOG_LEVEL"),
 	}
 
 	var err error

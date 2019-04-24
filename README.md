@@ -76,6 +76,10 @@ The following environment variables are used by the library unless corresponding
 
 - `IOTHUB_DEVICE_CONNECTION_STRING`
 - `IOTHUB_SERVICE_CONNECTION_STRING`
+- `IOTHUB_DEVICE_LOG_LEVEL`
+- `IOTHUB_SERVICE_LOG_LEVEL`
+
+Valid log level values are: `error`, `warn`, `info` and `debug`, default is `warn`.
 
 ## CLI
 
