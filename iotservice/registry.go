@@ -21,6 +21,19 @@ type Device struct {
 	Capabilities               map[string]interface{} `json:"capabilities,omitempty"`
 }
 
+type Module struct {
+	ModuleID                   string          `json:"moduleId,omitempty"`
+	DeviceID                   string          `json:"deviceId,omitempty"`
+	GenerationID               string          `json:"generationId,omitempty"`
+	ETag                       string          `json:"etag,omitempty"`
+	ConnectionState            string          `json:"connectionState,omitempty"`
+	ConnectionStateUpdatedTime string          `json:"connectionStateUpdatedTime,omitempty"`
+	LastActivityTime           string          `json:"lastActivityTime,omitempty"`
+	CloudToDeviceMessageCount  int             `json:"cloudToDeviceMessageCount,omitempty"`
+	Authentication             *Authentication `json:"authentication,omitempty"`
+	ManagedBy                  string          `json:"managedBy,omitempty"`
+}
+
 type Authentication struct {
 	SymmetricKey   *SymmetricKey   `json:"symmetricKey,omitempty"`
 	X509Thumbprint *X509Thumbprint `json:"x509Thumbprint,omitempty"`
@@ -67,6 +80,21 @@ type Twin struct {
 	Tags                      map[string]interface{} `json:"tags,omitempty"`
 	Properties                *Properties            `json:"properties,omitempty"`
 	Capabilities              map[string]interface{} `json:"capabilities,omitempty"`
+}
+
+type ModuleTwin struct {
+	DeviceID           string          `json:"deviceId,omitempty"`
+	ModuleID           string          `json:"moduleId,omitempty"`
+	ETag               string          `json:"etag,omitempty"`
+	DeviceETag         string          `json:"deviceEtag,omitempty"`
+	Status             string          `json:"status,omitempty"`
+	StatusUpdateTime   string          `json:"statusUpdateTime,omitempty"`
+	ConnectionState    string          `json:"connectionState,omitempty"`
+	LastActivityTime   string          `json:"lastActivityTime,omitempty"`
+	AuthenticationType string          `json:"authenticationType,omitempty"`
+	X509Thumbprint     *X509Thumbprint `json:"x509Thumbprint,omitempty"`
+	Version            int             `json:"version,omitempty"`
+	Properties         *Properties     `json:"properties,omitempty"`
 }
 
 type Properties struct {

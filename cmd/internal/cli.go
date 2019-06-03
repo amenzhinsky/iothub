@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sort"
 )
 
 // ErrInvalidUsage when returned by a Handler the usage message is displayed.
@@ -40,15 +39,9 @@ type CLI struct {
 func New(desc string, f FlagFunc, cmds []*Command) (*CLI, error) {
 	r := &CLI{
 		desc: desc,
-		cmds: make([]*Command, len(cmds)),
+		cmds: cmds,
 		main: f,
 	}
-	copy(r.cmds, cmds)
-
-	// sort subcommands alphabetically
-	sort.Slice(r.cmds, func(i, j int) bool {
-		return r.cmds[i].Name < r.cmds[j].Name
-	})
 	return r, nil
 }
 

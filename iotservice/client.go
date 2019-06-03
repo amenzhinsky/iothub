@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"strings"
@@ -638,108 +639,256 @@ func (c *Client) Call(
 		}
 	}
 
-	r := &Result{}
-	if err := c.call(ctx, http.MethodPost, "twins/"+url.PathEscape(deviceID)+"/methods", nil, v, r); err != nil {
+	var res Result
+	if err := c.call(
+		ctx,
+		http.MethodPost,
+		"twins/"+url.PathEscape(deviceID)+"/methods",
+		nil,
+		v,
+		&res,
+	); err != nil {
 		return nil, err
 	}
-	return r, nil
+	return &res, nil
 }
 
 // GetDevice retrieves the named device.
 func (c *Client) GetDevice(ctx context.Context, deviceID string) (*Device, error) {
-	if deviceID == "" {
-		return nil, errors.New("deviceID is empty")
-	}
-	d := &Device{}
-	if err := c.call(ctx, http.MethodGet, "devices/"+url.PathEscape(deviceID), nil, nil, d); err != nil {
+	var res Device
+	if err := c.call(
+		ctx,
+		http.MethodGet,
+		devicePath(deviceID),
+		nil,
+		nil,
+		&res,
+	); err != nil {
 		return nil, err
 	}
-	return d, nil
+	return &res, nil
 }
 
 // CreateDevice creates a new device.
 func (c *Client) CreateDevice(ctx context.Context, device *Device) (*Device, error) {
-	if device == nil {
-		panic("device is nil")
-	}
-	if device.DeviceID == "" {
-		return nil, errors.New("deviceID is empty")
-	}
-	d := &Device{}
-	if err := c.call(ctx, http.MethodPut, "devices/"+url.PathEscape(device.DeviceID), nil, device, d); err != nil {
+	var res Device
+	if err := c.call(
+		ctx,
+		http.MethodPut,
+		devicePath(device.DeviceID),
+		nil,
+		device,
+		&res,
+	); err != nil {
 		return nil, err
 	}
-	return d, nil
+	return &res, nil
+}
+
+func ifMatchHeader(etag string) http.Header {
+	if etag == "" {
+		etag = "*"
+	}
+	return http.Header{"If-Match": {`"` + etag + `"`}}
 }
 
 // UpdateDevice updates the named device.
 func (c *Client) UpdateDevice(ctx context.Context, device *Device) (*Device, error) {
-	if device == nil {
-		panic("device is nil")
-	}
-	if device.DeviceID == "" {
-		return nil, errEmptyDeviceID
-	}
-	d := &Device{}
-	if err := c.call(ctx, http.MethodPut, "devices/"+url.PathEscape(device.DeviceID), http.Header{
-		"If-Match": {"*"},
-	}, device, d); err != nil {
+	var res Device
+	if err := c.call(
+		ctx,
+		http.MethodPut,
+		devicePath(device.DeviceID),
+		ifMatchHeader(device.ETag),
+		device,
+		&res,
+	); err != nil {
 		return nil, err
 	}
-	return d, nil
+	return &res, nil
 }
 
 // DeleteDevice deletes the named device.
-func (c *Client) DeleteDevice(ctx context.Context, deviceID string) error {
-	if deviceID == "" {
-		return errEmptyDeviceID
-	}
-	return c.call(ctx, http.MethodDelete, "devices/"+url.PathEscape(deviceID), http.Header{
-		"If-Match": {"*"},
-	}, nil, nil)
+func (c *Client) DeleteDevice(ctx context.Context, device *Device) error {
+	return c.call(
+		ctx,
+		http.MethodDelete,
+		devicePath(device.DeviceID),
+		ifMatchHeader(device.ETag),
+		nil,
+		nil,
+	)
 }
 
 // ListDevices lists all registered devices.
 func (c *Client) ListDevices(ctx context.Context) ([]*Device, error) {
-	l := make([]*Device, 0)
-	if err := c.call(ctx, http.MethodGet, "devices", nil, nil, &l); err != nil {
+	var res []*Device
+	if err := c.call(
+		ctx,
+		http.MethodGet,
+		"devices",
+		nil,
+		nil,
+		&res,
+	); err != nil {
 		return nil, err
 	}
-	return l, nil
+	return res, nil
+}
+
+// ListModules list all the registered modules on the named device.
+func (c *Client) ListModules(ctx context.Context, deviceID string) ([]*Module, error) {
+	var res []*Module
+	if err := c.call(
+		ctx,
+		http.MethodGet,
+		"devices/"+url.PathEscape(deviceID)+"/modules",
+		nil,
+		nil,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// CreateModule adds the given module to the registry.
+func (c *Client) CreateModule(ctx context.Context, module *Module) (*Module, error) {
+	var res Module
+	if err := c.call(ctx,
+		http.MethodPut,
+		modulePath(module.DeviceID, module.ModuleID),
+		nil,
+		module,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// GetModule retrieves the named module.
+func (c *Client) GetModule(ctx context.Context, deviceID, moduleID string) (*Module, error) {
+	var res Module
+	if err := c.call(
+		ctx,
+		http.MethodGet,
+		modulePath(deviceID, moduleID),
+		nil,
+		nil,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// UpdateModule updates the given module.
+func (c *Client) UpdateModule(ctx context.Context, module *Module) (*Module, error) {
+	var res Module
+	if err := c.call(
+		ctx,
+		http.MethodPut,
+		modulePath(module.DeviceID, module.ModuleID),
+		ifMatchHeader(module.ETag),
+		module,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// DeleteModule removes the named device module.
+func (c *Client) DeleteModule(ctx context.Context, module *Module) error {
+	return c.call(
+		ctx,
+		http.MethodDelete,
+		modulePath(module.DeviceID, module.ModuleID),
+		ifMatchHeader(module.ETag),
+		nil,
+		nil,
+	)
 }
 
 // GetTwin retrieves the named twin device from the registry.
 func (c *Client) GetTwin(ctx context.Context, deviceID string) (*Twin, error) {
-	if deviceID == "" {
-		return nil, errEmptyDeviceID
-	}
-	t := &Twin{}
-	if err := c.call(ctx, http.MethodGet, "twins/"+url.PathEscape(deviceID), nil, nil, t); err != nil {
+	var res Twin
+	if err := c.call(
+		ctx,
+		http.MethodGet,
+		twinPath(deviceID),
+		nil,
+		nil,
+		&res,
+	); err != nil {
 		return nil, err
 	}
-	return t, nil
+	return &res, nil
+}
+
+// GetModuleTwin retrieves the named module's path.
+func (c *Client) GetModuleTwin(ctx context.Context, module *Module) (*ModuleTwin, error) {
+	var res ModuleTwin
+	if err := c.call(
+		ctx,
+		http.MethodGet,
+		moduleTwinPath(module.DeviceID, module.ModuleID),
+		nil,
+		nil,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 // UpdateTwin updates the named twin desired properties.
-func (c *Client) UpdateTwin(
-	ctx context.Context,
-	deviceID string,
-	twin *Twin,
-	etag string,
-) (*Twin, error) {
-	if deviceID == "" {
-		return nil, errEmptyDeviceID
-	}
-	if twin == nil {
-		panic("twin is nil")
-	}
-	t := &Twin{}
-	if err := c.call(ctx, http.MethodPatch, "twins/"+url.PathEscape(deviceID), http.Header{
-		"If-Match": []string{etag},
-	}, twin, t); err != nil {
+func (c *Client) UpdateTwin(ctx context.Context, twin *Twin) (*Twin, error) {
+	var res Twin
+	if err := c.call(
+		ctx,
+		http.MethodPatch,
+		twinPath(twin.DeviceID),
+		ifMatchHeader(twin.ETag),
+		twin,
+		&res,
+	); err != nil {
 		return nil, err
 	}
-	return t, nil
+	return &res, nil
+}
+
+// UpdateModuleTwin updates the named module twin's desired attributes.
+func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (*ModuleTwin, error) {
+	var res ModuleTwin
+	if err := c.call(
+		ctx,
+		http.MethodPatch,
+		twinPath(twin.DeviceID),
+		ifMatchHeader(twin.ETag),
+		twin,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func devicePath(deviceID string) string {
+	return "devices/" + url.PathEscape(deviceID)
+}
+
+func modulePath(deviceID, moduleID string) string {
+	return "devices/" + url.PathEscape(deviceID) + "/modules/" + url.PathEscape(moduleID)
+}
+
+func twinPath(deviceID string) string {
+	return "twins/" + url.PathEscape(deviceID)
+}
+
+func moduleTwinPath(deviceID, moduleID string) string {
+	return "twins/" + url.PathEscape(deviceID) + "/modules/" + url.PathEscape(moduleID)
 }
 
 // Stats retrieves the device registry statistic.
@@ -846,14 +995,17 @@ func (c *Client) call(
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Authorization", token)
 	req.Header.Set("Request-Id", common.GenID())
-	if headers != nil {
-		for k, v := range headers {
-			if len(v) != 1 {
-				panic("only one value per key allowed")
-			}
-			req.Header.Set(k, v[0])
+	for k, v := range headers {
+		for i := range v {
+			req.Header.Add(k, v[i])
 		}
 	}
+
+	db, err := httputil.DumpRequestOut(req, true)
+	if err != nil {
+		return err
+	}
+	c.logger.Debugf("%s", prefix(db, "> "))
 
 	res, err := c.http.Do(req)
 	if err != nil {
@@ -861,13 +1013,16 @@ func (c *Client) call(
 	}
 	defer res.Body.Close()
 
+	db, err = httputil.DumpResponse(res, true)
+	if err != nil {
+		return err
+	}
+	c.logger.Debugf("%s", prefix(db, "< "))
+
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return err
 	}
-	c.logger.Debugf("%s %s %d:\n%s\n%s",
-		method, uri, res.StatusCode, prefix(b, "> "), prefix(body, "< "),
-	)
 	if v == nil && res.StatusCode == http.StatusNoContent {
 		return nil
 	}
@@ -877,16 +1032,23 @@ func (c *Client) call(
 	return json.Unmarshal(body, v)
 }
 
-func prefix(s []byte, prefix string) string {
-	if len(s) == 0 {
-		return prefix + "[EMPTY]"
+func prefix(b []byte, prefix string) string {
+	off := 0
+	buf := bytes.NewBuffer(make([]byte, 0,
+		len(b)+(bytes.Count(b, []byte{'\n'})*len(prefix)+len(prefix))),
+	)
+	buf.WriteString(prefix)
+	for {
+		i := bytes.Index(b[off:], []byte{'\n'})
+		if i < 0 {
+			buf.Write(b[off:])
+			break
+		}
+		buf.Write(b[off : off+i+1])
+		buf.WriteString(prefix)
+		off += i + 1
 	}
-	b := &bytes.Buffer{}
-	b.WriteString(prefix)
-	if err := json.Indent(b, s, prefix, "\t"); err != nil {
-		return string(s)
-	}
-	return b.String()
+	return buf.String()
 }
 
 // Close closes transport.

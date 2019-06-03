@@ -101,11 +101,9 @@ To enable end-to-end testing in the `tests` directory you need to provide `TEST_
 
 ## TODO
 
-1. Stabilize API.
+1. Device configurations.
 1. HTTP transport (files uploading).
 1. AMQP transport (batch sending, WS).
-1. Grammar check plus better documentation.
-1. Rework Subscribe* functions.
 
 ## Contributing
 

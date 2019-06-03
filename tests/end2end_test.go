@@ -10,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amenzhinsky/iothub/credentials"
-
 	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/iotdevice"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
@@ -28,7 +27,9 @@ func TestEnd2End(t *testing.T) {
 
 	// delete previously created devices that weren't cleaned up
 	for _, did := range []string{"golang-iothub-sas", "golang-iothub-x509"} {
-		_ = sc.DeleteDevice(context.Background(), did)
+		_ = sc.DeleteDevice(context.Background(), &iotservice.Device{
+			DeviceID: did,
+		})
 	}
 
 	// create a device with sas authentication
@@ -107,32 +108,33 @@ func TestEnd2End(t *testing.T) {
 				},
 			} {
 
-				suite := suite
-				mktransport := mktransport
-				t.Run(auth, func(t *testing.T) {
-					for name, test := range map[string]func(*testing.T, ...iotdevice.ClientOption){
-						"DeviceToCloud": testDeviceToCloud,
-						"CloudToDevice": testCloudToDevice,
-						"DirectMethod":  testDirectMethod,
-						"UpdateTwin":    testUpdateTwin,
-						"SubscribeTwin": testSubscribeTwin,
-					} {
-						if suite.test != "*" && suite.test != name {
-							continue
-						}
+				for name, test := range map[string]func(*testing.T, ...iotdevice.ClientOption){
+					"DeviceToCloud": testDeviceToCloud,
+					"CloudToDevice": testCloudToDevice,
+					"DirectMethod":  testDirectMethod,
+					"UpdateTwin":    testUpdateTwin,
+					"SubscribeTwin": testSubscribeTwin,
+					"Modules":       testModules,
+				} {
+					if suite.test != "*" && suite.test != name {
+						continue
+					}
 
-						test := test
-						mktransport := mktransport
+					test := test
+					mktransport := mktransport
+					t.Run(auth, func(t *testing.T) {
 						t.Run(name, func(t *testing.T) {
 							test(t, append(suite.opts, iotdevice.WithTransport(mktransport()))...)
 						})
-					}
-				})
+					})
+				}
 			}
 		})
 	}
 	for _, did := range []string{sasDevice.DeviceID, x509Device.DeviceID} {
-		if err = sc.DeleteDevice(context.Background(), did); err != nil {
+		if err = sc.DeleteDevice(context.Background(), &iotservice.Device{
+			DeviceID: did,
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -389,7 +391,8 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	// TODO: hacky, but reduces flakiness
 	time.Sleep(time.Second)
 
-	twin, err := sc.UpdateTwin(ctx, dc.DeviceID(), &iotservice.Twin{
+	twin, err := sc.UpdateTwin(ctx, &iotservice.Twin{
+		DeviceID: dc.DeviceID(),
 		Tags: map[string]interface{}{
 			"test-device": true,
 		},
@@ -398,7 +401,7 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 				"test-prop": time.Now().UnixNano() / 1000,
 			},
 		},
-	}, "*")
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,6 +462,40 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 			t.Errorf("direct-method result = %v, want %v", v, w)
 		}
 	case err := <-errc:
+		t.Fatal(err)
+	}
+}
+
+func testModules(t *testing.T, opts ...iotdevice.ClientOption) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
+	defer closeDeviceService(t, dc, sc)
+
+	module, err := sc.CreateModule(ctx, &iotservice.Module{
+		DeviceID: dc.DeviceID(),
+		ModuleID: "testmodule",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// there should be only the previously created module
+	modules, err := sc.ListModules(ctx, dc.DeviceID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(modules) != 1 {
+		t.Fatalf("modules number = %d, want %d", len(modules), 1)
+	}
+
+	// check that module exists
+	_, err = sc.GetModule(ctx, dc.DeviceID(), module.ModuleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = sc.DeleteModule(ctx, module); err != nil {
 		t.Fatal(err)
 	}
 }
