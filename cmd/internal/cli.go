@@ -98,7 +98,7 @@ func (r *CLI) Run(ctx context.Context, argv ...string) error {
 		fmt.Fprintf(os.Stderr, commandUsage, sm.Name(), sm.Arg(0), cmd.Help)
 		sc.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "common flags: ")
+		fmt.Fprintln(os.Stderr, "Common flags: ")
 		sm.PrintDefaults()
 	}
 	if cmd.ParseFunc != nil {

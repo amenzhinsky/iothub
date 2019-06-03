@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -369,8 +370,10 @@ func updateDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 }
 
 func mkAuthentication() (*iotservice.Authentication, error) {
-	// TODO: validate that flags only of one type of auth can be passed
 	if primaryThumbprintFlag != "" || secondaryThumbprintFlag != "" {
+		if caFlag {
+			return nil, errors.New("-ca flag cannot be used with x509 flags")
+		}
 		return &iotservice.Authentication{
 			Type: iotservice.AuthSelfSigned,
 			X509Thumbprint: &iotservice.X509Thumbprint{
@@ -383,21 +386,6 @@ func mkAuthentication() (*iotservice.Authentication, error) {
 		return &iotservice.Authentication{
 			Type: iotservice.AuthCA,
 		}, nil
-	}
-
-	// auto-generate keys when no auth type is given
-	var err error
-	if primaryKeyFlag == "" {
-		primaryKeyFlag, err = iotservice.NewSymmetricKey()
-		if err != nil {
-			return nil, err
-		}
-	}
-	if secondaryKeyFlag == "" {
-		secondaryKeyFlag, err = iotservice.NewSymmetricKey()
-		if err != nil {
-			return nil, err
-		}
 	}
 	return &iotservice.Authentication{
 		Type: iotservice.AuthSAS,

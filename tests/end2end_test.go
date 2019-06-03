@@ -20,13 +20,9 @@ import (
 
 func TestEnd2End(t *testing.T) {
 	sc := newServiceClient(t)
-	pk, err := iotservice.NewSymmetricKey()
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	// delete previously created devices that weren't cleaned up
-	for _, did := range []string{"golang-iothub-sas", "golang-iothub-x509"} {
+	for _, did := range []string{"golang-iothub-sas", "golang-iothub-x509", "golang-iothub-ca"} {
 		_ = sc.DeleteDevice(context.Background(), &iotservice.Device{
 			DeviceID: did,
 		})
@@ -36,10 +32,6 @@ func TestEnd2End(t *testing.T) {
 	sasDevice, err := sc.CreateDevice(context.Background(), &iotservice.Device{
 		DeviceID: "golang-iothub-sas",
 		Authentication: &iotservice.Authentication{
-			SymmetricKey: &iotservice.SymmetricKey{
-				PrimaryKey:   pk,
-				SecondaryKey: pk,
-			},
 			Type: iotservice.AuthSAS,
 		},
 	})
@@ -61,6 +53,17 @@ func TestEnd2End(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	caDevice, err := sc.CreateDevice(context.Background(), &iotservice.Device{
+		DeviceID: "golang-iothub-ca",
+		Authentication: &iotservice.Authentication{
+			Type: iotservice.AuthCA,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = caDevice // test that a CA-authenticated device can be created
 
 	dcs, err := sc.DeviceConnectionString(sasDevice, false)
 	if err != nil {
@@ -107,7 +110,6 @@ func TestEnd2End(t *testing.T) {
 					"*",
 				},
 			} {
-
 				for name, test := range map[string]func(*testing.T, ...iotdevice.ClientOption){
 					"DeviceToCloud": testDeviceToCloud,
 					"CloudToDevice": testCloudToDevice,
@@ -122,10 +124,8 @@ func TestEnd2End(t *testing.T) {
 
 					test := test
 					mktransport := mktransport
-					t.Run(auth, func(t *testing.T) {
-						t.Run(name, func(t *testing.T) {
-							test(t, append(suite.opts, iotdevice.WithTransport(mktransport()))...)
-						})
+					t.Run(auth+"/"+name, func(t *testing.T) {
+						test(t, append(suite.opts, iotdevice.WithTransport(mktransport()))...)
 					})
 				}
 			}
