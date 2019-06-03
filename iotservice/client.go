@@ -873,6 +873,88 @@ func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (*Modul
 	return &res, nil
 }
 
+func (c *Client) ListConfigurations(ctx context.Context) ([]*Configuration, error) {
+	var res []*Configuration
+	if err := c.call(
+		ctx,
+		http.MethodGet,
+		"/configurations",
+		nil,
+		nil,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (c *Client) CreateConfiguration(ctx context.Context, config *Configuration) (*Configuration, error) {
+	var res Configuration
+	if err := c.call(
+		ctx,
+		http.MethodPut,
+		configurationPath(config.ID),
+		nil,
+		config,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *Client) GetConfiguration(ctx context.Context, configID string) (*Configuration, error) {
+	var res Configuration
+	if err := c.call(
+		ctx,
+		http.MethodGet,
+		configurationPath(configID),
+		nil,
+		nil,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *Client) UpdateConfiguration(ctx context.Context, config *Configuration) (*Configuration, error) {
+	var res Configuration
+	if err := c.call(
+		ctx,
+		http.MethodPut,
+		configurationPath(config.ID),
+		ifMatchHeader(config.ETag),
+		config,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *Client) DeleteConfiguration(ctx context.Context, config *Configuration) error {
+	return c.call(
+		ctx,
+		http.MethodDelete,
+		configurationPath(config.ID),
+		ifMatchHeader(config.ETag),
+		nil,
+		nil,
+	)
+}
+
+func (c *Client) ApplyConfiguration(ctx context.Context, config *Configuration, deviceID string) error {
+	return c.call(
+		ctx,
+		http.MethodPost,
+		"devices/"+url.PathEscape(deviceID),
+		nil,
+		config,
+		nil,
+	)
+}
+
 func devicePath(deviceID string) string {
 	return "devices/" + url.PathEscape(deviceID)
 }
@@ -887,6 +969,10 @@ func twinPath(deviceID string) string {
 
 func moduleTwinPath(deviceID, moduleID string) string {
 	return "twins/" + url.PathEscape(deviceID) + "/modules/" + url.PathEscape(moduleID)
+}
+
+func configurationPath(configID string) string {
+	return "configurations/" + url.PathEscape(configID)
 }
 
 // Stats retrieves the device registry statistic.

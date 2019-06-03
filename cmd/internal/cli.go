@@ -68,7 +68,11 @@ func (r *CLI) Run(ctx context.Context, argv ...string) error {
 	sm.Usage = func() {
 		fmt.Fprintf(os.Stderr, commonUsage, sm.Name(), r.desc)
 		for _, cmd := range r.cmds {
-			fmt.Fprintf(os.Stderr, "  %-22s %s\n", cmd.Name+","+cmd.Alias, cmd.Desc)
+			s := cmd.Name
+			if cmd.Alias != "" {
+				s += "," + cmd.Alias
+			}
+			fmt.Fprintf(os.Stderr, "  %-25s %s\n", s, cmd.Desc)
 		}
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "Common flags: ")
@@ -121,7 +125,7 @@ func (r *CLI) Run(ctx context.Context, argv ...string) error {
 
 func (r *CLI) findCommand(k string) *Command {
 	for _, cmd := range r.cmds {
-		if cmd.Name == k || cmd.Alias == k {
+		if cmd.Name == k || (cmd.Alias != "" && cmd.Alias == k) {
 			return cmd
 		}
 	}
@@ -147,16 +151,15 @@ func OutputLine(format string) error {
 	return err
 }
 
-// OutputJSON prints indented json to stdout.
-func OutputJSON(v interface{}, compress bool) error {
-	indent := "\t"
-	if compress {
-		indent = ""
+func Output(v interface{}, format string) error {
+	switch format {
+	case "json":
+		return json.NewEncoder(os.Stdout).Encode(v)
+	case "json-pretty":
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "\t")
+		return enc.Encode(v)
+	default:
+		return fmt.Errorf("unknown output format: %q", format)
 	}
-	b, err := json.MarshalIndent(v, "", indent)
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(b))
-	return nil
 }

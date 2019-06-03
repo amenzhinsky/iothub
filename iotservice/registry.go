@@ -107,3 +107,27 @@ type Stats struct {
 	EnabledDeviceCount  int `json:"enabledDeviceCount,omitempty"`
 	TotalDeviceCount    int `json:"totalDeviceCount,omitempty"`
 }
+
+type Configuration struct {
+	ID                 string                `json:"id,omitempty"`
+	SchemaVersion      string                `json:"schemaVersion,omitempty"`
+	Labels             map[string]string     `json:"labels,omitempty"`
+	Content            *ConfigurationContent `json:"configuration,omitempty"`
+	TargetCondition    string                `json:"targetCondition,omitempty"`
+	CreatedTimeUTC     string                `json:"createdTimeUtc,omitempty"`
+	LastUpdatedTimeUTC string                `json:"lastUpdatedTimeUtc,omitempty"`
+	Priority           int                   `json:"priority,omitempty"`
+	SystemMetrics      *ConfigurationMetrics `json:"systemMetrics,omitempty"`
+	Metrics            *ConfigurationMetrics `json:"metrics,omitempty"`
+	ETag               string                `json:"etag,omitempty"`
+}
+
+type ConfigurationContent struct {
+	ModulesContent map[string]interface{} `json:"modulesContent,omitempty"`
+	DeviceContent  map[string]interface{} `json:"deviceContent,omitempty"`
+}
+
+type ConfigurationMetrics struct {
+	Results map[string]interface{} `json:"results,omitempty"`
+	Queries map[string]interface{} `json:"queries,omitempty"`
+}

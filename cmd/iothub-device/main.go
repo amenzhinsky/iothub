@@ -30,7 +30,7 @@ var transports = map[string]func() (transport.Transport, error){
 
 var (
 	debugFlag     bool
-	compressFlag  bool
+	formatFlag    string
 	quiteFlag     bool
 	transportFlag string
 	midFlag       string
@@ -59,7 +59,7 @@ $IOTHUB_DEVICE_CONNECTION_STRING environment variable is required unless you use
 func run() error {
 	cli, err := internal.New(help, func(f *flag.FlagSet) {
 		f.BoolVar(&debugFlag, "debug", false, "enable debug mode")
-		f.BoolVar(&compressFlag, "compress", false, "compress data (remove JSON indentations)")
+		f.StringVar(&formatFlag, "format", "json", "data output format <json|json-pretty>")
 		f.StringVar(&transportFlag, "transport", "mqtt", "transport to use <mqtt|amqp|http>")
 		f.StringVar(&tlsCertFlag, "tls-cert", "", "path to x509 cert file")
 		f.StringVar(&tlsKeyFlag, "tls-key", "", "path to x509 key file")
@@ -184,7 +184,7 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) erro
 		return err
 	}
 	for msg := range sub.C() {
-		if err = internal.OutputJSON(msg, compressFlag); err != nil {
+		if err = internal.Output(msg, formatFlag); err != nil {
 			return err
 		}
 	}
@@ -200,7 +200,7 @@ func watchTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error 
 		return err
 	}
 	for twin := range sub.C() {
-		if err = internal.OutputJSON(twin, compressFlag); err != nil {
+		if err = internal.Output(twin, formatFlag); err != nil {
 			return err
 		}
 	}

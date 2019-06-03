@@ -17,8 +17,8 @@ import (
 // globally accessible by command handlers, is it a good idea?
 var (
 	// common
-	debugFlag    bool
-	compressFlag bool
+	debugFlag  bool
+	formatFlag string
 
 	// send
 	uidFlag             string
@@ -64,7 +64,7 @@ The $IOTHUB_SERVICE_CONNECTION_STRING environment variable is required for authe
 func run() error {
 	cli, err := internal.New(help, func(f *flag.FlagSet) {
 		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
-		f.BoolVar(&compressFlag, "compress", false, "compress data (remove JSON indentations)")
+		f.StringVar(&formatFlag, "format", "json", "data output format <json|json-pretty>")
 	}, []*internal.Command{
 		{
 			Name:    "send",
@@ -244,6 +244,53 @@ func run() error {
 			},
 		},
 		{
+			Name:    "configurations",
+			Alias:   "lc",
+			Desc:    "list all configurations",
+			Handler: wrap(listConfigurations),
+		},
+		{
+			Name:    "create-configuration",
+			Alias:   "",
+			Help:    "", // TODO
+			Desc:    "add a configuration to the registry",
+			Handler: wrap(createConfiguration),
+		},
+		{
+			Name:    "configuration",
+			Alias:   "",
+			Help:    "CONFIGURATION_ID",
+			Desc:    "retrieve the named configuration",
+			Handler: wrap(getConfiguration),
+		},
+		{
+			Name:    "update-configuration",
+			Alias:   "",
+			Help:    "",
+			Desc:    "update the named configuration",
+			Handler: wrap(updateConfiguration),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+			},
+		},
+		{
+			Name:    "delete-configuration",
+			Alias:   "",
+			Help:    "CONFIGURATION_ID",
+			Desc:    "delete the named configuration by id",
+			Handler: wrap(deleteConfiguration),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+			},
+		},
+		{
+			Name:    "apply-configuration",
+			Alias:   "",
+			Help:    "DEVICE_ID",
+			Desc:    "",
+			Handler: wrap(applyConfiguration),
+		},
+		{
 			Name:    "stats",
 			Alias:   "st",
 			Desc:    "get statistics about the devices",
@@ -312,22 +359,14 @@ func getDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error
 	if f.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
-	d, err := c.GetDevice(ctx, f.Arg(0))
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(d, compressFlag)
+	return output(c.GetDevice(ctx, f.Arg(0)))
 }
 
 func listDevices(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-	d, err := c.ListDevices(ctx)
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(d, compressFlag)
+	return output(c.ListDevices(ctx))
 }
 
 func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -338,14 +377,10 @@ func createDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 	if err != nil {
 		return err
 	}
-	d, err := c.CreateDevice(ctx, &iotservice.Device{
+	return output(c.CreateDevice(ctx, &iotservice.Device{
 		DeviceID:       f.Arg(0),
 		Authentication: a,
-	})
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(d, compressFlag)
+	}))
 }
 
 func updateDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -356,17 +391,13 @@ func updateDevice(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 	if err != nil {
 		return err
 	}
-	d, err := c.UpdateDevice(ctx, &iotservice.Device{
+	return output(c.UpdateDevice(ctx, &iotservice.Device{
 		DeviceID:       f.Arg(0),
 		Authentication: a,
 		ETag:           etagFlag,
 
 		// TODO: other fields
-	})
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(d, compressFlag)
+	}))
 }
 
 func mkAuthentication() (*iotservice.Authentication, error) {
@@ -410,11 +441,7 @@ func listModules(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) err
 	if f.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
-	modules, err := c.ListModules(ctx, f.Arg(0))
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(modules, compressFlag)
+	return output(c.ListModules(ctx, f.Arg(0)))
 }
 
 func createModule(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -425,26 +452,18 @@ func createModule(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 	if err != nil {
 		return err
 	}
-	module, err := c.CreateModule(ctx, &iotservice.Module{
+	return output(c.CreateModule(ctx, &iotservice.Module{
 		DeviceID:       f.Arg(0),
 		ModuleID:       f.Arg(1),
 		Authentication: a,
-	})
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(module, compressFlag)
+	}))
 }
 
 func getModule(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 2 {
 		return internal.ErrInvalidUsage
 	}
-	module, err := c.GetModule(ctx, f.Arg(0), f.Arg(1))
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(module, compressFlag)
+	return output(c.GetModule(ctx, f.Arg(0), f.Arg(1)))
 }
 
 func deleteModule(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -466,54 +485,89 @@ func updateModule(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) er
 	if err != nil {
 		return err
 	}
-	module, err := c.UpdateModule(ctx, &iotservice.Module{
+	return output(c.UpdateModule(ctx, &iotservice.Module{
 		DeviceID:       f.Arg(0),
 		ModuleID:       f.Arg(1),
 		ETag:           etagFlag,
 		Authentication: a,
 
 		// TODO: other fields
-	})
-	if err != nil {
-		return err
+	}))
+}
+
+func listConfigurations(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 0 {
+		return internal.ErrInvalidUsage
 	}
-	return internal.OutputJSON(module, compressFlag)
+	return output(c.ListConfigurations(ctx))
+}
+
+func createConfiguration(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	return output(c.CreateConfiguration(ctx, &iotservice.Configuration{
+		ID:            f.Arg(0),
+		SchemaVersion: "1.0", // TODO
+		Priority:      10,    // TODO
+	}))
+}
+
+func getConfiguration(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	return output(c.GetConfiguration(ctx, f.Arg(0)))
+}
+
+func updateConfiguration(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	return output(c.UpdateConfiguration(ctx, &iotservice.Configuration{
+		ETag: etagFlag,
+		// TODO
+	}))
+}
+
+func deleteConfiguration(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	return c.DeleteConfiguration(ctx, &iotservice.Configuration{
+		ID:   f.Arg(0),
+		ETag: etagFlag,
+	})
+}
+
+func applyConfiguration(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	return c.ApplyConfiguration(ctx, &iotservice.Configuration{
+		// TODO
+	}, f.Arg(0))
 }
 
 func stats(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-	s, err := c.Stats(ctx)
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(s, compressFlag)
+	return output(c.Stats(ctx))
 }
 
 func getTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
-	t, err := c.GetTwin(ctx, f.Arg(0))
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(t, compressFlag)
+	return output(c.GetTwin(ctx, f.Arg(0)))
 }
 
 func getModuleTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 2 {
 		return internal.ErrInvalidUsage
 	}
-	twin, err := c.GetModuleTwin(ctx, &iotservice.Module{
+	return output(c.GetModuleTwin(ctx, &iotservice.Module{
 		DeviceID: f.Arg(0),
 		ModuleID: f.Arg(1),
-	})
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(twin, compressFlag)
+	}))
 }
 
 func updateTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -524,15 +578,11 @@ func updateTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) erro
 	if err != nil {
 		return err
 	}
-	twin, err := c.UpdateTwin(ctx, &iotservice.Twin{
+	return output(c.UpdateTwin(ctx, &iotservice.Twin{
 		DeviceID:   f.Arg(0),
 		ETag:       etagFlag,
 		Properties: p,
-	})
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(twin, compressFlag)
+	}))
 }
 
 func updateModuleTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -543,15 +593,11 @@ func updateModuleTwin(ctx context.Context, f *flag.FlagSet, c *iotservice.Client
 	if err != nil {
 		return err
 	}
-	twin, err := c.UpdateModuleTwin(ctx, &iotservice.ModuleTwin{
+	return output(c.UpdateModuleTwin(ctx, &iotservice.ModuleTwin{
 		DeviceID:   f.Arg(0),
 		ETag:       etagFlag,
 		Properties: p,
-	})
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(twin, compressFlag)
+	}))
 }
 
 func mkProperties(argv []string) (*iotservice.Properties, error) {
@@ -580,14 +626,10 @@ func call(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if err := json.Unmarshal([]byte(f.Arg(2)), &v); err != nil {
 		return err
 	}
-	r, err := c.Call(ctx, f.Arg(0), f.Arg(1), v,
+	return output(c.Call(ctx, f.Arg(0), f.Arg(1), v,
 		iotservice.WithCallConnectTimeout(connectTimeoutFlag),
 		iotservice.WithCallResponseTimeout(responseTimeoutFlag),
-	)
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(r, compressFlag)
+	))
 }
 
 func send(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -629,7 +671,7 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) err
 		return watchEventHubEvents(ctx, ehcsFlag, ehcgFlag)
 	}
 	return c.SubscribeEvents(ctx, func(msg *iotservice.Event) error {
-		return internal.OutputJSON(msg, compressFlag)
+		return output(msg, nil)
 	})
 }
 
@@ -639,7 +681,7 @@ func watchEventHubEvents(ctx context.Context, cs, group string) error {
 		return err
 	}
 	return c.Subscribe(ctx, func(m *eventhub.Event) error {
-		return internal.OutputJSON(iotservice.FromAMQPMessage(m.Message), compressFlag)
+		return output(iotservice.FromAMQPMessage(m.Message), nil)
 	},
 		eventhub.WithSubscribeConsumerGroup(group),
 		eventhub.WithSubscribeSince(time.Now()),
@@ -652,7 +694,7 @@ func watchFeedback(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) e
 	}
 	errc := make(chan error, 1)
 	if err := c.SubscribeFeedback(ctx, func(f *iotservice.Feedback) {
-		if err := internal.OutputJSON(f, compressFlag); err != nil {
+		if err := output(f, nil); err != nil {
 			errc <- err
 		}
 	}); err != nil {
@@ -665,33 +707,21 @@ func jobs(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-	v, err := c.ListJobs(ctx)
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(v, compressFlag)
+	return output(c.ListJobs(ctx))
 }
 
 func job(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
-	v, err := c.GetJob(ctx, f.Arg(0))
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(v, compressFlag)
+	return output(c.GetJob(ctx, f.Arg(0)))
 }
 
 func cancelJob(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 	if f.NArg() != 1 {
 		return internal.ErrInvalidUsage
 	}
-	v, err := c.CancelJob(ctx, f.Arg(0))
-	if err != nil {
-		return err
-	}
-	return internal.OutputJSON(v, compressFlag)
+	return output(c.CancelJob(ctx, f.Arg(0)))
 }
 
 func connectionString(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
@@ -723,4 +753,11 @@ func sas(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
 		return err
 	}
 	return internal.OutputLine(sas)
+}
+
+func output(v interface{}, err error) error {
+	if err != nil {
+		return err
+	}
+	return internal.Output(v, formatFlag)
 }
