@@ -59,7 +59,7 @@ $IOTHUB_DEVICE_CONNECTION_STRING environment variable is required unless you use
 func run() error {
 	cli, err := internal.New(help, func(f *flag.FlagSet) {
 		f.BoolVar(&debugFlag, "debug", false, "enable debug mode")
-		f.StringVar(&formatFlag, "format", "json", "data output format <json|json-pretty>")
+		f.StringVar(&formatFlag, "format", "json-pretty", "data output format <json|json-pretty>")
 		f.StringVar(&transportFlag, "transport", "mqtt", "transport to use <mqtt|amqp|http>")
 		f.StringVar(&tlsCertFlag, "tls-cert", "", "path to x509 cert file")
 		f.StringVar(&tlsKeyFlag, "tls-key", "", "path to x509 key file")

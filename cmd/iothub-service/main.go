@@ -64,7 +64,7 @@ The $IOTHUB_SERVICE_CONNECTION_STRING environment variable is required for authe
 func run() error {
 	cli, err := internal.New(help, func(f *flag.FlagSet) {
 		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
-		f.StringVar(&formatFlag, "format", "json", "data output format <json|json-pretty>")
+		f.StringVar(&formatFlag, "format", "json-pretty", "data output format <json|json-pretty>")
 	}, []*internal.Command{
 		{
 			Name:    "send",
@@ -666,7 +666,6 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) err
 	if f.NArg() != 0 {
 		return internal.ErrInvalidUsage
 	}
-
 	if ehcsFlag != "" {
 		return watchEventHubEvents(ctx, ehcsFlag, ehcgFlag)
 	}
