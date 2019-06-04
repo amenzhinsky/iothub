@@ -1,12 +1,10 @@
 package internal
 
 import (
-	"context"
 	"flag"
 	"io"
 	"io/ioutil"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -15,29 +13,26 @@ func TestRun(t *testing.T) {
 	commonFlag := ""
 	commandFlag := ""
 
-	cli, err := New("test desc",
+	cli := New("test desc",
 		func(f *flag.FlagSet) {
 			f.StringVar(&commonFlag, "c", "", "common flag")
 		}, []*Command{
 			{
-				"test", "t",
-				"test A B",
-				"just a test",
-				func(_ context.Context, f *flag.FlagSet) error {
-					return OutputLine(strings.Join(f.Args(), ""))
+				Name: "test",
+				Args: []string{"A", "B", "C"},
+				Desc: "just a test",
+				Handler: func(args []string) error {
+					return OutputLine(strings.Join(args, ""))
 				},
-				func(fs *flag.FlagSet) {
+				ParseFunc: func(fs *flag.FlagSet) {
 					fs.StringVar(&commandFlag, "s", "", "command flag")
 				},
 			},
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	g, err := capture(func() error {
-		return cli.Run(context.Background(), "run", "-c", "c", "test", "-s", "s", "a", "b", "c")
+		return cli.Run([]string{"run", "-c", "c", "test", "-s", "s", "a", "b", "c"})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -74,20 +69,4 @@ func capture(fn func() error) ([]byte, error) {
 		return nil, err
 	}
 	return ioutil.ReadAll(f)
-}
-
-func TestArgsToMap(t *testing.T) {
-	for _, s := range []struct {
-		args []string
-		want map[string]string
-	}{
-		{[]string{"a", "b", "c", "d"}, map[string]string{"a": "b", "c": "d"}},
-		{[]string{}, map[string]string{}},
-		{[]string{"a"}, nil}, // errors
-	} {
-		m, _ := ArgsToMap(s.args)
-		if !reflect.DeepEqual(m, s.want) {
-			t.Errorf("m, _ = ArgsToMap(%v); s = %v, want %v", s.args, m, s.want)
-		}
-	}
 }

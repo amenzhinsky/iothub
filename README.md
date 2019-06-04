@@ -6,8 +6,6 @@ This project is in active development state and if you decided to use it anyway,
 
 Only **MQTT** is available for device-to-cloud communication at the moment.
 
-See [TODO](https://github.com/amenzhinsky/iothub#todo) list to learn what is missing in the current implementation.
-
 ## Examples
 
 Send a message from an IoT device:
@@ -101,7 +99,7 @@ To enable end-to-end testing in the `tests` directory you need to provide `TEST_
 
 ## TODO
 
-1. Device configurations.
+1. Schedule twin updates and device method calls.
 1. HTTP transport (files uploading).
 1. AMQP transport (batch sending, WS).
 

@@ -1,12 +1,12 @@
 package internal
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // ErrInvalidUsage when returned by a Handler the usage message is displayed.
@@ -15,15 +15,14 @@ var ErrInvalidUsage = errors.New("invalid usage")
 // Command is a cli subcommand.
 type Command struct {
 	Name      string
-	Alias     string
-	Help      string
+	Args      []string
 	Desc      string
 	Handler   HandlerFunc
 	ParseFunc func(*flag.FlagSet)
 }
 
 // HandlerFunc is a subcommand handler, fs is already parsed.
-type HandlerFunc func(ctx context.Context, fs *flag.FlagSet) error
+type HandlerFunc func(args []string) error
 
 // FlagFunc prepares fs for parsing, setting flags.
 type FlagFunc func(fs *flag.FlagSet)
@@ -36,19 +35,13 @@ type CLI struct {
 }
 
 // New creates new cli executor.
-func New(desc string, f FlagFunc, cmds []*Command) (*CLI, error) {
-	r := &CLI{
+func New(desc string, f FlagFunc, cmds []*Command) *CLI {
+	return &CLI{
 		desc: desc,
 		cmds: cmds,
 		main: f,
 	}
-	return r, nil
 }
-
-const (
-	commonUsage  = "Usage: %s [flags...] {COMMAND} [flags...] [arg...]\n\n%s\n\nCommands:\n"
-	commandUsage = "Usage: %s [flags...] %s [flags...] %s\n\nFlags:\n"
-)
 
 // Run runs one or the given commands based on argv.
 //
@@ -56,7 +49,7 @@ const (
 //
 // If ErrInvalidUsage is returned there's no need to print it,
 // the usage message is already sent to STDERR.
-func (r *CLI) Run(ctx context.Context, argv ...string) error {
+func (r *CLI) Run(argv []string) error {
 	if len(argv) == 0 {
 		panic("empty argv")
 	}
@@ -66,16 +59,17 @@ func (r *CLI) Run(ctx context.Context, argv ...string) error {
 		r.main(sm)
 	}
 	sm.Usage = func() {
-		fmt.Fprintf(os.Stderr, commonUsage, sm.Name(), r.desc)
+		fmt.Fprintf(os.Stderr, `Usage: %s [option...] COMMAND [option...] [arg...]
+
+%s
+
+Commands:
+`, sm.Name(), r.desc)
 		for _, cmd := range r.cmds {
-			s := cmd.Name
-			if cmd.Alias != "" {
-				s += "," + cmd.Alias
-			}
-			fmt.Fprintf(os.Stderr, "  %-25s %s\n", s, cmd.Desc)
+			fmt.Fprintf(os.Stderr, "  %-25s %s\n", cmd.Name, cmd.Desc)
 		}
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Common flags: ")
+		fmt.Fprintln(os.Stderr, "Common options: ")
 		sm.PrintDefaults()
 	}
 
@@ -98,15 +92,22 @@ func (r *CLI) Run(ctx context.Context, argv ...string) error {
 	}
 
 	sc := flag.NewFlagSet(sm.Arg(0), flag.ContinueOnError)
-	sc.Usage = func() {
-		fmt.Fprintf(os.Stderr, commandUsage, sm.Name(), sm.Arg(0), cmd.Help)
-		sc.PrintDefaults()
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Common flags: ")
-		sm.PrintDefaults()
-	}
 	if cmd.ParseFunc != nil {
 		cmd.ParseFunc(sc)
+	}
+	sc.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [option...] %s ", sm.Name(), sm.Arg(0))
+		if hasFlags(sc) {
+			fmt.Fprintf(os.Stderr, "[option...] ")
+		}
+		fmt.Fprintln(os.Stderr, strings.Join(cmd.Args, " "))
+		if hasFlags(sc) {
+			fmt.Fprintln(os.Stderr, "\nOptions:")
+			sc.PrintDefaults()
+		}
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Common options: ")
+		sm.PrintDefaults()
 	}
 	if err := sc.Parse(sm.Args()[1:]); err != nil {
 		if err == flag.ErrHelp {
@@ -114,7 +115,11 @@ func (r *CLI) Run(ctx context.Context, argv ...string) error {
 		}
 		return err
 	}
-	if err := cmd.Handler(ctx, sc); err != nil {
+	if len(cmd.Args) != sc.NArg() {
+		sc.Usage()
+		return ErrInvalidUsage
+	}
+	if err := cmd.Handler(sc.Args()); err != nil {
 		if err == ErrInvalidUsage {
 			sc.Usage()
 		}
@@ -123,26 +128,21 @@ func (r *CLI) Run(ctx context.Context, argv ...string) error {
 	return nil
 }
 
+func hasFlags(fs *flag.FlagSet) bool {
+	var has bool
+	fs.VisitAll(func(f *flag.Flag) {
+		has = true
+	})
+	return has
+}
+
 func (r *CLI) findCommand(k string) *Command {
 	for _, cmd := range r.cmds {
-		if cmd.Name == k || (cmd.Alias != "" && cmd.Alias == k) {
+		if cmd.Name == k {
 			return cmd
 		}
 	}
 	return nil
-}
-
-// sliceToMap converts sequence of arguments into a key-value map.
-// [a, b, c, d] => {a: b, c: d} or errors when number of args is not even.
-func ArgsToMap(s []string) (map[string]string, error) {
-	if len(s)%2 != 0 {
-		return nil, errors.New("number of key-value arguments must be even")
-	}
-	m := make(map[string]string, len(s)%2)
-	for i := 0; i < len(s); i += 2 {
-		m[s[i]] = s[i+1]
-	}
-	return m, nil
 }
 
 // OutputLine prints the given string to stdout appending a new-line char.

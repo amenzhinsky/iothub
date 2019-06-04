@@ -11,16 +11,30 @@ type Result struct {
 	Payload map[string]interface{} `json:"payload,omitempty"`
 }
 
+type DeviceStatus string
+
+const (
+	Enabled  DeviceStatus = "enabled"
+	Disabled              = "disabled"
+)
+
+type ConnectionState string
+
+const (
+	Connected    ConnectionState = "Connected"
+	Disconnected                 = "Disconnected"
+)
+
 type Device struct {
 	DeviceID                   string                 `json:"deviceId,omitempty"`
 	GenerationID               string                 `json:"generationId,omitempty"`
 	ETag                       string                 `json:"etag,omitempty"`
-	ConnectionState            string                 `json:"connectionState,omitempty"`
-	Status                     string                 `json:"status,omitempty"`
+	ConnectionState            ConnectionState        `json:"connectionState,omitempty"`
+	Status                     DeviceStatus           `json:"status,omitempty"`
 	StatusReason               string                 `json:"statusReason,omitempty"`
-	ConnectionStateUpdatedTime MicrosoftTime          `json:"connectionStateUpdatedTime,omitempty"`
-	StatusUpdatedTime          MicrosoftTime          `json:"statusUpdatedTime,omitempty"`
-	LastActivityTime           MicrosoftTime          `json:"lastActivityTime,omitempty"`
+	ConnectionStateUpdatedTime *MicrosoftTime         `json:"connectionStateUpdatedTime,omitempty"`
+	StatusUpdatedTime          *MicrosoftTime         `json:"statusUpdatedTime,omitempty"`
+	LastActivityTime           *MicrosoftTime         `json:"lastActivityTime,omitempty"`
 	CloudToDeviceMessageCount  uint                   `json:"cloudToDeviceMessageCount,omitempty"`
 	Authentication             *Authentication        `json:"authentication,omitempty"`
 	Capabilities               map[string]interface{} `json:"capabilities,omitempty"`
@@ -31,9 +45,9 @@ type Module struct {
 	DeviceID                   string          `json:"deviceId,omitempty"`
 	GenerationID               string          `json:"generationId,omitempty"`
 	ETag                       string          `json:"etag,omitempty"`
-	ConnectionState            string          `json:"connectionState,omitempty"`
-	ConnectionStateUpdatedTime MicrosoftTime   `json:"connectionStateUpdatedTime,omitempty"`
-	LastActivityTime           MicrosoftTime   `json:"lastActivityTime,omitempty"`
+	ConnectionState            ConnectionState `json:"connectionState,omitempty"`
+	ConnectionStateUpdatedTime *MicrosoftTime  `json:"connectionStateUpdatedTime,omitempty"`
+	LastActivityTime           *MicrosoftTime  `json:"lastActivityTime,omitempty"`
 	CloudToDeviceMessageCount  uint            `json:"cloudToDeviceMessageCount,omitempty"`
 	Authentication             *Authentication `json:"authentication,omitempty"`
 	ManagedBy                  string          `json:"managedBy,omitempty"`
@@ -45,7 +59,7 @@ type Authentication struct {
 	Type           AuthType        `json:"type,omitempty"`
 }
 
-// AuthType device authentication type.
+// AuthType is device authentication type.
 type AuthType string
 
 const (
@@ -73,11 +87,11 @@ type Twin struct {
 	DeviceID                  string                 `json:"deviceId,omitempty"`
 	ETag                      string                 `json:"etag,omitempty"`
 	DeviceETag                string                 `json:"deviceEtag,omitempty"`
-	Status                    string                 `json:"status,omitempty"`
+	Status                    DeviceStatus           `json:"status,omitempty"`
 	StatusReason              string                 `json:"statusReason,omitempty"`
-	StatusUpdateTime          MicrosoftTime          `json:"statusUpdateTime,omitempty"`
-	ConnectionState           string                 `json:"connectionState,omitempty"`
-	LastActivityTime          MicrosoftTime          `json:"lastActivityTime,omitempty"`
+	StatusUpdateTime          *MicrosoftTime         `json:"statusUpdateTime,omitempty"`
+	ConnectionState           ConnectionState        `json:"connectionState,omitempty"`
+	LastActivityTime          *MicrosoftTime         `json:"lastActivityTime,omitempty"`
 	CloudToDeviceMessageCount uint                   `json:"cloudToDeviceMessageCount,omitempty"`
 	AuthenticationType        string                 `json:"authenticationType,omitempty"`
 	X509Thumbprint            *X509Thumbprint        `json:"x509Thumbprint,omitempty"`
@@ -92,10 +106,10 @@ type ModuleTwin struct {
 	ModuleID           string          `json:"moduleId,omitempty"`
 	ETag               string          `json:"etag,omitempty"`
 	DeviceETag         string          `json:"deviceEtag,omitempty"`
-	Status             string          `json:"status,omitempty"`
-	StatusUpdateTime   MicrosoftTime   `json:"statusUpdateTime,omitempty"`
-	ConnectionState    string          `json:"connectionState,omitempty"`
-	LastActivityTime   MicrosoftTime   `json:"lastActivityTime,omitempty"`
+	Status             DeviceStatus    `json:"status,omitempty"`
+	StatusUpdateTime   *MicrosoftTime  `json:"statusUpdateTime,omitempty"`
+	ConnectionState    ConnectionState `json:"connectionState,omitempty"`
+	LastActivityTime   *MicrosoftTime  `json:"lastActivityTime,omitempty"`
 	AuthenticationType string          `json:"authenticationType,omitempty"`
 	X509Thumbprint     *X509Thumbprint `json:"x509Thumbprint,omitempty"`
 	Version            uint            `json:"version,omitempty"`
@@ -119,8 +133,8 @@ type Configuration struct {
 	Labels             map[string]string     `json:"labels,omitempty"`
 	Content            *ConfigurationContent `json:"content,omitempty"`
 	TargetCondition    string                `json:"targetCondition,omitempty"`
-	CreatedTimeUTC     time.Time             `json:"createdTimeUtc,omitempty"`
-	LastUpdatedTimeUTC time.Time             `json:"lastUpdatedTimeUtc,omitempty"`
+	CreatedTimeUTC     *time.Time            `json:"createdTimeUtc,omitempty"`
+	LastUpdatedTimeUTC *time.Time            `json:"lastUpdatedTimeUtc,omitempty"`
 	Priority           uint                  `json:"priority,omitempty"`
 	SystemMetrics      *ConfigurationMetrics `json:"systemMetrics,omitempty"`
 	Metrics            *ConfigurationMetrics `json:"metrics,omitempty"`
@@ -128,8 +142,8 @@ type Configuration struct {
 }
 
 type ConfigurationContent struct {
-	ModulesContent map[string]map[string]interface{} `json:"modulesContent,omitempty"`
-	DeviceContent  map[string]map[string]interface{} `json:"deviceContent,omitempty"`
+	ModulesContent map[string]interface{} `json:"modulesContent,omitempty"`
+	DeviceContent  map[string]interface{} `json:"deviceContent,omitempty"`
 }
 
 type ConfigurationMetrics struct {
@@ -142,6 +156,8 @@ type Query struct {
 	PageSize uint   `json:"-"`
 }
 
+// MicrosoftTime is a hack to parse time json attributes that
+// don't follow RFC3339 and don't put timezone at the end of timestamp.
 type MicrosoftTime struct {
 	time.Time
 }

@@ -117,6 +117,7 @@ func TestEnd2End(t *testing.T) {
 					"UpdateTwin":    testUpdateTwin,
 					"SubscribeTwin": testSubscribeTwin,
 					"Modules":       testModules,
+					"Query":         testQuery,
 				} {
 					if suite.test != "*" && suite.test != name {
 						continue
@@ -497,6 +498,30 @@ func testModules(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 	if err = sc.DeleteModule(ctx, module); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func testQuery(t *testing.T, opts ...iotdevice.ClientOption) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
+	defer closeDeviceService(t, dc, sc)
+
+	num := 0
+	if err := sc.Query(ctx,
+		&iotservice.Query{
+			Query:    "select * from devices",
+			PageSize: 1,
+		},
+		func(v map[string]interface{}) error {
+			num++
+			return nil
+		}); err != nil {
+		t.Fatal(err)
+	}
+	if num == 0 {
+		t.Fatal("query didn't find anything")
 	}
 }
 

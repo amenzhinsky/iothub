@@ -42,6 +42,10 @@ var (
 	tlsKeyFlag   string
 	deviceIDFlag string
 	hostnameFlag string
+
+	propsFlag map[string]string
+
+	twinPropsFlag map[string]interface{}
 )
 
 func main() {
@@ -57,7 +61,8 @@ const help = `iothub-device helps iothub devices to communicate with the cloud.
 $IOTHUB_DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
 
 func run() error {
-	cli, err := internal.New(help, func(f *flag.FlagSet) {
+	ctx := context.Background()
+	return internal.New(help, func(f *flag.FlagSet) {
 		f.BoolVar(&debugFlag, "debug", false, "enable debug mode")
 		f.StringVar(&formatFlag, "format", "json-pretty", "data output format <json|json-pretty>")
 		f.StringVar(&transportFlag, "transport", "mqtt", "transport to use <mqtt|amqp|http>")
@@ -68,60 +73,54 @@ func run() error {
 	}, []*internal.Command{
 		{
 			Name:    "send",
-			Alias:   "s",
-			Help:    "PAYLOAD [KEY VALUE]...",
+			Args:    []string{"PAYLOAD"},
 			Desc:    "send a message to the cloud (D2C)",
-			Handler: wrap(send),
+			Handler: wrap(ctx, send),
 			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&midFlag, "mid", "", "identifier for the message")
 				f.StringVar(&cidFlag, "cid", "", "message identifier in a request-reply")
 				f.IntVar(&qosFlag, "qos", mqtt.DefaultQoS, "QoS value, 0 or 1 (mqtt only)")
+				f.Var((*internal.StringsMapFlag)(&propsFlag), "prop", "custom property, key=value")
 			},
 		},
 		{
 			Name:    "watch-events",
-			Alias:   "we",
 			Desc:    "subscribe to messages sent from the cloud (C2D)",
-			Handler: wrap(watchEvents),
+			Handler: wrap(ctx, watchEvents),
 		},
 		{
 			Name:    "watch-twin",
-			Alias:   "wt",
 			Desc:    "subscribe to desired twin state updates",
-			Handler: wrap(watchTwin),
+			Handler: wrap(ctx, watchTwin),
 		},
 		{
 			Name:    "direct-method",
-			Alias:   "dm",
-			Help:    "NAME",
+			Args:    []string{"NAME"},
 			Desc:    "handle the named direct method, reads responses from STDIN",
-			Handler: wrap(directMethod),
+			Handler: wrap(ctx, directMethod),
 			ParseFunc: func(f *flag.FlagSet) {
 				f.BoolVar(&quiteFlag, "quite", false, "disable additional hints")
 			},
 		},
 		{
 			Name:    "twin-state",
-			Alias:   "ts",
 			Desc:    "retrieve desired and reported states",
-			Handler: wrap(twin),
+			Handler: wrap(ctx, twin),
 		},
 		{
 			Name:    "update-twin",
-			Alias:   "ut",
-			Help:    "[KEY VALUE]...",
+			Args:    []string{"[KEY VALUE]..."},
 			Desc:    "updates the twin device deported state, null means delete the key",
-			Handler: wrap(updateTwin),
+			Handler: wrap(ctx, updateTwin),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.Var((*internal.JSONMapFlag)(&twinPropsFlag), "prop", "custom property, key=value")
+			},
 		},
-	})
-	if err != nil {
-		return err
-	}
-	return cli.Run(context.Background(), os.Args...)
+	}).Run(os.Args)
 }
 
-func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) internal.HandlerFunc {
-	return func(ctx context.Context, f *flag.FlagSet) error {
+func wrap(ctx context.Context, fn func(context.Context, *iotdevice.Client, []string) error) internal.HandlerFunc {
+	return func(args []string) error {
 		mk, ok := transports[transportFlag]
 		if !ok {
 			return fmt.Errorf("unknown transport %q", transportFlag)
@@ -151,34 +150,20 @@ func wrap(fn func(context.Context, *flag.FlagSet, *iotdevice.Client) error) inte
 		if err := c.Connect(ctx); err != nil {
 			return err
 		}
-		return fn(ctx, f, c)
+		return fn(ctx, c, args)
 	}
 }
 
-func send(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
-	if f.NArg() < 1 {
-		return internal.ErrInvalidUsage
-	}
-	var props map[string]string
-	if f.NArg() > 1 {
-		var err error
-		props, err = internal.ArgsToMap(f.Args()[1:])
-		if err != nil {
-			return err
-		}
-	}
-	return c.SendEvent(ctx, []byte(f.Arg(0)),
-		iotdevice.WithSendProperties(props),
+func send(ctx context.Context, c *iotdevice.Client, args []string) error {
+	return c.SendEvent(ctx, []byte(args[0]),
+		iotdevice.WithSendProperties(propsFlag),
 		iotdevice.WithSendMessageID(midFlag),
 		iotdevice.WithSendCorrelationID(cidFlag),
 		iotdevice.WithSendQoS(qosFlag),
 	)
 }
 
-func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
-	if f.NArg() != 0 {
-		return internal.ErrInvalidUsage
-	}
+func watchEvents(ctx context.Context, c *iotdevice.Client, args []string) error {
 	sub, err := c.SubscribeEvents(ctx)
 	if err != nil {
 		return err
@@ -191,10 +176,7 @@ func watchEvents(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) erro
 	return sub.Err()
 }
 
-func watchTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
-	if f.NArg() != 0 {
-		return internal.ErrInvalidUsage
-	}
+func watchTwin(ctx context.Context, c *iotdevice.Client, args []string) error {
 	sub, err := c.SubscribeTwinUpdates(ctx)
 	if err != nil {
 		return err
@@ -207,11 +189,7 @@ func watchTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error 
 	return sub.Err()
 }
 
-func directMethod(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
-	if f.NArg() != 1 {
-		return internal.ErrInvalidUsage
-	}
-
+func directMethod(ctx context.Context, c *iotdevice.Client, args []string) error {
 	// if an error occurs during the method invocation,
 	// immediately return and display the error.
 	errc := make(chan error, 1)
@@ -219,7 +197,7 @@ func directMethod(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) err
 	in := bufio.NewReader(os.Stdin)
 	mu := &sync.Mutex{}
 
-	if err := c.RegisterMethod(ctx, f.Arg(0),
+	if err := c.RegisterMethod(ctx, args[0],
 		func(p map[string]interface{}) (map[string]interface{}, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -253,7 +231,7 @@ func directMethod(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) err
 	return <-errc
 }
 
-func twin(ctx context.Context, _ *flag.FlagSet, c *iotdevice.Client) error {
+func twin(ctx context.Context, c *iotdevice.Client, args []string) error {
 	desired, reported, err := c.RetrieveTwinState(ctx)
 	if err != nil {
 		return err
@@ -274,24 +252,8 @@ func twin(ctx context.Context, _ *flag.FlagSet, c *iotdevice.Client) error {
 	return nil
 }
 
-func updateTwin(ctx context.Context, f *flag.FlagSet, c *iotdevice.Client) error {
-	if f.NArg() == 0 {
-		return internal.ErrInvalidUsage
-	}
-
-	s, err := internal.ArgsToMap(f.Args())
-	if err != nil {
-		return err
-	}
-	m := make(iotdevice.TwinState, len(s))
-	for k, v := range s {
-		if v == "null" {
-			m[k] = nil
-		} else {
-			m[k] = v
-		}
-	}
-	ver, err := c.UpdateTwinState(ctx, m)
+func updateTwin(ctx context.Context, c *iotdevice.Client, args []string) error {
+	ver, err := c.UpdateTwinState(ctx, twinPropsFlag)
 	if err != nil {
 		return err
 	}
