@@ -90,7 +90,7 @@ func TestEnd2End(t *testing.T) {
 					[]iotdevice.ClientOption{
 						iotdevice.WithCredentials(&thirdPartyCreds{creds}),
 					},
-					"TwinDevice", // just need to check access
+					"DeviceToCloud", // just need to check access
 				},
 				"x509": {
 					[]iotdevice.ClientOption{
@@ -101,7 +101,7 @@ func TestEnd2End(t *testing.T) {
 							"testdata/device.key",
 						),
 					},
-					"TwinDevice", // just need to check access
+					"DeviceToCloud", // just need to check access
 				},
 				"sas": {
 					[]iotdevice.ClientOption{

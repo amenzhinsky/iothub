@@ -47,6 +47,9 @@ var (
 	// watch events
 	ehcsFlag string
 	ehcgFlag string
+
+	// query
+	pageSizeFlag uint
 )
 
 func main() {
@@ -289,6 +292,16 @@ func run() error {
 			Help:    "DEVICE_ID",
 			Desc:    "",
 			Handler: wrap(applyConfiguration),
+		},
+		{
+			Name:    "query",
+			Alias:   "q",
+			Help:    "SQL",
+			Desc:    "execute sql query on devices",
+			Handler: wrap(query),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.UintVar(&pageSizeFlag, "page-size", 0, "number of records per request")
+			},
 		},
 		{
 			Name:    "stats",
@@ -544,6 +557,18 @@ func applyConfiguration(ctx context.Context, f *flag.FlagSet, c *iotservice.Clie
 	return c.ApplyConfiguration(ctx, &iotservice.Configuration{
 		// TODO
 	}, f.Arg(0))
+}
+
+func query(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {
+	if f.NArg() != 1 {
+		return internal.ErrInvalidUsage
+	}
+	return c.Query(ctx, &iotservice.Query{
+		Query:    f.Arg(0),
+		PageSize: pageSizeFlag,
+	}, func(v map[string]interface{}) error {
+		return output(v, nil)
+	})
 }
 
 func stats(ctx context.Context, f *flag.FlagSet, c *iotservice.Client) error {

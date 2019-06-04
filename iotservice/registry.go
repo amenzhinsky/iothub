@@ -137,6 +137,11 @@ type ConfigurationMetrics struct {
 	Queries map[string]string `json:"queries,omitempty"`
 }
 
+type Query struct {
+	Query    string `json:"query,omitempty"`
+	PageSize uint   `json:"-"`
+}
+
 type MicrosoftTime struct {
 	time.Time
 }
