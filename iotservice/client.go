@@ -530,7 +530,6 @@ func (c *Client) HostName() string {
 
 var (
 	errEmptyDeviceID   = errors.New("device id is empty")
-	errEmptyJobID      = errors.New("job id is empty")
 	errKeyNotAvailable = errors.New("symmetric key is not available")
 )
 
@@ -649,6 +648,22 @@ func (c *Client) Call(
 		return nil, err
 	}
 	return &res, nil
+}
+
+// TODO
+func (c *Client) ScheduleJob(ctx context.Context, job *ScheduleJob) error {
+	var res map[string]interface{}
+	if _, err := c.call(
+		ctx,
+		http.MethodPut,
+		"/jobs/v2/"+url.PathEscape(job.JobID),
+		nil,
+		job,
+		&res,
+	); err != nil {
+		return err
+	}
+	return nil
 }
 
 // GetDevice retrieves the named device.
@@ -947,13 +962,17 @@ func (c *Client) DeleteConfiguration(ctx context.Context, config *Configuration)
 	return err
 }
 
-func (c *Client) ApplyConfiguration(ctx context.Context, config *Configuration, deviceID string) error {
+func (c *Client) ApplyConfigurationContentOnDevice(
+	ctx context.Context,
+	deviceID string,
+	content *ConfigurationContent,
+) error {
 	_, err := c.call(
 		ctx,
 		http.MethodPost,
-		"devices/"+url.PathEscape(deviceID),
+		"devices/"+url.PathEscape(deviceID)+"/applyConfigurationContent",
 		nil,
-		config,
+		content,
 		nil,
 	)
 	return err

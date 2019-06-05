@@ -156,6 +156,33 @@ type Query struct {
 	PageSize uint   `json:"-"`
 }
 
+// TODO
+type ScheduleJobType string
+
+// TODO
+const (
+	ScheduleMethodCall ScheduleJobType = "scheduleDirectRequest"
+	ScheduleUpdateTwin                 = "scheduleTwinUpdate"
+)
+
+// TODO
+type ScheduleJob struct {
+	JobID string          `json:"jobId"`
+	Type  ScheduleJobType `json:"type"`
+
+	CloudToDeviceMethod struct {
+		MethodName       string                 `json:"methodName"`
+		Payload          map[string]interface{} `json:"payload"`
+		TimeoutInSeconds uint                   `json:"timeoutInSeconds"`
+	} `json:"cloudToDeviceMethod"`
+
+	UpdateTwin map[string]interface{} `json:"updateTwin"`
+
+	QueryCondition            string `json:"queryCondition"`
+	StartTime                 string `json:"startTime"`
+	MaxExecutionTimeInSeconds uint   `json:"maxExecutionTimeInSeconds"`
+}
+
 // MicrosoftTime is a hack to parse time json attributes that
 // don't follow RFC3339 and don't put timezone at the end of timestamp.
 type MicrosoftTime struct {

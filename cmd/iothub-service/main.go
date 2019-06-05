@@ -307,6 +307,10 @@ func run() error {
 			Args:    []string{"DEVICE"},
 			Desc:    "applies configuration on the named device",
 			Handler: wrap(ctx, applyConfiguration),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property (key=value)")
+				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property (key=value)")
+			},
 		},
 		{
 			Name:    "query",
@@ -540,9 +544,14 @@ func deleteConfiguration(ctx context.Context, c *iotservice.Client, args []strin
 }
 
 func applyConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
-	return c.ApplyConfiguration(ctx, &iotservice.Configuration{
-		// TODO
-	}, args[0])
+	return c.ApplyConfigurationContentOnDevice(
+		ctx,
+		args[0],
+		&iotservice.ConfigurationContent{
+			ModulesContent: modulesContentFlag,
+			DeviceContent:  devicesContentFlag,
+		},
+	)
 }
 
 func query(ctx context.Context, c *iotservice.Client, args []string) error {
