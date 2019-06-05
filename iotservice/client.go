@@ -582,67 +582,34 @@ func deviceKey(device *Device, secondary bool) string {
 	return device.Authentication.SymmetricKey.PrimaryKey
 }
 
-type call struct {
-	MethodName      string                 `json:"methodName"`
-	ConnectTimeout  int                    `json:"connectTimeoutInSeconds,omitempty"`
-	ResponseTimeout int                    `json:"responseTimeoutInSeconds,omitempty"`
-	Payload         map[string]interface{} `json:"payload"`
+func (c *Client) CallDeviceMethod(ctx context.Context, deviceID string, call *Call) (
+	*Result, error,
+) {
+	return c.callMethod(
+		ctx,
+		"twins/"+url.PathEscape(deviceID)+"/methods",
+		call,
+	)
 }
 
-// CallOption is a direct-method invocation option.
-type CallOption func(c *call) error
-
-// ConnectTimeout is connection timeout in seconds.
-func WithCallConnectTimeout(seconds int) CallOption {
-	return func(c *call) error {
-		c.ConnectTimeout = seconds
-		return nil
-	}
+func (c *Client) CallModuleMethod(ctx context.Context, deviceID, moduleID string, call *Call) (
+	*Result, error,
+) {
+	return c.callMethod(
+		ctx,
+		"twins/"+url.PathEscape(deviceID)+"/modules/"+moduleID+"/methods",
+		call,
+	)
 }
 
-// ResponseTimeout is response timeout in seconds.
-func WithCallResponseTimeout(seconds int) CallOption {
-	return func(c *call) error {
-		c.ResponseTimeout = seconds
-		return nil
-	}
-}
-
-// Call calls the named direct method on with the given parameters.
-func (c *Client) Call(
-	ctx context.Context,
-	deviceID string,
-	methodName string,
-	payload map[string]interface{},
-	opts ...CallOption,
-) (*Result, error) {
-	if deviceID == "" {
-		return nil, errors.New("deviceID is empty")
-	}
-	if methodName == "" {
-		return nil, errors.New("methodName is empty")
-	}
-	if len(payload) == 0 {
-		return nil, errors.New("payload is empty")
-	}
-
-	v := &call{
-		MethodName: methodName,
-		Payload:    payload,
-	}
-	for _, opt := range opts {
-		if err := opt(v); err != nil {
-			return nil, err
-		}
-	}
-
+func (c *Client) callMethod(ctx context.Context, path string, call *Call) (*Result, error) {
 	var res Result
 	if _, err := c.call(
 		ctx,
 		http.MethodPost,
-		"twins/"+url.PathEscape(deviceID)+"/methods",
+		path,
 		nil,
-		v,
+		call,
 		&res,
 	); err != nil {
 		return nil, err

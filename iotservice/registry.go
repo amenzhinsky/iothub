@@ -11,6 +11,13 @@ type Result struct {
 	Payload map[string]interface{} `json:"payload,omitempty"`
 }
 
+type Call struct {
+	MethodName      string                 `json:"methodName,omitempty"`
+	ConnectTimeout  uint                   `json:"connectTimeoutInSeconds,omitempty"`
+	ResponseTimeout uint                   `json:"responseTimeoutInSeconds,omitempty"`
+	Payload         map[string]interface{} `json:"payload,omitempty"`
+}
+
 type DeviceStatus string
 
 const (

@@ -26,8 +26,8 @@ var (
 	cidFlag             string
 	expFlag             time.Duration
 	ackFlag             string
-	connectTimeoutFlag  int
-	responseTimeoutFlag int
+	connectTimeoutFlag  uint
+	responseTimeoutFlag uint
 
 	// create/update device
 	sasPrimaryFlag    string
@@ -117,11 +117,11 @@ func run() error {
 		{
 			Name:    "call",
 			Args:    []string{"DEVICE", "METHOD", "PAYLOAD"},
-			Desc:    "call a direct method on a device",
-			Handler: wrap(ctx, call),
+			Desc:    "call a direct method on the named device",
+			Handler: wrap(ctx, callDevice),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.IntVar(&connectTimeoutFlag, "c", 0, "connect timeout in seconds")
-				f.IntVar(&responseTimeoutFlag, "r", 30, "response timeout in seconds")
+				f.UintVar(&connectTimeoutFlag, "connect-timeout", 0, "connect timeout in seconds")
+				f.UintVar(&responseTimeoutFlag, "response-timeout", 30, "response timeout in seconds")
 			},
 		},
 		{
@@ -174,6 +174,16 @@ func run() error {
 			Handler: wrap(ctx, deleteDevice),
 			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+			},
+		},
+		{
+			Name:    "call-module",
+			Args:    []string{"DEVICE", "MODULE", "METHOD", "PAYLOAD"},
+			Desc:    "call a direct method on the named module",
+			Handler: wrap(ctx, callModule),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.UintVar(&connectTimeoutFlag, "connect-timeout", 0, "connect timeout in seconds")
+				f.UintVar(&responseTimeoutFlag, "response-timeout", 30, "response timeout in seconds")
 			},
 		},
 		{
@@ -607,15 +617,33 @@ func updateModuleTwin(ctx context.Context, c *iotservice.Client, args []string) 
 	}))
 }
 
-func call(ctx context.Context, c *iotservice.Client, args []string) error {
-	var v map[string]interface{}
-	if err := json.Unmarshal([]byte(args[2]), &v); err != nil {
+func callDevice(ctx context.Context, c *iotservice.Client, args []string) error {
+	call, err := mkcall(args[1], args[2])
+	if err != nil {
 		return err
 	}
-	return output(c.Call(ctx, args[0], args[1], v,
-		iotservice.WithCallConnectTimeout(connectTimeoutFlag),
-		iotservice.WithCallResponseTimeout(responseTimeoutFlag),
-	))
+	return output(c.CallDeviceMethod(ctx, args[0], call))
+}
+
+func callModule(ctx context.Context, c *iotservice.Client, args []string) error {
+	call, err := mkcall(args[2], args[3])
+	if err != nil {
+		return err
+	}
+	return output(c.CallModuleMethod(ctx, args[0], args[1], call))
+}
+
+func mkcall(method, payload string) (*iotservice.Call, error) {
+	var p map[string]interface{}
+	if err := json.Unmarshal([]byte(payload), &p); err != nil {
+		return nil, err
+	}
+	return &iotservice.Call{
+		MethodName:      method,
+		ConnectTimeout:  connectTimeoutFlag,
+		ResponseTimeout: responseTimeoutFlag,
+		Payload:         p,
+	}, nil
 }
 
 func send(ctx context.Context, c *iotservice.Client, args []string) error {
