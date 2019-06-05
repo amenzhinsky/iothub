@@ -528,58 +528,42 @@ func (c *Client) HostName() string {
 	return c.creds.HostName
 }
 
-var (
-	errEmptyDeviceID   = errors.New("device id is empty")
-	errKeyNotAvailable = errors.New("symmetric key is not available")
-)
-
 // DeviceConnectionString builds up a connection string for the given device.
 func (c *Client) DeviceConnectionString(device *Device, secondary bool) (string, error) {
-	if device == nil {
-		panic("device is nil")
-	}
-	if device.DeviceID == "" {
-		return "", errEmptyDeviceID
-	}
-	key := deviceKey(device, secondary)
-	if key == "" {
-		return "", errKeyNotAvailable
-	}
 	return fmt.Sprintf("HostName=%s;DeviceId=%s;SharedAccessKey=%s",
-		c.creds.HostName, device.DeviceID, key), nil
+		c.creds.HostName, device.DeviceID,
+		accessKey(device.Authentication, secondary),
+	), nil
+}
+
+func (c *Client) ModuleConnectionString(module *Module, secondary bool) (string, error) {
+	return fmt.Sprintf("HostName=%s;DeviceId=%s;ModuleId=%s;SharedAccessKey=%s",
+		c.creds.HostName, module.DeviceID, module.ModuleID,
+		accessKey(module.Authentication, secondary),
+	), nil
 }
 
 // DeviceSAS generates a GenerateToken token for the named device.
 func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary bool) (string, error) {
-	if device == nil {
-		panic("device is nil")
-	}
-	if device.DeviceID == "" {
-		return "", errEmptyDeviceID
-	}
-	key := deviceKey(device, secondary)
-	if key == "" {
-		return "", errKeyNotAvailable
-	}
 	if duration == 0 {
 		duration = time.Hour
 	}
 	creds := credentials.Credentials{
 		HostName:        c.creds.HostName,
 		DeviceID:        device.DeviceID,
-		SharedAccessKey: key,
+		SharedAccessKey: accessKey(device.Authentication, secondary),
 	}
 	return creds.GenerateToken(creds.HostName, credentials.WithDuration(duration))
 }
 
-func deviceKey(device *Device, secondary bool) string {
-	if device.Authentication == nil || device.Authentication.SymmetricKey == nil {
+func accessKey(auth *Authentication, secondary bool) string {
+	if auth.SymmetricKey == nil {
 		return ""
 	}
 	if secondary {
-		return device.Authentication.SymmetricKey.SecondaryKey
+		return auth.SymmetricKey.SecondaryKey
 	}
-	return device.Authentication.SymmetricKey.PrimaryKey
+	return auth.SymmetricKey.PrimaryKey
 }
 
 func (c *Client) CallDeviceMethod(ctx context.Context, deviceID string, call *Call) (

@@ -356,7 +356,16 @@ func run() error {
 			Name:    "connection-string",
 			Args:    []string{"DEVICE"},
 			Desc:    "get a device's connection string",
-			Handler: wrap(ctx, connectionString),
+			Handler: wrap(ctx, deviceConnectionString),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.BoolVar(&secondaryFlag, "secondary", false, "use the secondary key instead")
+			},
+		},
+		{
+			Name:    "module-connection-string",
+			Args:    []string{"DEVICE", "MODULE"},
+			Desc:    "get a module's connection string",
+			Handler: wrap(ctx, moduleConnectionString),
 			ParseFunc: func(f *flag.FlagSet) {
 				f.BoolVar(&secondaryFlag, "secondary", false, "use the secondary key instead")
 			},
@@ -364,7 +373,7 @@ func run() error {
 		{
 			Name:    "access-signature",
 			Args:    []string{"DEVICE"},
-			Desc:    "generate a GenerateToken token",
+			Desc:    "generate a SAS token",
 			Handler: wrap(ctx, sas),
 			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&uriFlag, "uri", "", "storage resource uri")
@@ -710,12 +719,24 @@ func cancelJob(ctx context.Context, c *iotservice.Client, args []string) error {
 	return output(c.CancelJob(ctx, args[0]))
 }
 
-func connectionString(ctx context.Context, c *iotservice.Client, args []string) error {
+func deviceConnectionString(ctx context.Context, c *iotservice.Client, args []string) error {
 	device, err := c.GetDevice(ctx, args[0])
 	if err != nil {
 		return err
 	}
 	cs, err := c.DeviceConnectionString(device, secondaryFlag)
+	if err != nil {
+		return err
+	}
+	return internal.OutputLine(cs)
+}
+
+func moduleConnectionString(ctx context.Context, c *iotservice.Client, args []string) error {
+	module, err := c.GetModule(ctx, args[0], args[1])
+	if err != nil {
+		return err
+	}
+	cs, err := c.ModuleConnectionString(module, secondaryFlag)
 	if err != nil {
 		return err
 	}
