@@ -724,11 +724,7 @@ func deviceConnectionString(ctx context.Context, c *iotservice.Client, args []st
 	if err != nil {
 		return err
 	}
-	cs, err := c.DeviceConnectionString(device, secondaryFlag)
-	if err != nil {
-		return err
-	}
-	return internal.OutputLine(cs)
+	return output(c.DeviceConnectionString(device, secondaryFlag))
 }
 
 func moduleConnectionString(ctx context.Context, c *iotservice.Client, args []string) error {
@@ -736,11 +732,7 @@ func moduleConnectionString(ctx context.Context, c *iotservice.Client, args []st
 	if err != nil {
 		return err
 	}
-	cs, err := c.ModuleConnectionString(module, secondaryFlag)
-	if err != nil {
-		return err
-	}
-	return internal.OutputLine(cs)
+	return output(c.ModuleConnectionString(module, secondaryFlag))
 }
 
 func sas(ctx context.Context, c *iotservice.Client, args []string) error {
@@ -748,16 +740,15 @@ func sas(ctx context.Context, c *iotservice.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-	sas, err := c.DeviceSAS(device, durationFlag, secondaryFlag)
-	if err != nil {
-		return err
-	}
-	return internal.OutputLine(sas)
+	return output(c.DeviceSAS(device, durationFlag, secondaryFlag))
 }
 
 func output(v interface{}, err error) error {
 	if err != nil {
 		return err
+	}
+	if s, ok := v.(string); ok {
+		return internal.OutputLine(s)
 	}
 	return internal.Output(v, formatFlag)
 }

@@ -502,7 +502,6 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) erro
 		if err = msg.Accept(); err != nil {
 			return err
 		}
-
 		var v []*Feedback
 		if err = json.Unmarshal(msg.Data[0], &v); err != nil {
 			return err
@@ -586,7 +585,9 @@ func (c *Client) CallModuleMethod(ctx context.Context, deviceID, moduleID string
 	)
 }
 
-func (c *Client) callMethod(ctx context.Context, path string, call *Call) (*Result, error) {
+func (c *Client) callMethod(ctx context.Context, path string, call *Call) (
+	*Result, error,
+) {
 	var res Result
 	if _, err := c.call(
 		ctx,
@@ -733,7 +734,9 @@ func (c *Client) CreateModule(ctx context.Context, module *Module) (*Module, err
 }
 
 // GetModule retrieves the named module.
-func (c *Client) GetModule(ctx context.Context, deviceID, moduleID string) (*Module, error) {
+func (c *Client) GetModule(ctx context.Context, deviceID, moduleID string) (
+	*Module, error,
+) {
 	var res Module
 	if _, err := c.call(
 		ctx,
@@ -826,7 +829,9 @@ func (c *Client) UpdateTwin(ctx context.Context, twin *Twin) (*Twin, error) {
 }
 
 // UpdateModuleTwin updates the named module twin's desired attributes.
-func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (*ModuleTwin, error) {
+func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (
+	*ModuleTwin, error,
+) {
 	var res ModuleTwin
 	if _, err := c.call(
 		ctx,
@@ -856,7 +861,9 @@ func (c *Client) ListConfigurations(ctx context.Context) ([]*Configuration, erro
 	return res, nil
 }
 
-func (c *Client) CreateConfiguration(ctx context.Context, config *Configuration) (*Configuration, error) {
+func (c *Client) CreateConfiguration(ctx context.Context, config *Configuration) (
+	*Configuration, error,
+) {
 	var res Configuration
 	if _, err := c.call(
 		ctx,
@@ -871,7 +878,9 @@ func (c *Client) CreateConfiguration(ctx context.Context, config *Configuration)
 	return &res, nil
 }
 
-func (c *Client) GetConfiguration(ctx context.Context, configID string) (*Configuration, error) {
+func (c *Client) GetConfiguration(ctx context.Context, configID string) (
+	*Configuration, error,
+) {
 	var res Configuration
 	if _, err := c.call(
 		ctx,
@@ -886,7 +895,9 @@ func (c *Client) GetConfiguration(ctx context.Context, configID string) (*Config
 	return &res, nil
 }
 
-func (c *Client) UpdateConfiguration(ctx context.Context, config *Configuration) (*Configuration, error) {
+func (c *Client) UpdateConfiguration(ctx context.Context, config *Configuration) (
+	*Configuration, error,
+) {
 	var res Configuration
 	if _, err := c.call(
 		ctx,
