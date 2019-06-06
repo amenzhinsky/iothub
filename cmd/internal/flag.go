@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,9 +17,13 @@ func (f *JSONMapFlag) Set(s string) error {
 	if len(c) != 2 {
 		return errors.New("malformed key-value flag")
 	}
-	(*f)[c[0]] = c[1]
-
-	// TODO: add null, bool, numeric types
+	var v interface{}
+	if c[1] != "" {
+		if err := json.Unmarshal([]byte(c[1]), &v); err != nil {
+			return err
+		}
+	}
+	(*f)[c[0]] = v
 	return nil
 }
 

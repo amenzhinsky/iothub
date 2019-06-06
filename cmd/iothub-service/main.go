@@ -60,12 +60,20 @@ var (
 	tagsFlag      map[string]interface{}
 	twinPropsFlag map[string]interface{}
 
+	// modules
+	managedByFlag string
+
 	// configuration
-	schemaVersionFlag  string
-	priorityFlag       uint
-	labelsFlag         map[string]string
-	modulesContentFlag map[string]interface{}
-	devicesContentFlag map[string]interface{}
+	schemaVersionFlag   string
+	priorityFlag        uint
+	labelsFlag          map[string]string
+	targetConditionFlag string
+	modulesContentFlag  map[string]interface{}
+	devicesContentFlag  map[string]interface{}
+	metricsFlag         map[string]string
+
+	// export
+	excludeKeysFlag bool
 )
 
 func main() {
@@ -203,6 +211,7 @@ func run() error {
 				f.StringVar(&x509PrimaryFlag, "x509-primary", "", "x509 primary thumbprint")
 				f.StringVar(&x509SecondaryFlag, "x509-secondary", "", "x509 secondary thumbprint")
 				f.BoolVar(&caFlag, "ca", false, "use certificate authority authentication")
+				f.StringVar(&managedByFlag, "managed-by", "", "module's owner")
 			},
 		},
 		{
@@ -223,6 +232,7 @@ func run() error {
 				f.StringVar(&x509SecondaryFlag, "x509-secondary", "", "x509 secondary thumbprint")
 				f.BoolVar(&caFlag, "ca", false, "use certificate authority authentication")
 				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+				f.StringVar(&managedByFlag, "managed-by", "", "module's owner")
 			},
 		},
 		{
@@ -262,6 +272,7 @@ func run() error {
 			Desc:    "update the named module twin",
 			Handler: wrap(ctx, updateModuleTwin),
 			ParseFunc: func(f *flag.FlagSet) {
+				f.Var((*internal.JSONMapFlag)(&twinPropsFlag), "prop", "property to update (key=value)")
 				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
 			},
 		},
@@ -279,6 +290,8 @@ func run() error {
 				f.UintVar(&priorityFlag, "priority", 10, "priority to resolve configuration conflicts")
 				f.StringVar(&schemaVersionFlag, "schema-version", "1.0", "configuration schema version")
 				f.Var((*internal.StringsMapFlag)(&labelsFlag), "label", "specific label (key=value)")
+				f.StringVar(&targetConditionFlag, "target-condition", "*", "target condition")
+				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query (key=value)")
 				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property (key=value)")
 				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property (key=value)")
 			},
@@ -298,6 +311,8 @@ func run() error {
 				f.UintVar(&priorityFlag, "priority", 0, "priority to resolve configuration conflicts")
 				f.StringVar(&schemaVersionFlag, "schema-version", "", "configuration schema version")
 				f.Var((*internal.StringsMapFlag)(&labelsFlag), "label", "specific labels in key=value format")
+				f.StringVar(&targetConditionFlag, "target-condition", "*", "target condition")
+				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query (key=value)")
 				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property (key=value)")
 				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property (key=value)")
 				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
@@ -335,6 +350,21 @@ func run() error {
 			Name:    "stats",
 			Desc:    "get statistics about the devices",
 			Handler: wrap(ctx, stats),
+		},
+		{
+			Name:    "import",
+			Desc:    "import devices from a blob",
+			Args:    []string{"INPUT", "OUTPUT"},
+			Handler: wrap(ctx, importFromBlob),
+		},
+		{
+			Name:    "export",
+			Desc:    "export devices to a blob",
+			Args:    []string{"OUTPUT"},
+			Handler: wrap(ctx, exportFromBlob),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.BoolVar(&excludeKeysFlag, "exclude-keys", false, "exclude keys in export")
+			},
 		},
 		{
 			Name:    "jobs",
@@ -479,6 +509,10 @@ func listModules(ctx context.Context, c *iotservice.Client, args []string) error
 	return output(c.ListModules(ctx, args[0]))
 }
 
+func getModule(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.GetModule(ctx, args[0], args[1]))
+}
+
 func createModule(ctx context.Context, c *iotservice.Client, args []string) error {
 	a, err := mkAuthentication()
 	if err != nil {
@@ -488,19 +522,8 @@ func createModule(ctx context.Context, c *iotservice.Client, args []string) erro
 		DeviceID:       args[0],
 		ModuleID:       args[1],
 		Authentication: a,
+		ManagedBy:      managedByFlag,
 	}))
-}
-
-func getModule(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.GetModule(ctx, args[0], args[1]))
-}
-
-func deleteModule(ctx context.Context, c *iotservice.Client, args []string) error {
-	return c.DeleteModule(ctx, &iotservice.Module{
-		DeviceID: args[0],
-		ModuleID: args[1],
-		ETag:     etagFlag,
-	})
 }
 
 func updateModule(ctx context.Context, c *iotservice.Client, args []string) error {
@@ -513,45 +536,58 @@ func updateModule(ctx context.Context, c *iotservice.Client, args []string) erro
 		ModuleID:       args[1],
 		ETag:           etagFlag,
 		Authentication: a,
-
-		// TODO: other fields
+		ManagedBy:      managedByFlag,
 	}))
+}
+
+func deleteModule(ctx context.Context, c *iotservice.Client, args []string) error {
+	return c.DeleteModule(ctx, &iotservice.Module{
+		DeviceID: args[0],
+		ModuleID: args[1],
+		ETag:     etagFlag,
+	})
 }
 
 func listConfigurations(ctx context.Context, c *iotservice.Client, args []string) error {
 	return output(c.ListConfigurations(ctx))
 }
 
-func createConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.CreateConfiguration(ctx, &iotservice.Configuration{
-		ID:            args[0],
-		SchemaVersion: schemaVersionFlag,
-		Priority:      priorityFlag,
-		Labels:        labelsFlag,
-		Content: &iotservice.ConfigurationContent{
-			ModulesContent: modulesContentFlag,
-			DeviceContent:  devicesContentFlag,
-		},
-		// TODO: other fields
-	}))
-}
-
 func getConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
 	return output(c.GetConfiguration(ctx, args[0]))
 }
 
-func updateConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.UpdateConfiguration(ctx, &iotservice.Configuration{
-		ID:            args[0],
-		ETag:          etagFlag,
-		SchemaVersion: schemaVersionFlag,
-		Priority:      priorityFlag,
-		Labels:        labelsFlag,
+func createConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.CreateConfiguration(ctx, &iotservice.Configuration{
+		ID:              args[0],
+		SchemaVersion:   schemaVersionFlag,
+		Priority:        priorityFlag,
+		Labels:          labelsFlag,
+		TargetCondition: targetConditionFlag,
 		Content: &iotservice.ConfigurationContent{
 			ModulesContent: modulesContentFlag,
 			DeviceContent:  devicesContentFlag,
 		},
-		// TODO: other fields
+		Metrics: &iotservice.ConfigurationMetrics{
+			Queries: metricsFlag,
+		},
+	}))
+}
+
+func updateConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.UpdateConfiguration(ctx, &iotservice.Configuration{
+		ID:              args[0],
+		ETag:            etagFlag,
+		SchemaVersion:   schemaVersionFlag,
+		Priority:        priorityFlag,
+		Labels:          labelsFlag,
+		TargetCondition: targetConditionFlag,
+		Content: &iotservice.ConfigurationContent{
+			ModulesContent: modulesContentFlag,
+			DeviceContent:  devicesContentFlag,
+		},
+		Metrics: &iotservice.ConfigurationMetrics{
+			Queries: metricsFlag,
+		},
 	}))
 }
 
@@ -586,8 +622,24 @@ func stats(ctx context.Context, c *iotservice.Client, args []string) error {
 	return output(c.Stats(ctx))
 }
 
+func importFromBlob(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.CreateJob(ctx, &iotservice.Job{
+		Type:                   iotservice.JobImport,
+		InputBlobContainerURI:  args[0],
+		OutputBlobContainerURI: args[1],
+	}))
+}
+
+func exportFromBlob(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.CreateJob(ctx, &iotservice.Job{
+		Type:                   iotservice.JobExport,
+		OutputBlobContainerURI: args[0],
+		ExcludeKeysInExport:    excludeKeysFlag,
+	}))
+}
+
 func getTwin(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.GetTwin(ctx, args[0]))
+	return output(c.GetDeviceTwin(ctx, args[0]))
 }
 
 func getModuleTwin(ctx context.Context, c *iotservice.Client, args []string) error {
@@ -604,7 +656,7 @@ func updateTwin(ctx context.Context, c *iotservice.Client, args []string) error 
 			Desired: twinPropsFlag,
 		}
 	}
-	return output(c.UpdateTwin(ctx, &iotservice.Twin{
+	return output(c.UpdateDeviceTwin(ctx, &iotservice.Twin{
 		DeviceID:   args[0],
 		ETag:       etagFlag,
 		Properties: props,
@@ -642,12 +694,12 @@ func callModule(ctx context.Context, c *iotservice.Client, args []string) error 
 	return output(c.CallModuleMethod(ctx, args[0], args[1], call))
 }
 
-func mkcall(method, payload string) (*iotservice.Call, error) {
+func mkcall(method, payload string) (*iotservice.MethodCall, error) {
 	var p map[string]interface{}
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
 		return nil, err
 	}
-	return &iotservice.Call{
+	return &iotservice.MethodCall{
 		MethodName:      method,
 		ConnectTimeout:  connectTimeoutFlag,
 		ResponseTimeout: responseTimeoutFlag,

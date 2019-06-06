@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -86,7 +85,7 @@ func New(opts ...ClientOption) (*Client, error) {
 	if c.creds == nil {
 		cs := os.Getenv("IOTHUB_SERVICE_CONNECTION_STRING")
 		if cs == "" {
-			return nil, errors.New("$IOTHUB_SERVICE_CONNECTION_STRING is empty")
+			return nil, errorf("$IOTHUB_SERVICE_CONNECTION_STRING is empty")
 		}
 		c.creds, err = credentials.ParseConnectionString(cs)
 		if err != nil {
@@ -268,7 +267,7 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	defer recv.Close(context.Background())
 	_, err = recv.Receive(ctx)
 	if err == nil {
-		return nil, errors.New("expected redirect error")
+		return nil, errorf("expected redirect error")
 	}
 
 	rerr, ok := err.(*amqp.DetachError)
@@ -374,7 +373,7 @@ func WithSendAck(typ string) SendOption {
 			return nil // empty value breaks message sending
 		case AckNone, AckPositive, AckNegative, AckFull:
 		default:
-			return fmt.Errorf("unknown ack type: %q", typ)
+			return errorf("unknown ack type: %q", typ)
 		}
 		return WithSendProperty("iothub-ack", typ)(msg)
 	}
@@ -421,10 +420,10 @@ func (c *Client) SendEvent(
 	opts ...SendOption,
 ) error {
 	if deviceID == "" {
-		return errors.New("device id is empty")
+		return errorf("device id is empty")
 	}
 	if payload == nil {
-		return errors.New("payload is nil")
+		return errorf("payload is nil")
 	}
 
 	msg := &common.Message{
@@ -529,66 +528,78 @@ func (c *Client) HostName() string {
 
 // DeviceConnectionString builds up a connection string for the given device.
 func (c *Client) DeviceConnectionString(device *Device, secondary bool) (string, error) {
+	key, err := accessKey(device.Authentication, secondary)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("HostName=%s;DeviceId=%s;SharedAccessKey=%s",
-		c.creds.HostName, device.DeviceID,
-		accessKey(device.Authentication, secondary),
+		c.creds.HostName, device.DeviceID, key,
 	), nil
 }
 
 func (c *Client) ModuleConnectionString(module *Module, secondary bool) (string, error) {
+	key, err := accessKey(module.Authentication, secondary)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("HostName=%s;DeviceId=%s;ModuleId=%s;SharedAccessKey=%s",
-		c.creds.HostName, module.DeviceID, module.ModuleID,
-		accessKey(module.Authentication, secondary),
+		c.creds.HostName, module.DeviceID, module.ModuleID, key,
 	), nil
 }
 
 // DeviceSAS generates a GenerateToken token for the named device.
 func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary bool) (string, error) {
-	if duration == 0 {
-		duration = time.Hour
+	key, err := accessKey(device.Authentication, secondary)
+	if err != nil {
+		return "", err
 	}
 	creds := credentials.Credentials{
 		HostName:        c.creds.HostName,
 		DeviceID:        device.DeviceID,
-		SharedAccessKey: accessKey(device.Authentication, secondary),
+		SharedAccessKey: key,
 	}
 	return creds.GenerateToken(creds.HostName, credentials.WithDuration(duration))
 }
 
-func accessKey(auth *Authentication, secondary bool) string {
-	if auth.SymmetricKey == nil {
-		return ""
+func accessKey(auth *Authentication, secondary bool) (string, error) {
+	if auth.Type != AuthSAS {
+		return "", errorf("invalid authentication type: %s", auth.Type)
 	}
 	if secondary {
-		return auth.SymmetricKey.SecondaryKey
+		return auth.SymmetricKey.SecondaryKey, nil
 	}
-	return auth.SymmetricKey.PrimaryKey
+	return auth.SymmetricKey.PrimaryKey, nil
 }
 
-func (c *Client) CallDeviceMethod(ctx context.Context, deviceID string, call *Call) (
-	*Result, error,
-) {
+func (c *Client) CallDeviceMethod(
+	ctx context.Context,
+	deviceID string,
+	call *MethodCall,
+) (*MethodResult, error) {
 	return c.callMethod(
 		ctx,
-		"twins/"+url.PathEscape(deviceID)+"/methods",
+		pathf("twins/%s/methods", deviceID),
 		call,
 	)
 }
 
-func (c *Client) CallModuleMethod(ctx context.Context, deviceID, moduleID string, call *Call) (
-	*Result, error,
-) {
+func (c *Client) CallModuleMethod(
+	ctx context.Context,
+	deviceID,
+	moduleID string,
+	call *MethodCall,
+) (*MethodResult, error) {
 	return c.callMethod(
 		ctx,
-		"twins/"+url.PathEscape(deviceID)+"/modules/"+moduleID+"/methods",
+		pathf("twins/%s/modules/%s/methods", deviceID, moduleID),
 		call,
 	)
 }
 
-func (c *Client) callMethod(ctx context.Context, path string, call *Call) (
-	*Result, error,
+func (c *Client) callMethod(ctx context.Context, path string, call *MethodCall) (
+	*MethodResult, error,
 ) {
-	var res Result
+	var res MethodResult
 	if _, err := c.call(
 		ctx,
 		http.MethodPost,
@@ -602,29 +613,13 @@ func (c *Client) callMethod(ctx context.Context, path string, call *Call) (
 	return &res, nil
 }
 
-// TODO
-func (c *Client) ScheduleJob(ctx context.Context, job *ScheduleJob) error {
-	var res map[string]interface{}
-	if _, err := c.call(
-		ctx,
-		http.MethodPut,
-		"/jobs/v2/"+url.PathEscape(job.JobID),
-		nil,
-		job,
-		&res,
-	); err != nil {
-		return err
-	}
-	return nil
-}
-
 // GetDevice retrieves the named device.
 func (c *Client) GetDevice(ctx context.Context, deviceID string) (*Device, error) {
 	var res Device
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
-		devicePath(deviceID),
+		pathf("devices/%s", deviceID),
 		nil,
 		nil,
 		&res,
@@ -640,7 +635,7 @@ func (c *Client) CreateDevice(ctx context.Context, device *Device) (*Device, err
 	if _, err := c.call(
 		ctx,
 		http.MethodPut,
-		devicePath(device.DeviceID),
+		pathf("devices/%s", device.DeviceID),
 		nil,
 		device,
 		&res,
@@ -653,8 +648,10 @@ func (c *Client) CreateDevice(ctx context.Context, device *Device) (*Device, err
 func ifMatchHeader(etag string) http.Header {
 	if etag == "" {
 		etag = "*"
+	} else {
+		etag = `"` + etag + `"`
 	}
-	return http.Header{"If-Match": {`"` + etag + `"`}}
+	return http.Header{"If-Match": {etag}}
 }
 
 // UpdateDevice updates the named device.
@@ -663,7 +660,7 @@ func (c *Client) UpdateDevice(ctx context.Context, device *Device) (*Device, err
 	if _, err := c.call(
 		ctx,
 		http.MethodPut,
-		devicePath(device.DeviceID),
+		pathf("devices/%s", device.DeviceID),
 		ifMatchHeader(device.ETag),
 		device,
 		&res,
@@ -678,7 +675,7 @@ func (c *Client) DeleteDevice(ctx context.Context, device *Device) error {
 	_, err := c.call(
 		ctx,
 		http.MethodDelete,
-		devicePath(device.DeviceID),
+		pathf("devices/%s", device.DeviceID),
 		ifMatchHeader(device.ETag),
 		nil,
 		nil,
@@ -708,7 +705,7 @@ func (c *Client) ListModules(ctx context.Context, deviceID string) ([]*Module, e
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
-		"devices/"+url.PathEscape(deviceID)+"/modules",
+		pathf("devices/%s/modules", deviceID),
 		nil,
 		nil,
 		&res,
@@ -723,7 +720,7 @@ func (c *Client) CreateModule(ctx context.Context, module *Module) (*Module, err
 	var res Module
 	if _, err := c.call(ctx,
 		http.MethodPut,
-		modulePath(module.DeviceID, module.ModuleID),
+		pathf("devices/%s/modules/%s", module.DeviceID, module.ModuleID),
 		nil,
 		module,
 		&res,
@@ -741,7 +738,7 @@ func (c *Client) GetModule(ctx context.Context, deviceID, moduleID string) (
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
-		modulePath(deviceID, moduleID),
+		pathf("devices/%s/modules/%s", deviceID, moduleID),
 		nil,
 		nil,
 		&res,
@@ -757,7 +754,7 @@ func (c *Client) UpdateModule(ctx context.Context, module *Module) (*Module, err
 	if _, err := c.call(
 		ctx,
 		http.MethodPut,
-		modulePath(module.DeviceID, module.ModuleID),
+		pathf("devices/%s/modules/%s", module.DeviceID, module.ModuleID),
 		ifMatchHeader(module.ETag),
 		module,
 		&res,
@@ -772,7 +769,7 @@ func (c *Client) DeleteModule(ctx context.Context, module *Module) error {
 	_, err := c.call(
 		ctx,
 		http.MethodDelete,
-		modulePath(module.DeviceID, module.ModuleID),
+		pathf("devices/%s/modules/%s", module.DeviceID, module.ModuleID),
 		ifMatchHeader(module.ETag),
 		nil,
 		nil,
@@ -780,13 +777,13 @@ func (c *Client) DeleteModule(ctx context.Context, module *Module) error {
 	return err
 }
 
-// GetTwin retrieves the named twin device from the registry.
-func (c *Client) GetTwin(ctx context.Context, deviceID string) (*Twin, error) {
+// GetDeviceTwin retrieves the named twin device from the registry.
+func (c *Client) GetDeviceTwin(ctx context.Context, deviceID string) (*Twin, error) {
 	var res Twin
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
-		twinPath(deviceID),
+		pathf("twins/%s", deviceID),
 		nil,
 		nil,
 		&res,
@@ -802,7 +799,7 @@ func (c *Client) GetModuleTwin(ctx context.Context, module *Module) (*ModuleTwin
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
-		moduleTwinPath(module.DeviceID, module.ModuleID),
+		pathf("twins/%s/modules/%s", module.DeviceID, module.ModuleID),
 		nil,
 		nil,
 		&res,
@@ -812,13 +809,13 @@ func (c *Client) GetModuleTwin(ctx context.Context, module *Module) (*ModuleTwin
 	return &res, nil
 }
 
-// UpdateTwin updates the named twin desired properties.
-func (c *Client) UpdateTwin(ctx context.Context, twin *Twin) (*Twin, error) {
+// UpdateDeviceTwin updates the named twin desired properties.
+func (c *Client) UpdateDeviceTwin(ctx context.Context, twin *Twin) (*Twin, error) {
 	var res Twin
 	if _, err := c.call(
 		ctx,
 		http.MethodPatch,
-		twinPath(twin.DeviceID),
+		pathf("twins/%s", twin.DeviceID),
 		ifMatchHeader(twin.ETag),
 		twin,
 		&res,
@@ -836,7 +833,7 @@ func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (
 	if _, err := c.call(
 		ctx,
 		http.MethodPatch,
-		twinPath(twin.DeviceID),
+		pathf("twins/%s", twin.DeviceID),
 		ifMatchHeader(twin.ETag),
 		twin,
 		&res,
@@ -851,7 +848,7 @@ func (c *Client) ListConfigurations(ctx context.Context) ([]*Configuration, erro
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
-		"/configurations",
+		"configurations",
 		nil,
 		nil,
 		&res,
@@ -868,7 +865,7 @@ func (c *Client) CreateConfiguration(ctx context.Context, config *Configuration)
 	if _, err := c.call(
 		ctx,
 		http.MethodPut,
-		configurationPath(config.ID),
+		pathf("configurations/%s", config.ID),
 		nil,
 		config,
 		&res,
@@ -885,7 +882,7 @@ func (c *Client) GetConfiguration(ctx context.Context, configID string) (
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
-		configurationPath(configID),
+		pathf("configurations/%s", configID),
 		nil,
 		nil,
 		&res,
@@ -902,7 +899,7 @@ func (c *Client) UpdateConfiguration(ctx context.Context, config *Configuration)
 	if _, err := c.call(
 		ctx,
 		http.MethodPut,
-		configurationPath(config.ID),
+		pathf("configurations/%s", config.ID),
 		ifMatchHeader(config.ETag),
 		config,
 		&res,
@@ -916,7 +913,7 @@ func (c *Client) DeleteConfiguration(ctx context.Context, config *Configuration)
 	_, err := c.call(
 		ctx,
 		http.MethodDelete,
-		configurationPath(config.ID),
+		pathf("configurations/%s", config.ID),
 		ifMatchHeader(config.ETag),
 		nil,
 		nil,
@@ -932,7 +929,7 @@ func (c *Client) ApplyConfigurationContentOnDevice(
 	_, err := c.call(
 		ctx,
 		http.MethodPost,
-		"devices/"+url.PathEscape(deviceID)+"/applyConfigurationContent",
+		pathf("devices/%s/applyConfigurationContent", deviceID),
 		nil,
 		content,
 		nil,
@@ -940,7 +937,9 @@ func (c *Client) ApplyConfigurationContentOnDevice(
 	return err
 }
 
-func (c *Client) Query(ctx context.Context, q *Query, fn func(v map[string]interface{}) error) error {
+func (c *Client) Query(
+	ctx context.Context, q *Query, fn func(v map[string]interface{}) error,
+) error {
 	var token string
 ReadNext:
 	v, token, err := c.execQuery(ctx, q, token)
@@ -983,26 +982,6 @@ func (c *Client) execQuery(ctx context.Context, q *Query, token string) (
 	return res, resp.Header.Get("x-ms-continuation"), nil
 }
 
-func devicePath(deviceID string) string {
-	return "devices/" + url.PathEscape(deviceID)
-}
-
-func modulePath(deviceID, moduleID string) string {
-	return "devices/" + url.PathEscape(deviceID) + "/modules/" + url.PathEscape(moduleID)
-}
-
-func twinPath(deviceID string) string {
-	return "twins/" + url.PathEscape(deviceID)
-}
-
-func moduleTwinPath(deviceID, moduleID string) string {
-	return "twins/" + url.PathEscape(deviceID) + "/modules/" + url.PathEscape(moduleID)
-}
-
-func configurationPath(configID string) string {
-	return "configurations/" + url.PathEscape(configID)
-}
-
 // Stats retrieves the device registry statistic.
 func (c *Client) Stats(ctx context.Context) (*Stats, error) {
 	var res Stats
@@ -1019,38 +998,25 @@ func (c *Client) Stats(ctx context.Context) (*Stats, error) {
 	return &res, nil
 }
 
-func (c *Client) ImportDevicesFromBlob(
-	ctx context.Context,
-	inputBlobURL string,
-	outputBlobURL string,
-) (map[string]interface{}, error) {
-	var v map[string]interface{}
-	if _, err := c.call(ctx, http.MethodGet, "jobs/create", nil, map[string]interface{}{
-		"type":                   "import",
-		"inputBlobContainerUri":  inputBlobURL,
-		"outputBlobContainerUri": outputBlobURL,
-	}, &v); err != nil {
+// CreateJob creates import / export jobs.
+//
+// https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-bulk-identity-mgmt#get-the-container-sas-uri
+func (c *Client) CreateJob(ctx context.Context, job *Job) (map[string]interface{}, error) {
+	var res map[string]interface{}
+	if _, err := c.call(
+		ctx,
+		http.MethodPost,
+		"jobs/create",
+		nil,
+		job,
+		&res,
+	); err != nil {
 		return nil, err
 	}
-	return v, nil
+	return res, nil
 }
 
-func (c *Client) ExportDevicesToBlob(
-	ctx context.Context,
-	outputBlobURL string,
-	excludeKeys bool,
-) (map[string]interface{}, error) {
-	var v map[string]interface{}
-	if _, err := c.call(ctx, http.MethodGet, "jobs/create", nil, map[string]interface{}{
-		"type":                   "export",
-		"outputBlobContainerUri": outputBlobURL,
-		"excludeKeysInExport":    excludeKeys,
-	}, &v); err != nil {
-		return nil, err
-	}
-	return v, nil
-}
-
+// ListJobs lists all running jobs.
 func (c *Client) ListJobs(ctx context.Context) ([]map[string]interface{}, error) {
 	var res []map[string]interface{}
 	if _, err := c.call(
@@ -1071,7 +1037,7 @@ func (c *Client) GetJob(ctx context.Context, jobID string) (map[string]interface
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
-		"jobs/"+url.PathEscape(jobID),
+		pathf("jobs/%s", jobID),
 		nil,
 		nil,
 		&res,
@@ -1086,7 +1052,7 @@ func (c *Client) CancelJob(ctx context.Context, jobID string) (map[string]interf
 	if _, err := c.call(
 		ctx,
 		http.MethodDelete,
-		"jobs/"+url.PathEscape(jobID),
+		pathf("jobs/%s", jobID),
 		nil,
 		nil,
 		&res,
@@ -1096,10 +1062,6 @@ func (c *Client) CancelJob(ctx context.Context, jobID string) (map[string]interf
 	return res, nil
 }
 
-// TODO: add the following registry operations:
-//   add/delete/update devices (bulk)
-//
-// see: https://github.com/Azure/azure-iot-sdk-node/blob/master/service/src/registry.ts
 func (c *Client) call(
 	ctx context.Context,
 	method, path string,
@@ -1161,7 +1123,7 @@ func (c *Client) call(
 		return res, nil
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("code = %d, desc = %q", res.StatusCode, string(body))
+		return nil, errorf("code = %d, desc = %q", res.StatusCode, string(body))
 	}
 	if err = json.Unmarshal(body, v); err != nil {
 		return nil, err
@@ -1202,4 +1164,16 @@ func (c *Client) Close() error {
 		return nil
 	}
 	return c.conn.Close()
+}
+
+func pathf(format string, s ...string) string {
+	v := make([]interface{}, len(s))
+	for i := range s {
+		v[i] = url.PathEscape(s[i])
+	}
+	return fmt.Sprintf(format, v...)
+}
+
+func errorf(format string, v ...interface{}) error {
+	return fmt.Errorf("iotservice: "+format, v...)
 }

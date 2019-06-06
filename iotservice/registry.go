@@ -5,17 +5,16 @@ import (
 	"time"
 )
 
-// Result is a direct-method call result.
-type Result struct {
-	Status  int                    `json:"status,omitempty"`
-	Payload map[string]interface{} `json:"payload,omitempty"`
-}
-
-type Call struct {
+type MethodCall struct {
 	MethodName      string                 `json:"methodName,omitempty"`
 	ConnectTimeout  uint                   `json:"connectTimeoutInSeconds,omitempty"`
 	ResponseTimeout uint                   `json:"responseTimeoutInSeconds,omitempty"`
 	Payload         map[string]interface{} `json:"payload,omitempty"`
+}
+
+type MethodResult struct {
+	Status  int                    `json:"status,omitempty"`
+	Payload map[string]interface{} `json:"payload,omitempty"`
 }
 
 type DeviceStatus string
@@ -163,31 +162,18 @@ type Query struct {
 	PageSize uint   `json:"-"`
 }
 
-// TODO
-type ScheduleJobType string
+type JobType string
 
-// TODO
 const (
-	ScheduleMethodCall ScheduleJobType = "scheduleDirectRequest"
-	ScheduleUpdateTwin                 = "scheduleTwinUpdate"
+	JobExport JobType = "export"
+	JobImport         = "import"
 )
 
-// TODO
-type ScheduleJob struct {
-	JobID string          `json:"jobId"`
-	Type  ScheduleJobType `json:"type"`
-
-	CloudToDeviceMethod struct {
-		MethodName       string                 `json:"methodName"`
-		Payload          map[string]interface{} `json:"payload"`
-		TimeoutInSeconds uint                   `json:"timeoutInSeconds"`
-	} `json:"cloudToDeviceMethod"`
-
-	UpdateTwin map[string]interface{} `json:"updateTwin"`
-
-	QueryCondition            string `json:"queryCondition"`
-	StartTime                 string `json:"startTime"`
-	MaxExecutionTimeInSeconds uint   `json:"maxExecutionTimeInSeconds"`
+type Job struct {
+	Type                   JobType `json:"type"`
+	InputBlobContainerURI  string  `json:"inputBlobContainerUri"`
+	OutputBlobContainerURI string  `json:"outputBlobContainerUri,omitempty"`
+	ExcludeKeysInExport    bool    `json:"excludeKeysInExport"`
 }
 
 // MicrosoftTime is a hack to parse time json attributes that

@@ -110,11 +110,11 @@ func TestEnd2End(t *testing.T) {
 					"*",
 				},
 			} {
-				for name, test := range map[string]func(*testing.T, ...iotdevice.ClientOption){
+				for name, test := range map[string]func(*testing.T, *iotservice.Client, *iotdevice.Client){
 					"DeviceToCloud": testDeviceToCloud,
 					"CloudToDevice": testCloudToDevice,
 					"DirectMethod":  testDirectMethod,
-					"UpdateTwin":    testUpdateTwin,
+					"UpdateDeviceTwin":    testUpdateTwin,
 					"SubscribeTwin": testSubscribeTwin,
 					"Modules":       testModules,
 					"Query":         testQuery,
@@ -126,7 +126,12 @@ func TestEnd2End(t *testing.T) {
 					test := test
 					mktransport := mktransport
 					t.Run(auth+"/"+name, func(t *testing.T) {
-						test(t, append(suite.opts, iotdevice.WithTransport(mktransport()))...)
+						dc, sc := newDeviceAndServiceClient(t, context.Background(),
+							append(suite.opts, iotdevice.WithTransport(mktransport()))...,
+						)
+						defer closeDeviceService(t, dc, sc)
+
+						test(t, sc, dc)
 					})
 				}
 			}
@@ -169,17 +174,11 @@ func (c *thirdPartyCreds) Token(ctx context.Context, uri string, d time.Duration
 	return c.creds.GenerateToken(uri, credentials.WithDuration(d))
 }
 
-func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
-	defer closeDeviceService(t, dc, sc)
-
+func testDeviceToCloud(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client) {
 	evsc := make(chan *iotservice.Event, 1)
 	errc := make(chan error, 2)
 	go func() {
-		errc <- sc.SubscribeEvents(ctx, func(ev *iotservice.Event) error {
+		errc <- sc.SubscribeEvents(context.Background(), func(ev *iotservice.Event) error {
 			if ev.ConnectionDeviceID == dc.DeviceID() {
 				evsc <- ev
 			}
@@ -187,13 +186,15 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 		})
 	}()
 
-	payload := []byte(`hello`)
+	payload := []byte("hello")
 	props := map[string]string{"a": "a", "b": "b"}
+	done := make(chan struct{})
+	defer close(done)
 
 	// send events until one of them is received
 	go func() {
 		for {
-			if err := dc.SendEvent(ctx, payload,
+			if err := dc.SendEvent(context.Background(), payload,
 				iotdevice.WithSendMessageID(common.GenID()),
 				iotdevice.WithSendCorrelationID(common.GenID()),
 				iotdevice.WithSendProperties(props),
@@ -202,8 +203,7 @@ func testDeviceToCloud(t *testing.T, opts ...iotdevice.ClientOption) {
 				break
 			}
 			select {
-			case <-ctx.Done():
-				return
+			case <-done:
 			case <-time.After(500 * time.Millisecond):
 			}
 		}
@@ -254,24 +254,18 @@ func testProperties(t *testing.T, got, want map[string]string) {
 	}
 }
 
-func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
-	defer closeDeviceService(t, dc, sc)
-
+func testCloudToDevice(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client) {
 	fbsc := make(chan *iotservice.Feedback, 1)
 	errc := make(chan error, 3)
 
-	sub, err := dc.SubscribeEvents(ctx)
+	sub, err := dc.SubscribeEvents(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// subscribe to feedback and report first registered message id
 	go func() {
-		if err := sc.SubscribeFeedback(ctx, func(fb *iotservice.Feedback) {
+		if err := sc.SubscribeFeedback(context.Background(), func(fb *iotservice.Feedback) {
 			fbsc <- fb
 		}); err != nil {
 			errc <- err
@@ -283,7 +277,7 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	uid := "golang-iothub"
 
 	mid := common.GenID()
-	if err := sc.SendEvent(ctx, dc.DeviceID(), payload,
+	if err := sc.SendEvent(context.Background(), dc.DeviceID(), payload,
 		iotservice.WithSendAck("full"),
 		iotservice.WithSendProperties(props),
 		iotservice.WithSendUserID(uid),
@@ -348,23 +342,17 @@ func testCloudToDevice(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 }
 
-func testUpdateTwin(t *testing.T, opts ...iotdevice.ClientOption) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
-	defer closeDeviceService(t, dc, sc)
-
+func testUpdateTwin(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client) {
 	// update state and keep track of version
 	s := fmt.Sprintf("%d", time.Now().UnixNano())
-	v, err := dc.UpdateTwinState(ctx, map[string]interface{}{
+	v, err := dc.UpdateTwinState(context.Background(), map[string]interface{}{
 		"ts": s,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, r, err := dc.RetrieveTwinState(ctx)
+	_, r, err := dc.RetrieveTwinState(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,14 +364,8 @@ func testUpdateTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 }
 
-func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
-	defer closeDeviceService(t, dc, sc)
-
-	sub, err := dc.SubscribeTwinUpdates(ctx)
+func testSubscribeTwin(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client) {
+	sub, err := dc.SubscribeTwinUpdates(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +374,7 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	// TODO: hacky, but reduces flakiness
 	time.Sleep(time.Second)
 
-	twin, err := sc.UpdateTwin(ctx, &iotservice.Twin{
+	twin, err := sc.UpdateDeviceTwin(context.Background(), &iotservice.Twin{
 		DeviceID: dc.DeviceID(),
 		Tags: map[string]interface{}{
 			"test-device": true,
@@ -420,25 +402,23 @@ func testSubscribeTwin(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 }
 
-func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
-	defer closeDeviceService(t, dc, sc)
-
-	if err := dc.RegisterMethod(ctx, "sum", func(v map[string]interface{}) (map[string]interface{}, error) {
-		return map[string]interface{}{
-			"result": v["a"].(float64) + v["b"].(float64),
-		}, nil
-	}); err != nil {
+func testDirectMethod(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client) {
+	if err := dc.RegisterMethod(
+		context.Background(),
+		"sum",
+		func(v map[string]interface{}) (map[string]interface{}, error) {
+			return map[string]interface{}{
+				"result": v["a"].(float64) + v["b"].(float64),
+			}, nil
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 
-	resc := make(chan *iotservice.Result, 1)
+	resc := make(chan *iotservice.MethodResult, 1)
 	errc := make(chan error, 2)
 	go func() {
-		v, err := sc.CallDeviceMethod(ctx, dc.DeviceID(), &iotservice.Call{
+		v, err := sc.CallDeviceMethod(context.Background(), dc.DeviceID(), &iotservice.MethodCall{
 			MethodName:      "sum",
 			ConnectTimeout:  5,
 			ResponseTimeout: 5,
@@ -455,7 +435,7 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 
 	select {
 	case v := <-resc:
-		w := &iotservice.Result{
+		w := &iotservice.MethodResult{
 			Status: 200,
 			Payload: map[string]interface{}{
 				"result": 4.5,
@@ -469,71 +449,12 @@ func testDirectMethod(t *testing.T, opts ...iotdevice.ClientOption) {
 	}
 }
 
-func testModules(t *testing.T, opts ...iotdevice.ClientOption) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
-	defer closeDeviceService(t, dc, sc)
-
-	module, err := sc.CreateModule(ctx, &iotservice.Module{
-		DeviceID: dc.DeviceID(),
-		ModuleID: "testmodule",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// there should be only the previously created module
-	modules, err := sc.ListModules(ctx, dc.DeviceID())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(modules) != 1 {
-		t.Fatalf("modules number = %d, want %d", len(modules), 1)
-	}
-
-	// check that module exists
-	_, err = sc.GetModule(ctx, dc.DeviceID(), module.ModuleID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = sc.DeleteModule(ctx, module); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func testQuery(t *testing.T, opts ...iotdevice.ClientOption) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dc, sc := newDeviceAndServiceClient(t, ctx, opts...)
-	defer closeDeviceService(t, dc, sc)
-
-	num := 0
-	if err := sc.Query(ctx,
-		&iotservice.Query{
-			Query:    "select * from devices",
-			PageSize: 1,
-		},
-		func(v map[string]interface{}) error {
-			num++
-			return nil
-		}); err != nil {
-		t.Fatal(err)
-	}
-	if num == 0 {
-		t.Fatal("query didn't find anything")
-	}
-}
-
 func newDeviceAndServiceClient(
 	t *testing.T,
 	ctx context.Context,
 	opts ...iotdevice.ClientOption,
 ) (*iotdevice.Client, *iotservice.Client) {
 	sc := newServiceClient(t)
-
 	dc, err := iotdevice.New(opts...)
 	if err != nil {
 		t.Fatal(err)
