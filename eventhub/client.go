@@ -207,10 +207,6 @@ func (c *Client) Subscribe(
 					errc <- err
 					return
 				}
-				if err = msg.Accept(); err != nil {
-					errc <- err
-					return
-				}
 				msgc <- msg
 			}
 		}(recv)
@@ -220,6 +216,9 @@ func (c *Client) Subscribe(
 		select {
 		case msg := <-msgc:
 			if err := fn(&Event{msg}); err != nil {
+				return err
+			}
+			if err = msg.Accept(); err != nil {
 				return err
 			}
 		case err := <-errc:

@@ -240,7 +240,7 @@ func TestQuery(t *testing.T) {
 	if err := client.Query(
 		context.Background(),
 		&Query{
-			Query:    "select deviceId from devices where deviceId = 'golang-iothub-test'",
+			Query:    "select deviceId from devices",
 			PageSize: 1,
 		},
 		func(v map[string]interface{}) error {

@@ -471,7 +471,7 @@ func (c *Client) getSendLink(ctx context.Context) (*amqp.Sender, error) {
 }
 
 // FeedbackHandler handles message feedback.
-type FeedbackHandler func(f *Feedback)
+type FeedbackHandler func(f *Feedback) error
 
 // SubscribeFeedback subscribes to feedback of messages that ack was requested.
 func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) error {
@@ -498,15 +498,23 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) erro
 		if err != nil {
 			return err
 		}
-		if err = msg.Accept(); err != nil {
-			return err
+		if len(msg.Data) == 0 {
+			c.logger.Warnf("zero length data received")
+			continue
 		}
+
 		var v []*Feedback
+		c.logger.Debugf("feedback received: %s", msg.Data[0])
 		if err = json.Unmarshal(msg.Data[0], &v); err != nil {
 			return err
 		}
 		for _, f := range v {
-			go fn(f)
+			if err := fn(f); err != nil {
+				return err
+			}
+		}
+		if err = msg.Accept(); err != nil {
+			return err
 		}
 	}
 }

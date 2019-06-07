@@ -111,13 +111,11 @@ func TestEnd2End(t *testing.T) {
 				},
 			} {
 				for name, test := range map[string]func(*testing.T, *iotservice.Client, *iotdevice.Client){
-					"DeviceToCloud": testDeviceToCloud,
-					"CloudToDevice": testCloudToDevice,
-					"DirectMethod":  testDirectMethod,
-					"UpdateDeviceTwin":    testUpdateTwin,
-					"SubscribeTwin": testSubscribeTwin,
-					"Modules":       testModules,
-					"Query":         testQuery,
+					"DeviceToCloud":    testDeviceToCloud,
+					"CloudToDevice":    testCloudToDevice,
+					"DirectMethod":     testDirectMethod,
+					"UpdateDeviceTwin": testUpdateTwin,
+					"SubscribeTwin":    testSubscribeTwin,
 				} {
 					if suite.test != "*" && suite.test != name {
 						continue
@@ -265,11 +263,10 @@ func testCloudToDevice(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client
 
 	// subscribe to feedback and report first registered message id
 	go func() {
-		if err := sc.SubscribeFeedback(context.Background(), func(fb *iotservice.Feedback) {
+		errc <- sc.SubscribeFeedback(context.Background(), func(fb *iotservice.Feedback) error {
 			fbsc <- fb
-		}); err != nil {
-			errc <- err
-		}
+			return nil
+		})
 	}()
 
 	payload := []byte("hello")

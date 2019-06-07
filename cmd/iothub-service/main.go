@@ -100,7 +100,7 @@ func run() error {
 			Desc:    "send a message to the named device (C2D)",
 			Handler: wrap(ctx, send),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.StringVar(&ackFlag, "ack", "", "type of ack feedback")
+				f.StringVar(&ackFlag, "ack", "", "type of ack feedback <none|positive|negative|full>")
 				f.StringVar(&uidFlag, "uid", "golang-iothub", "origin of the message")
 				f.StringVar(&midFlag, "mid", "", "identifier for the message")
 				f.StringVar(&cidFlag, "cid", "", "message identifier in a request-reply")
@@ -748,15 +748,9 @@ func watchEventHubEvents(ctx context.Context, cs, group string) error {
 }
 
 func watchFeedback(ctx context.Context, c *iotservice.Client, args []string) error {
-	errc := make(chan error, 1)
-	if err := c.SubscribeFeedback(ctx, func(f *iotservice.Feedback) {
-		if err := output(f, nil); err != nil {
-			errc <- err
-		}
-	}); err != nil {
-		return err
-	}
-	return <-errc
+	return c.SubscribeFeedback(ctx, func(f *iotservice.Feedback) error {
+		return output(f, nil)
+	})
 }
 
 func listJobs(ctx context.Context, c *iotservice.Client, args []string) error {
