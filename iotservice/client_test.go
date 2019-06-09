@@ -9,6 +9,30 @@ import (
 	"github.com/amenzhinsky/iothub/credentials"
 )
 
+func TestETags(t *testing.T) {
+	client := newClient(t)
+	device := newDevice(t, client)
+
+	// invalid ETag
+	etag := device.ETag
+	device.ETag = "fake"
+	if _, err := client.UpdateDevice(context.Background(), device); err == nil {
+		t.Fatal("expected an error with an invalid etag")
+	}
+
+	// valid ETag
+	device.ETag = etag
+	if _, err := client.UpdateDevice(context.Background(), device); err != nil {
+		t.Fatal(err)
+	}
+
+	// force update with If-Match = *
+	device.ETag = ""
+	if _, err := client.UpdateDevice(context.Background(), device); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestListDevices(t *testing.T) {
 	client := newClient(t)
 	device := newDevice(t, client)
@@ -243,6 +267,9 @@ func TestStats(t *testing.T) {
 func TestQuery(t *testing.T) {
 	client := newClient(t)
 	device := newDevice(t, client)
+
+	// some delay needed to wait until the device is available
+	time.Sleep(500 * time.Millisecond)
 
 	var found bool
 	if err := client.QueryDevices(

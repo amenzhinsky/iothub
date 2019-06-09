@@ -108,6 +108,7 @@ func New(opts ...ClientOption) (*Client, error) {
 	return c, nil
 }
 
+// Client is IoT Hub service client.
 type Client struct {
 	mu     sync.Mutex
 	tls    *tls.Config
@@ -851,6 +852,7 @@ func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (
 	return &res, nil
 }
 
+// ListConfigurations gets all available configurations from the registry.
 func (c *Client) ListConfigurations(ctx context.Context) ([]*Configuration, error) {
 	var res []*Configuration
 	if _, err := c.call(
@@ -866,6 +868,7 @@ func (c *Client) ListConfigurations(ctx context.Context) ([]*Configuration, erro
 	return res, nil
 }
 
+// CreateConfiguration adds the given configuration to the registry.
 func (c *Client) CreateConfiguration(ctx context.Context, config *Configuration) (
 	*Configuration, error,
 ) {
@@ -883,6 +886,7 @@ func (c *Client) CreateConfiguration(ctx context.Context, config *Configuration)
 	return &res, nil
 }
 
+// GetConfiguration gets the named configuration from the registry.
 func (c *Client) GetConfiguration(ctx context.Context, configID string) (
 	*Configuration, error,
 ) {
@@ -900,6 +904,7 @@ func (c *Client) GetConfiguration(ctx context.Context, configID string) (
 	return &res, nil
 }
 
+// UpdateConfiguration updates the given configuration in the registry.
 func (c *Client) UpdateConfiguration(ctx context.Context, config *Configuration) (
 	*Configuration, error,
 ) {
@@ -917,6 +922,7 @@ func (c *Client) UpdateConfiguration(ctx context.Context, config *Configuration)
 	return &res, nil
 }
 
+// DeleteConfiguration removes the given configuration from the registry.
 func (c *Client) DeleteConfiguration(ctx context.Context, config *Configuration) error {
 	_, err := c.call(
 		ctx,
