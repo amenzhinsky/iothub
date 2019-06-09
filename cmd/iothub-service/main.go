@@ -35,9 +35,9 @@ var (
 	x509PrimaryFlag   string
 	x509SecondaryFlag string
 	caFlag            bool
-	etagFlag          string
-	statusFlag        string
+	statusFlag        iotservice.DeviceStatus
 	statusReasonFlag  string
+	forceFlag         bool
 
 	// send
 	propsFlag map[string]string
@@ -97,7 +97,7 @@ func run() error {
 		{
 			Name:    "send",
 			Args:    []string{"DEVICE", "PAYLOAD"},
-			Desc:    "send a message to the named device (C2D)",
+			Desc:    "send cloud-to-device message",
 			Handler: wrap(ctx, send),
 			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&ackFlag, "ack", "", "type of ack feedback <none|positive|negative|full>")
@@ -105,12 +105,12 @@ func run() error {
 				f.StringVar(&midFlag, "mid", "", "identifier for the message")
 				f.StringVar(&cidFlag, "cid", "", "message identifier in a request-reply")
 				f.DurationVar(&expFlag, "exp", 0, "message lifetime")
-				f.Var((*internal.StringsMapFlag)(&propsFlag), "prop", "custom property (key=value)")
+				f.Var((*internal.StringsMapFlag)(&propsFlag), "prop", "custom property, key=value")
 			},
 		},
 		{
 			Name:    "watch-events",
-			Desc:    "subscribe to device messages (D2C)",
+			Desc:    "subscribe to cloud-to-device messages",
 			Handler: wrap(ctx, watchEvents),
 			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&ehcsFlag, "ehcs", "", "custom eventhub connection string")
@@ -119,7 +119,7 @@ func run() error {
 		},
 		{
 			Name:    "watch-feedback",
-			Desc:    "monitor message feedback send by devices",
+			Desc:    "subscribe to message delivery feedback",
 			Handler: wrap(ctx, watchFeedback),
 		},
 		{
@@ -146,7 +146,7 @@ func run() error {
 		{
 			Name:    "create-device",
 			Args:    []string{"DEVICE"},
-			Desc:    "create a new device",
+			Desc:    "request an existing device identity",
 			Handler: wrap(ctx, createDevice),
 			ParseFunc: func(f *flag.FlagSet) {
 				f.StringVar(&sasPrimaryFlag, "primary-key", "", "primary key (base64)")
@@ -154,8 +154,7 @@ func run() error {
 				f.StringVar(&x509PrimaryFlag, "primary-thumbprint", "", "x509 primary thumbprint")
 				f.StringVar(&x509SecondaryFlag, "secondary-thumbprint", "", "x509 secondary thumbprint")
 				f.BoolVar(&caFlag, "ca", false, "use certificate authority authentication")
-				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
-				f.StringVar(&statusFlag, "status", "", "device status")
+				f.StringVar((*string)(&statusFlag), "status", "", "device status")
 				f.StringVar(&statusReasonFlag, "status-reason", "", "disabled device status reason")
 			},
 		},
@@ -170,18 +169,18 @@ func run() error {
 				f.StringVar(&x509PrimaryFlag, "x509-primary", "", "x509 primary thumbprint")
 				f.StringVar(&x509SecondaryFlag, "x509-secondary", "", "x509 secondary thumbprint")
 				f.BoolVar(&caFlag, "ca", false, "use certificate authority authentication")
-				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
-				f.StringVar(&statusFlag, "status", "", "device status")
+				f.StringVar((*string)(&statusFlag), "status", "", "device status")
 				f.StringVar(&statusReasonFlag, "status-reason", "", "disabled device status reason")
+				f.BoolVar(&forceFlag, "force", false, "force update")
 			},
 		},
 		{
 			Name:    "delete-device",
 			Args:    []string{"DEVICE"},
-			Desc:    "delete the named device",
+			Desc:    "delete the named device from the registry",
 			Handler: wrap(ctx, deleteDevice),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+				f.BoolVar(&forceFlag, "force", false, "force update")
 			},
 		},
 		{
@@ -217,7 +216,7 @@ func run() error {
 		{
 			Name:    "module",
 			Args:    []string{"DEVICE", "MODULE"},
-			Desc:    "get info on the named device",
+			Desc:    "get info of the named module",
 			Handler: wrap(ctx, getModule),
 		},
 		{
@@ -231,39 +230,39 @@ func run() error {
 				f.StringVar(&x509PrimaryFlag, "x509-primary", "", "x509 primary thumbprint")
 				f.StringVar(&x509SecondaryFlag, "x509-secondary", "", "x509 secondary thumbprint")
 				f.BoolVar(&caFlag, "ca", false, "use certificate authority authentication")
-				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+				f.BoolVar(&forceFlag, "force", false, "force update")
 				f.StringVar(&managedByFlag, "managed-by", "", "module's owner")
 			},
 		},
 		{
 			Name:    "delete-module",
 			Args:    []string{"DEVICE", "MODULE"},
-			Desc:    "remove the named device from the registry",
+			Desc:    "remove the named module from the registry",
 			Handler: wrap(ctx, deleteModule),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+				f.BoolVar(&forceFlag, "force", false, "force update")
 			},
 		},
 		{
 			Name:    "twin",
 			Args:    []string{"DEVICE"},
 			Desc:    "inspect the named twin device",
-			Handler: wrap(ctx, getTwin),
+			Handler: wrap(ctx, getDeviceTwin),
 		},
 		{
 			Name:    "module-twin",
 			Args:    []string{"DEVICE", "MODULE"},
-			Desc:    "gets the named module twin",
+			Desc:    "get the named module twin",
 			Handler: wrap(ctx, getModuleTwin),
 		},
 		{
 			Name:    "update-twin",
 			Args:    []string{"DEVICE"},
 			Desc:    "update the named twin device",
-			Handler: wrap(ctx, updateTwin),
+			Handler: wrap(ctx, updateDeviceTwin),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.Var((*internal.JSONMapFlag)(&twinPropsFlag), "prop", "property to update (key=value)")
-				f.Var((*internal.JSONMapFlag)(&tagsFlag), "tag", "custom tag (key=value)")
+				f.Var((*internal.JSONMapFlag)(&twinPropsFlag), "prop", "property to update, key=value")
+				f.Var((*internal.JSONMapFlag)(&tagsFlag), "tag", "custom tag, key=value")
 			},
 		},
 		{
@@ -272,8 +271,8 @@ func run() error {
 			Desc:    "update the named module twin",
 			Handler: wrap(ctx, updateModuleTwin),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.Var((*internal.JSONMapFlag)(&twinPropsFlag), "prop", "property to update (key=value)")
-				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+				f.Var((*internal.JSONMapFlag)(&twinPropsFlag), "prop", "property to update, key=value")
+				f.BoolVar(&forceFlag, "force", false, "force update")
 			},
 		},
 		{
@@ -289,11 +288,11 @@ func run() error {
 			ParseFunc: func(f *flag.FlagSet) {
 				f.UintVar(&priorityFlag, "priority", 10, "priority to resolve configuration conflicts")
 				f.StringVar(&schemaVersionFlag, "schema-version", "1.0", "configuration schema version")
-				f.Var((*internal.StringsMapFlag)(&labelsFlag), "label", "specific label (key=value)")
+				f.Var((*internal.StringsMapFlag)(&labelsFlag), "label", "specific label, key=value")
 				f.StringVar(&targetConditionFlag, "target-condition", "*", "target condition")
-				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query (key=value)")
-				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property (key=value)")
-				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property (key=value)")
+				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query, key=value")
+				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property, key=value")
+				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property, key=value")
 			},
 		},
 		{
@@ -312,10 +311,10 @@ func run() error {
 				f.StringVar(&schemaVersionFlag, "schema-version", "", "configuration schema version")
 				f.Var((*internal.StringsMapFlag)(&labelsFlag), "label", "specific labels in key=value format")
 				f.StringVar(&targetConditionFlag, "target-condition", "*", "target condition")
-				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query (key=value)")
-				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property (key=value)")
-				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property (key=value)")
-				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query, key=value")
+				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property, key=value")
+				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property, key=value")
+				f.BoolVar(&forceFlag, "force", false, "force update")
 			},
 		},
 		{
@@ -324,7 +323,7 @@ func run() error {
 			Desc:    "delete the named configuration by id",
 			Handler: wrap(ctx, deleteConfiguration),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.StringVar(&etagFlag, "etag", "", "specify etag to ensure consistency")
+				f.BoolVar(&forceFlag, "force", false, "force update")
 			},
 		},
 		{
@@ -333,8 +332,8 @@ func run() error {
 			Desc:    "applies configuration on the named device",
 			Handler: wrap(ctx, applyConfiguration),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property (key=value)")
-				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property (key=value)")
+				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property, key=value")
+				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property, key=value")
 			},
 		},
 		{
@@ -347,9 +346,9 @@ func run() error {
 			},
 		},
 		{
-			Name:    "stats",
-			Desc:    "get statistics about the devices",
-			Handler: wrap(ctx, stats),
+			Name:    "statistics",
+			Desc:    "get statistics the registry statistics",
+			Handler: wrap(ctx, statistics),
 		},
 		{
 			Name:    "import",
@@ -361,9 +360,9 @@ func run() error {
 			Name:    "export",
 			Desc:    "export devices to a blob",
 			Args:    []string{"OUTPUT"},
-			Handler: wrap(ctx, exportFromBlob),
+			Handler: wrap(ctx, exportToBlob),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.BoolVar(&excludeKeysFlag, "exclude-keys", false, "exclude keys in export")
+				f.BoolVar(&excludeKeysFlag, "exclude-keys", false, "exclude keys in the export blob file")
 			},
 		},
 		{
@@ -383,7 +382,7 @@ func run() error {
 			Handler: wrap(ctx, cancelJob),
 		},
 		{
-			Name:    "connection-string",
+			Name:    "device-connection-string",
 			Args:    []string{"DEVICE"},
 			Desc:    "get a device's connection string",
 			Handler: wrap(ctx, deviceConnectionString),
@@ -437,72 +436,79 @@ func listDevices(ctx context.Context, c *iotservice.Client, args []string) error
 }
 
 func createDevice(ctx context.Context, c *iotservice.Client, args []string) error {
-	a, err := mkAuthentication()
-	if err != nil {
+	device := &iotservice.Device{
+		DeviceID:       args[0],
+		Authentication: &iotservice.Authentication{},
+		Status:         statusFlag,
+		StatusReason:   statusReasonFlag,
+	}
+	if err := updateAuth(device.Authentication); err != nil {
 		return err
 	}
-	return output(c.CreateDevice(ctx, &iotservice.Device{
-		DeviceID:       args[0],
-		Authentication: a,
-		Status:         iotservice.DeviceStatus(statusFlag),
-		StatusReason:   statusReasonFlag,
-	}))
+	return output(c.CreateDevice(ctx, device))
 }
 
 func updateDevice(ctx context.Context, c *iotservice.Client, args []string) error {
-	a, err := mkAuthentication()
+	device, err := c.GetDevice(ctx, args[0])
 	if err != nil {
 		return err
 	}
-	return output(c.UpdateDevice(ctx, &iotservice.Device{
-		DeviceID:       args[0],
-		Authentication: a,
-		ETag:           etagFlag,
-		Status:         iotservice.DeviceStatus(statusFlag),
-		StatusReason:   statusReasonFlag,
-	}))
+	if forceFlag {
+		device.ETag = ""
+	}
+	if statusFlag != "" {
+		device.Status = statusFlag
+	}
+	if statusReasonFlag != "" {
+		device.StatusReason = statusReasonFlag
+	}
+	if err := updateAuth(device.Authentication); err != nil {
+		return err
+	}
+	return output(c.UpdateDevice(ctx, device))
 }
 
-func mkAuthentication() (*iotservice.Authentication, error) {
+func updateAuth(auth *iotservice.Authentication) error {
 	switch {
 	case sasPrimaryFlag != "" || sasSecondaryFlag != "":
 		if x509PrimaryFlag != "" || x509SecondaryFlag != "" {
-			return nil, errors.New("-x509-* options cannot be used along with sas authentication")
+			return errors.New("-x509-* options cannot be used along with sas authentication")
 		} else if caFlag {
-			return nil, errors.New("-ca option cannot be used along with sas authentication")
+			return errors.New("-ca option cannot be used along with sas authentication")
 		}
-		return &iotservice.Authentication{
-			Type: iotservice.AuthSAS,
-			SymmetricKey: &iotservice.SymmetricKey{
-				PrimaryKey:   sasPrimaryFlag,
-				SecondaryKey: sasSecondaryFlag,
-			},
-		}, nil
+		auth.Type = iotservice.AuthSAS
+		auth.X509Thumbprint = nil
+		auth.SymmetricKey = &iotservice.SymmetricKey{
+			PrimaryKey:   sasPrimaryFlag,
+			SecondaryKey: sasSecondaryFlag,
+		}
 	case x509PrimaryFlag != "" || x509SecondaryFlag != "":
 		if caFlag {
-			return nil, errors.New("-ca option cannot be used along with x509 authentication")
+			return errors.New("-ca option cannot be used along with x509 authentication")
 		}
-		return &iotservice.Authentication{
-			Type: iotservice.AuthSelfSigned,
-			X509Thumbprint: &iotservice.X509Thumbprint{
-				PrimaryThumbprint:   x509PrimaryFlag,
-				SecondaryThumbprint: x509SecondaryFlag,
-			},
-		}, nil
+		auth.Type = iotservice.AuthSelfSigned
+		auth.SymmetricKey = nil
+		auth.X509Thumbprint = &iotservice.X509Thumbprint{
+			PrimaryThumbprint:   x509PrimaryFlag,
+			SecondaryThumbprint: x509SecondaryFlag,
+		}
 	case caFlag:
-		return &iotservice.Authentication{
-			Type: iotservice.AuthCA,
-		}, nil
-	default:
-		return nil, nil
+		auth.Type = iotservice.AuthCA
+		auth.SymmetricKey = nil
+		auth.X509Thumbprint = nil
 	}
+	return nil
 }
 
 func deleteDevice(ctx context.Context, c *iotservice.Client, args []string) error {
-	return c.DeleteDevice(ctx, &iotservice.Device{
-		DeviceID: args[0],
-		ETag:     etagFlag,
-	})
+	device, err := c.GetDevice(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	if forceFlag {
+		device.ETag = ""
+	}
+	return c.DeleteDevice(ctx, device)
 }
 
 func listModules(ctx context.Context, c *iotservice.Client, args []string) error {
@@ -514,38 +520,44 @@ func getModule(ctx context.Context, c *iotservice.Client, args []string) error {
 }
 
 func createModule(ctx context.Context, c *iotservice.Client, args []string) error {
-	a, err := mkAuthentication()
-	if err != nil {
-		return err
-	}
-	return output(c.CreateModule(ctx, &iotservice.Module{
+	module := &iotservice.Module{
 		DeviceID:       args[0],
 		ModuleID:       args[1],
-		Authentication: a,
+		Authentication: &iotservice.Authentication{},
 		ManagedBy:      managedByFlag,
-	}))
+	}
+	if err := updateAuth(module.Authentication); err != nil {
+		return err
+	}
+	return output(c.CreateModule(ctx, module))
 }
 
 func updateModule(ctx context.Context, c *iotservice.Client, args []string) error {
-	a, err := mkAuthentication()
+	module, err := c.GetModule(ctx, args[0], args[1])
 	if err != nil {
 		return err
 	}
-	return output(c.UpdateModule(ctx, &iotservice.Module{
-		DeviceID:       args[0],
-		ModuleID:       args[1],
-		ETag:           etagFlag,
-		Authentication: a,
-		ManagedBy:      managedByFlag,
-	}))
+	if forceFlag {
+		module.ETag = ""
+	}
+	if managedByFlag != "" {
+		module.ManagedBy = managedByFlag
+	}
+	if err := updateAuth(module.Authentication); err != nil {
+		return err
+	}
+	return output(c.UpdateModule(ctx, module))
 }
 
 func deleteModule(ctx context.Context, c *iotservice.Client, args []string) error {
-	return c.DeleteModule(ctx, &iotservice.Module{
-		DeviceID: args[0],
-		ModuleID: args[1],
-		ETag:     etagFlag,
-	})
+	module, err := c.GetModule(ctx, args[0], args[1])
+	if err != nil {
+		return err
+	}
+	if forceFlag {
+		module.ETag = ""
+	}
+	return c.DeleteModule(ctx, module)
 }
 
 func listConfigurations(ctx context.Context, c *iotservice.Client, args []string) error {
@@ -574,28 +586,38 @@ func createConfiguration(ctx context.Context, c *iotservice.Client, args []strin
 }
 
 func updateConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.UpdateConfiguration(ctx, &iotservice.Configuration{
-		ID:              args[0],
-		ETag:            etagFlag,
-		SchemaVersion:   schemaVersionFlag,
-		Priority:        priorityFlag,
-		Labels:          labelsFlag,
-		TargetCondition: targetConditionFlag,
-		Content: &iotservice.ConfigurationContent{
-			ModulesContent: modulesContentFlag,
-			DeviceContent:  devicesContentFlag,
-		},
-		Metrics: &iotservice.ConfigurationMetrics{
-			Queries: metricsFlag,
-		},
-	}))
+	config, err := c.GetConfiguration(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	if forceFlag {
+		config.ETag = ""
+	}
+	if schemaVersionFlag != "" {
+		config.SchemaVersion = schemaVersionFlag
+	}
+	if priorityFlag != 0 {
+		config.Priority = priorityFlag
+	}
+	mergeMapStrings(config.Labels, labelsFlag)
+	mergeMapJSON(config.Content.ModulesContent, modulesContentFlag)
+	mergeMapJSON(config.Content.DeviceContent, devicesContentFlag)
+	mergeMapStrings(config.Metrics.Queries, metricsFlag)
+	if targetConditionFlag != "" {
+		config.TargetCondition = targetConditionFlag
+	}
+	return output(c.UpdateConfiguration(ctx, config))
 }
 
 func deleteConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
-	return c.DeleteConfiguration(ctx, &iotservice.Configuration{
-		ID:   args[0],
-		ETag: etagFlag,
-	})
+	config, err := c.GetConfiguration(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	if forceFlag {
+		config.ETag = ""
+	}
+	return c.DeleteConfiguration(ctx, config)
 }
 
 func applyConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
@@ -610,7 +632,7 @@ func applyConfiguration(ctx context.Context, c *iotservice.Client, args []string
 }
 
 func query(ctx context.Context, c *iotservice.Client, args []string) error {
-	return c.Query(ctx, &iotservice.Query{
+	return c.QueryDevices(ctx, &iotservice.Query{
 		Query:    args[0],
 		PageSize: pageSizeFlag,
 	}, func(v map[string]interface{}) error {
@@ -618,7 +640,7 @@ func query(ctx context.Context, c *iotservice.Client, args []string) error {
 	})
 }
 
-func stats(ctx context.Context, c *iotservice.Client, args []string) error {
+func statistics(ctx context.Context, c *iotservice.Client, args []string) error {
 	return output(c.Stats(ctx))
 }
 
@@ -630,7 +652,7 @@ func importFromBlob(ctx context.Context, c *iotservice.Client, args []string) er
 	}))
 }
 
-func exportFromBlob(ctx context.Context, c *iotservice.Client, args []string) error {
+func exportToBlob(ctx context.Context, c *iotservice.Client, args []string) error {
 	return output(c.CreateJob(ctx, &iotservice.Job{
 		Type:                   iotservice.JobExport,
 		OutputBlobContainerURI: args[0],
@@ -638,44 +660,37 @@ func exportFromBlob(ctx context.Context, c *iotservice.Client, args []string) er
 	}))
 }
 
-func getTwin(ctx context.Context, c *iotservice.Client, args []string) error {
+func getDeviceTwin(ctx context.Context, c *iotservice.Client, args []string) error {
 	return output(c.GetDeviceTwin(ctx, args[0]))
 }
 
 func getModuleTwin(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.GetModuleTwin(ctx, &iotservice.Module{
-		DeviceID: args[0],
-		ModuleID: args[1],
-	}))
+	return output(c.GetModuleTwin(ctx, args[0], args[1]))
 }
 
-func updateTwin(ctx context.Context, c *iotservice.Client, args []string) error {
-	var props *iotservice.Properties
-	if len(twinPropsFlag) != 0 {
-		props = &iotservice.Properties{
-			Desired: twinPropsFlag,
-		}
+func updateDeviceTwin(ctx context.Context, c *iotservice.Client, args []string) error {
+	twin, err := c.GetDeviceTwin(ctx, args[0])
+	if err != nil {
+		return err
 	}
-	return output(c.UpdateDeviceTwin(ctx, &iotservice.Twin{
-		DeviceID:   args[0],
-		ETag:       etagFlag,
-		Properties: props,
-		Tags:       tagsFlag,
-	}))
+	if forceFlag {
+		twin.ETag = ""
+	}
+	mergeMapJSON(twin.Tags, tagsFlag)
+	mergeMapJSON(twin.Properties.Desired, twinPropsFlag)
+	return output(c.UpdateDeviceTwin(ctx, twin))
 }
 
 func updateModuleTwin(ctx context.Context, c *iotservice.Client, args []string) error {
-	var props *iotservice.Properties
-	if len(twinPropsFlag) != 0 {
-		props = &iotservice.Properties{
-			Desired: twinPropsFlag,
-		}
+	twin, err := c.GetModuleTwin(ctx, args[0], args[1])
+	if err != nil {
+		return err
 	}
-	return output(c.UpdateModuleTwin(ctx, &iotservice.ModuleTwin{
-		DeviceID:   args[0],
-		ETag:       etagFlag,
-		Properties: props,
-	}))
+	if forceFlag {
+		twin.ETag = ""
+	}
+	mergeMapJSON(twin.Properties.Desired, twinPropsFlag)
+	return output(c.UpdateModuleTwin(ctx, twin))
 }
 
 func callDevice(ctx context.Context, c *iotservice.Client, args []string) error {
@@ -797,4 +812,16 @@ func output(v interface{}, err error) error {
 		return internal.OutputLine(s)
 	}
 	return internal.Output(v, formatFlag)
+}
+
+func mergeMapStrings(src, changes map[string]string) {
+	for k, v := range changes {
+		src[k] = v
+	}
+}
+
+func mergeMapJSON(src, changes map[string]interface{}) {
+	for k, v := range changes {
+		src[k] = v
+	}
 }

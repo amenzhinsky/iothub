@@ -802,12 +802,12 @@ func (c *Client) GetDeviceTwin(ctx context.Context, deviceID string) (*Twin, err
 }
 
 // GetModuleTwin retrieves the named module's path.
-func (c *Client) GetModuleTwin(ctx context.Context, module *Module) (*ModuleTwin, error) {
+func (c *Client) GetModuleTwin(ctx context.Context, deviceID, moduleID string) (*ModuleTwin, error) {
 	var res ModuleTwin
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
-		pathf("twins/%s/modules/%s", module.DeviceID, module.ModuleID),
+		pathf("twins/%s/modules/%s", deviceID, moduleID),
 		nil,
 		nil,
 		&res,
@@ -841,7 +841,7 @@ func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (
 	if _, err := c.call(
 		ctx,
 		http.MethodPatch,
-		pathf("twins/%s", twin.DeviceID),
+		pathf("twins/%s/modules/%s", twin.DeviceID, twin.ModuleID),
 		ifMatchHeader(twin.ETag),
 		twin,
 		&res,
@@ -945,7 +945,7 @@ func (c *Client) ApplyConfigurationContentOnDevice(
 	return err
 }
 
-func (c *Client) Query(
+func (c *Client) QueryDevices(
 	ctx context.Context, q *Query, fn func(v map[string]interface{}) error,
 ) error {
 	var token string

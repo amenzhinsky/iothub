@@ -92,16 +92,19 @@ func TestGetDeviceTwin(t *testing.T) {
 func TestUpdateDeviceTwin(t *testing.T) {
 	client := newClient(t)
 	device := newDevice(t, client)
-	props := &Properties{
-		Desired: map[string]interface{}{
-			"hw": "1.11",
+	twin, err := client.UpdateDeviceTwin(context.Background(), &Twin{
+		DeviceID: device.DeviceID,
+		Properties: &Properties{
+			Desired: map[string]interface{}{
+				"hw": "1.11",
+			},
 		},
-	}
-	if _, err := client.UpdateDeviceTwin(context.Background(), &Twin{
-		DeviceID:   device.DeviceID,
-		Properties: props,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if twin.Properties.Desired["hw"] != "1.11" {
+		t.Fatal("twin not updated")
 	}
 }
 
@@ -157,8 +160,10 @@ func TestDeleteModule(t *testing.T) {
 
 func TestGetModuleTwin(t *testing.T) {
 	client := newClient(t)
-	_, module := newDeviceAndModule(t, client)
-	if _, err := client.GetModuleTwin(context.Background(), module); err != nil {
+	device, module := newDeviceAndModule(t, client)
+	if _, err := client.GetModuleTwin(
+		context.Background(), device.DeviceID, module.ModuleID,
+	); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -166,17 +171,20 @@ func TestGetModuleTwin(t *testing.T) {
 func TestUpdateModuleTwin(t *testing.T) {
 	client := newClient(t)
 	device, module := newDeviceAndModule(t, client)
-	props := &Properties{
-		Desired: map[string]interface{}{
-			"hw": "1.11",
+	twin, err := client.UpdateModuleTwin(context.Background(), &ModuleTwin{
+		DeviceID: device.DeviceID,
+		ModuleID: module.ModuleID,
+		Properties: &Properties{
+			Desired: map[string]interface{}{
+				"hw": "1.12",
+			},
 		},
-	}
-	if _, err := client.UpdateModuleTwin(context.Background(), &ModuleTwin{
-		DeviceID:   device.DeviceID,
-		ModuleID:   module.ModuleID,
-		Properties: props,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if twin.Properties.Desired["hw"] != "1.12" {
+		t.Fatal("twin not updated")
 	}
 }
 
@@ -237,7 +245,7 @@ func TestQuery(t *testing.T) {
 	device := newDevice(t, client)
 
 	var found bool
-	if err := client.Query(
+	if err := client.QueryDevices(
 		context.Background(),
 		&Query{
 			Query:    "select deviceId from devices",
