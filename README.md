@@ -2,9 +2,9 @@
 
 Azure IoT Hub SDK for Golang, provides both device-to-cloud ([`iotdevice`](iotdevice)) and cloud-to-device ([`iotservice`](iotservice)) packages for end-to-end communication.
 
-This project is in active development state and if you decided to use it anyway, please vendor the source code. API is subject to change until `v1.0.0`.
+API is subject to change until `v1.0.0`. Bumping minor version indicates breaking changes.
 
-Only **MQTT** is available for device-to-cloud communication at the moment.
+See [TODO](#todo) section to see what's missing in the library.
 
 ## Examples
 
@@ -70,6 +70,8 @@ func main() {
 }
 ```
 
+[cmd/iothub-service](https://github.com/amenzhinsky/iothub/blob/master/cmd/iothub-service) and [cmd/iothub-device](https://github.com/amenzhinsky/iothub/blob/master/cmd/iothub-device) are reference implementations of almost all available features. 
+
 ## Environment Variables
 
 The following environment variables are used by the library unless corresponding options are set explicitly:
@@ -93,13 +95,19 @@ See `-help` for more details.
 
 ## Testing
 
-To enable end-to-end testing in the `tests` directory you need to provide `TEST_IOTHUB_SERVICE_CONNECTION_STRING` which is a shared access policy connection string with all permissions.
+`TEST_IOTHUB_SERVICE_CONNECTION_STRING` is required for end-to-end testing, which is a shared access policy connection string with all permissions.
 
 `TEST_EVENTHUB_CONNECTION_STRING` is required for `eventhub` package testing.
 
 ## TODO
 
+### iotservice
+
 1. Schedule twin updates and device method calls.
+
+### iotdevice
+
+1. Device modules support.
 1. HTTP transport (files uploading).
 1. AMQP transport (batch sending, WS).
 
