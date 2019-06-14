@@ -3,7 +3,9 @@ package iotservice
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -196,6 +198,7 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 					return
 				}
 				ticker.Reset(tokenUpdateInterval - tokenUpdateSpan)
+				c.logger.Debugf("token updated")
 			case <-c.done:
 				return
 			}
@@ -318,7 +321,10 @@ func (c *Client) SubscribeEvents(ctx context.Context, fn EventHandler) error {
 	defer eh.Close()
 
 	return eh.Subscribe(ctx, func(msg *eventhub.Event) error {
-		return fn(&Event{FromAMQPMessage(msg.Message)})
+		if err := fn(&Event{FromAMQPMessage(msg.Message)}); err != nil {
+			return err
+		}
+		return msg.Accept()
 	},
 		eventhub.WithSubscribeSince(time.Now()),
 	)
@@ -351,37 +357,36 @@ func WithSendUserID(uid string) SendOption {
 	}
 }
 
+// AckType is event feedback acknowledgement type.
+type AckType string
+
 const (
 	// AckNone no feedback.
-	AckNone = "none"
+	AckNone AckType = "none"
 
 	// AckPositive receive a feedback message if the message was completed.
-	AckPositive = "positive"
+	AckPositive AckType = "positive"
 
 	// AckNegative receive a feedback message if the message expired
 	// (or maximum delivery count was reached) without being completed by the device.
-	AckNegative = "negative"
+	AckNegative AckType = "negative"
 
 	// AckFull both positive and negative.
-	AckFull = "full"
+	AckFull AckType = "full"
 )
 
 // WithSendAck sets message confirmation type.
-func WithSendAck(typ string) SendOption {
+func WithSendAck(ack AckType) SendOption {
 	return func(msg *common.Message) error {
-		switch typ {
-		case "":
-			return nil // empty value breaks message sending
-		case AckNone, AckPositive, AckNegative, AckFull:
-		default:
-			return errorf("unknown ack type: %q", typ)
+		if ack == "" {
+			return nil
 		}
-		return WithSendProperty("iothub-ack", typ)(msg)
+		return WithSendProperty("iothub-ack", string(ack))(msg)
 	}
 }
 
-// WithSentExpiryTime sets message expiration time.
-func WithSentExpiryTime(t time.Time) SendOption {
+// WithSendExpiryTime sets message expiration time.
+func WithSendExpiryTime(t time.Time) SendOption {
 	return func(msg *common.Message) error {
 		msg.ExpiryTime = &t
 		return nil
@@ -423,13 +428,9 @@ func (c *Client) SendEvent(
 	if deviceID == "" {
 		return errorf("device id is empty")
 	}
-	if payload == nil {
-		return errorf("payload is nil")
-	}
-
 	msg := &common.Message{
-		Payload: payload,
 		To:      "/devices/" + deviceID + "/messages/devicebound",
+		Payload: payload,
 	}
 	for _, opt := range opts {
 		if err := opt(msg); err != nil {
@@ -505,8 +506,8 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) erro
 		}
 
 		var v []*Feedback
-		c.logger.Debugf("feedback received: %s", msg.Data[0])
-		if err = json.Unmarshal(msg.Data[0], &v); err != nil {
+		c.logger.Debugf("feedback received: %s", msg.GetData())
+		if err = json.Unmarshal(msg.GetData(), &v); err != nil {
 			return err
 		}
 		for _, f := range v {
@@ -982,7 +983,7 @@ func (c *Client) execQuery(ctx context.Context, q *Query, token string) (
 		h.Add("x-ms-max-item-count", fmt.Sprintf("%d", q.PageSize))
 	}
 	var res []map[string]interface{}
-	resp, err := c.call(
+	header, err := c.call(
 		ctx,
 		http.MethodPost,
 		"devices/query",
@@ -993,7 +994,7 @@ func (c *Client) execQuery(ctx context.Context, q *Query, token string) (
 	if err != nil {
 		return nil, "", err
 	}
-	return res, resp.Header.Get("x-ms-continuation"), nil
+	return res, header.Get("x-ms-continuation"), nil
 }
 
 // Stats retrieves the device registry statistic.
@@ -1081,7 +1082,7 @@ func (c *Client) call(
 	method, path string,
 	headers http.Header,
 	r, v interface{}, // request and response objects
-) (*http.Response, error) {
+) (http.Header, error) {
 	var b []byte
 	if r != nil {
 		var err error
@@ -1091,7 +1092,7 @@ func (c *Client) call(
 		}
 	}
 
-	uri := "https://" + c.creds.HostName + "/" + path + "?api-version=" + common.APIVersion
+	uri := "https://" + c.creds.HostName + "/" + path + "?api-version=2019-03-30"
 	req, err := http.NewRequest(method, uri, bytes.NewReader(b))
 	if err != nil {
 		return nil, err
@@ -1104,7 +1105,7 @@ func (c *Client) call(
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Authorization", token)
-	req.Header.Set("Request-Id", common.GenID())
+	req.Header.Set("Request-Id", genRequestID())
 	for k, v := range headers {
 		for i := range v {
 			req.Header.Add(k, v[i])
@@ -1134,7 +1135,7 @@ func (c *Client) call(
 		return nil, err
 	}
 	if v == nil && res.StatusCode == http.StatusNoContent {
-		return res, nil
+		return nil, nil
 	}
 	if res.StatusCode != http.StatusOK {
 		return nil, errorf("code = %d, desc = %q", res.StatusCode, string(body))
@@ -1142,7 +1143,15 @@ func (c *Client) call(
 	if err = json.Unmarshal(body, v); err != nil {
 		return nil, err
 	}
-	return res, nil
+	return res.Header, nil
+}
+
+func genRequestID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }
 
 func prefix(b []byte, prefix string) string {

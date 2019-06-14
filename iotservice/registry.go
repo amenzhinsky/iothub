@@ -21,14 +21,14 @@ type DeviceStatus string
 
 const (
 	Enabled  DeviceStatus = "enabled"
-	Disabled              = "disabled"
+	Disabled DeviceStatus = "disabled"
 )
 
 type ConnectionState string
 
 const (
 	Connected    ConnectionState = "Connected"
-	Disconnected                 = "Disconnected"
+	Disconnected ConnectionState = "Disconnected"
 )
 
 type Device struct {
@@ -70,13 +70,13 @@ type AuthType string
 
 const (
 	// AuthSAS uses symmetric keys to sign requests.
-	AuthSAS = "sas"
+	AuthSAS AuthType = "sas"
 
 	// AuthSelfSigned self signed certificate with a thumbprint.
-	AuthSelfSigned = "selfSigned"
+	AuthSelfSigned AuthType = "selfSigned"
 
 	// AuthCA certificate signed by a registered certificate authority.
-	AuthCA = "certificateAuthority"
+	AuthCA AuthType = "certificateAuthority"
 )
 
 type X509Thumbprint struct {
@@ -166,7 +166,7 @@ type JobType string
 
 const (
 	JobExport JobType = "export"
-	JobImport         = "import"
+	JobImport JobType = "import"
 )
 
 type Job struct {

@@ -91,7 +91,7 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 		return errors.New("already connected")
 	}
 
-	username := creds.Hostname() + "/" + creds.DeviceID() + "/api-version=" + common.APIVersion
+	username := creds.Hostname() + "/" + creds.DeviceID() + "/api-version=2019-03-30"
 	o := mqtt.NewClientOptions()
 	o.SetTLSConfig(creds.TLSConfig())
 	o.AddBroker("tls://" + creds.Hostname() + ":8883")

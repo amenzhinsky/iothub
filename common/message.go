@@ -39,7 +39,7 @@ type Message struct {
 	// ConnectionAuthMethod is an authentication method set by IoT Hub on
 	// device-to-cloud messages. This property contains information about
 	// the authentication method used to authenticate the device sending the message.
-	ConnectionAuthMethod string `json:"ConnectionAuthMethod,omitempty"`
+	ConnectionAuthMethod *ConnectionAuthMethod `json:"ConnectionAuthMethod,omitempty"`
 
 	// MessageSource determines a device-to-cloud message transport.
 	MessageSource string `json:"MessageSource,omitempty"`
@@ -52,4 +52,11 @@ type Message struct {
 
 	// TransportOptions transport specific options.
 	TransportOptions map[string]interface{} `json:"-"`
+}
+
+// ConnectionAuthMethod is an authentication method of device-to-cloud communication.
+type ConnectionAuthMethod struct {
+	Scope  string `json:"scope"`
+	Type   string `json:"type"`
+	Issuer string `json:"issuer"`
 }

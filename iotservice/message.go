@@ -1,6 +1,7 @@
 package iotservice
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 // routed for example to an EventhHub instance.
 func FromAMQPMessage(msg *amqp.Message) *common.Message {
 	m := &common.Message{
-		Payload:    msg.Data[0],
+		Payload:    msg.GetData(),
 		Properties: make(map[string]string, len(msg.ApplicationProperties)+5),
 	}
 	if msg.Properties != nil {
@@ -38,7 +39,12 @@ func FromAMQPMessage(msg *amqp.Message) *common.Message {
 		case "iothub-connection-auth-generation-id":
 			m.ConnectionDeviceGenerationID = v.(string)
 		case "iothub-connection-auth-method":
-			m.ConnectionAuthMethod = v.(string)
+			var am common.ConnectionAuthMethod
+			if err := json.Unmarshal([]byte(v.(string)), &am); err != nil {
+				m.Properties[k.(string)] = fmt.Sprint(v)
+				continue
+			}
+			m.ConnectionAuthMethod = &am
 		case "iothub-message-source":
 			m.MessageSource = v.(string)
 		default:

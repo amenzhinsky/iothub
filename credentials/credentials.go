@@ -32,6 +32,8 @@ func ParseConnectionString(cs string) (*Credentials, error) {
 			m.HostName = c[1]
 		case "DeviceId":
 			m.DeviceID = c[1]
+		case "ModuleId":
+			m.ModuleID = c[1]
 		case "SharedAccessKey":
 			m.SharedAccessKey = c[1]
 		case "SharedAccessKeyName":
@@ -45,6 +47,7 @@ func ParseConnectionString(cs string) (*Credentials, error) {
 type Credentials struct {
 	HostName            string
 	DeviceID            string
+	ModuleID            string
 	SharedAccessKey     string
 	SharedAccessKeyName string
 }

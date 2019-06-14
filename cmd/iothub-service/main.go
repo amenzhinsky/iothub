@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
@@ -17,7 +18,6 @@ import (
 // globally accessible by command handlers, is it a good idea?
 var (
 	// common
-	debugFlag  bool
 	formatFlag string
 
 	// send
@@ -25,7 +25,7 @@ var (
 	midFlag             string
 	cidFlag             string
 	expFlag             time.Duration
-	ackFlag             string
+	ackFlag             iotservice.AckType
 	connectTimeoutFlag  uint
 	responseTimeoutFlag uint
 
@@ -91,7 +91,6 @@ The $IOTHUB_SERVICE_CONNECTION_STRING environment variable is required for authe
 func run() error {
 	ctx := context.Background()
 	return internal.New(help, func(f *flag.FlagSet) {
-		f.BoolVar(&debugFlag, "debug", debugFlag, "enable debug mode")
 		f.StringVar(&formatFlag, "format", "json-pretty", "data output format <json|json-pretty>")
 	}, []*internal.Command{
 		{
@@ -100,7 +99,7 @@ func run() error {
 			Desc:    "send cloud-to-device message",
 			Handler: wrap(ctx, send),
 			ParseFunc: func(f *flag.FlagSet) {
-				f.StringVar(&ackFlag, "ack", "", "type of ack feedback <none|positive|negative|full>")
+				f.StringVar((*string)(&ackFlag), "ack", "", "type of ack feedback <none|positive|negative|full>")
 				f.StringVar(&uidFlag, "uid", "golang-iothub", "origin of the message")
 				f.StringVar(&midFlag, "mid", "", "identifier for the message")
 				f.StringVar(&cidFlag, "cid", "", "message identifier in a request-reply")
@@ -423,7 +422,29 @@ func wrap(
 			return err
 		}
 		defer c.Close()
-		return fn(ctx, c, args)
+
+		// handle first SIGINT and try to exit gracefully
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		sigc := make(chan os.Signal, 1)
+		signal.Notify(sigc, os.Interrupt)
+		go func() {
+			<-sigc
+			signal.Reset(os.Interrupt)
+			close(sigc)
+			cancel()
+		}()
+		if err := fn(ctx, c, args); err != nil {
+			select {
+			case <-sigc:
+				if err == context.Canceled {
+					return nil
+				}
+			default:
+			}
+			return err
+		}
+		return nil
 	}
 }
 
@@ -727,17 +748,14 @@ func send(ctx context.Context, c *iotservice.Client, args []string) error {
 	if expFlag != 0 {
 		expiryTime = time.Now().Add(expFlag)
 	}
-	if err := c.SendEvent(ctx, args[0], []byte(args[1]),
+	return c.SendEvent(ctx, args[0], []byte(args[1]),
 		iotservice.WithSendMessageID(midFlag),
 		iotservice.WithSendAck(ackFlag),
 		iotservice.WithSendProperties(propsFlag),
 		iotservice.WithSendUserID(uidFlag),
 		iotservice.WithSendCorrelationID(cidFlag),
-		iotservice.WithSentExpiryTime(expiryTime),
-	); err != nil {
-		return err
-	}
-	return nil
+		iotservice.WithSendExpiryTime(expiryTime),
+	)
 }
 
 func watchEvents(ctx context.Context, c *iotservice.Client, args []string) error {

@@ -76,10 +76,10 @@ func main() {
 
 The following environment variables are used by the library unless corresponding options are set explicitly:
 
-- `IOTHUB_DEVICE_CONNECTION_STRING` a device connection string.
 - `IOTHUB_SERVICE_CONNECTION_STRING` a shared access policy connection string.
-- `IOTHUB_DEVICE_LOG_LEVEL` controls `iotdevice` log level.
+- `IOTHUB_DEVICE_CONNECTION_STRING` a device connection string.
 - `IOTHUB_SERVICE_LOG_LEVEL` controls `iotservice` log level.
+- `IOTHUB_DEVICE_LOG_LEVEL` controls `iotdevice` log level.
 
 Valid log level values are: `error`, `warn`, `info` and `debug`, default is `warn`.
 
@@ -104,6 +104,8 @@ See `-help` for more details.
 ### iotservice
 
 1. Schedule twin updates and device method calls.
+1. Bulk registry operations.
+1. Blob files management.
 
 ### iotdevice
 

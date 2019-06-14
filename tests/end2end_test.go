@@ -3,7 +3,9 @@ package tests
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"reflect"
@@ -122,6 +124,7 @@ func TestEnd2End(t *testing.T) {
 					}
 
 					test := test
+					suite := suite
 					mktransport := mktransport
 					t.Run(auth+"/"+name, func(t *testing.T) {
 						dc, sc := newDeviceAndServiceClient(t, context.Background(),
@@ -193,8 +196,8 @@ func testDeviceToCloud(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client
 	go func() {
 		for {
 			if err := dc.SendEvent(context.Background(), payload,
-				iotdevice.WithSendMessageID(common.GenID()),
-				iotdevice.WithSendCorrelationID(common.GenID()),
+				iotdevice.WithSendMessageID(genID()),
+				iotdevice.WithSendCorrelationID(genID()),
 				iotdevice.WithSendProperties(props),
 			); err != nil {
 				errc <- err
@@ -221,8 +224,8 @@ func testDeviceToCloud(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client
 		if msg.ConnectionDeviceGenerationID == "" {
 			t.Error("ConnectionDeviceGenerationID is empty")
 		}
-		if msg.ConnectionAuthMethod == "" {
-			t.Error("ConnectionAuthMethod is empty")
+		if msg.ConnectionAuthMethod == nil {
+			t.Error("ConnectionAuthMethod is nil")
 		}
 		if msg.MessageSource == "" {
 			t.Error("MessageSource is empty")
@@ -273,14 +276,14 @@ func testCloudToDevice(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client
 	props := map[string]string{"a": "a", "b": "b"}
 	uid := "golang-iothub"
 
-	mid := common.GenID()
+	mid := genID()
 	if err := sc.SendEvent(context.Background(), dc.DeviceID(), payload,
-		iotservice.WithSendAck("full"),
+		iotservice.WithSendAck(iotservice.AckFull),
 		iotservice.WithSendProperties(props),
 		iotservice.WithSendUserID(uid),
 		iotservice.WithSendMessageID(mid),
-		iotservice.WithSendCorrelationID(common.GenID()),
-		iotservice.WithSentExpiryTime(time.Now().Add(5*time.Second)),
+		iotservice.WithSendCorrelationID(genID()),
+		iotservice.WithSendExpiryTime(time.Now().Add(5*time.Second)),
 	); err != nil {
 		errc <- err
 		return
@@ -483,4 +486,12 @@ func closeDeviceService(t *testing.T, dc *iotdevice.Client, sc *iotservice.Clien
 	if err := sc.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func genID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }

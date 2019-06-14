@@ -156,9 +156,11 @@ type Event struct {
 
 // Subscribe subscribes to all hub's partitions and registers the given
 // handler and blocks until it encounters an error or the context is cancelled.
+//
+// It's client's responsibility to accept/reject/release events.
 func (c *Client) Subscribe(
 	ctx context.Context,
-	fn func(msg *Event) error,
+	fn func(event *Event) error,
 	opts ...SubscribeOption,
 ) error {
 	var s sub
@@ -216,9 +218,6 @@ func (c *Client) Subscribe(
 		select {
 		case msg := <-msgc:
 			if err := fn(&Event{msg}); err != nil {
-				return err
-			}
-			if err = msg.Accept(); err != nil {
 				return err
 			}
 		case err := <-errc:

@@ -339,9 +339,6 @@ func (c *Client) SendEvent(ctx context.Context, payload []byte, opts ...SendOpti
 	if err := c.checkConnection(ctx); err != nil {
 		return err
 	}
-	if payload == nil {
-		return errors.New("payload is nil")
-	}
 	msg := &common.Message{Payload: payload}
 	for _, opt := range opts {
 		if err := opt(msg); err != nil {
