@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
@@ -8,14 +9,18 @@ import (
 func TestParseConnectionString(t *testing.T) {
 	for s, w := range map[string]*Credentials{
 		"HostName=test.azure-devices.net;DeviceId=devnull;SharedAccessKey=c2VjcmV0": {
-			HostName:            "test.azure-devices.net",
-			DeviceID:            "devnull",
-			SharedAccessKey:     "c2VjcmV0",
-			SharedAccessKeyName: "",
+			HostName:        "test.azure-devices.net",
+			DeviceID:        "devnull",
+			SharedAccessKey: "c2VjcmV0",
+		},
+		"HostName=test.azure-devices.net;DeviceId=dev;ModuleId=null;SharedAccessKey=c2VjcmV0": {
+			HostName:        "test.azure-devices.net",
+			DeviceID:        "dev",
+			ModuleID:        "null",
+			SharedAccessKey: "c2VjcmV0",
 		},
 		"HostName=test.azure-devices.net;SharedAccessKeyName=device;SharedAccessKey=c2VjcmV0": {
 			HostName:            "test.azure-devices.net",
-			DeviceID:            "",
 			SharedAccessKey:     "c2VjcmV0",
 			SharedAccessKeyName: "device",
 		},
@@ -24,8 +29,8 @@ func TestParseConnectionString(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if *g != *w {
-			t.Errorf("ParseConnectionString(%q) = %v, want %v", s, g, w)
+		if !reflect.DeepEqual(g, w) {
+			t.Errorf("ParseConnectionString(%q) = %#v, want %#v", s, g, w)
 		}
 	}
 }

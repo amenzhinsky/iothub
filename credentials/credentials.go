@@ -3,6 +3,7 @@ package credentials
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -15,13 +16,8 @@ import (
 // ParseConnectionString parses the given string into a Credentials struct.
 // If you use a shared access policy DeviceId is needed to be added manually.
 func ParseConnectionString(cs string) (*Credentials, error) {
-	chunks := strings.Split(cs, ";")
-	if len(chunks) != 3 && len(chunks) != 4 {
-		return nil, errors.New("malformed connection string")
-	}
-
 	m := &Credentials{}
-	for _, chunk := range chunks {
+	for _, chunk := range strings.Split(cs, ";") {
 		c := strings.SplitN(chunk, "=", 2)
 		if len(c) != 2 {
 			return nil, errors.New("malformed connection string")
@@ -38,38 +34,45 @@ func ParseConnectionString(cs string) (*Credentials, error) {
 			m.SharedAccessKey = c[1]
 		case "SharedAccessKeyName":
 			m.SharedAccessKeyName = c[1]
+			// x509
+			// gatewayHostName
 		}
 	}
+	// TODO: validate creds
 	return m, nil
 }
 
 // Credentials is a IoT Hub authorization entity.
+//
+// TODO: convert it into an interface.
 type Credentials struct {
 	HostName            string
 	DeviceID            string
 	ModuleID            string
 	SharedAccessKey     string
 	SharedAccessKeyName string
+	X509                *tls.Certificate
+	SAS                 func(uri string, opts ...TokenOption) (string, error) // overrides GenerateToken
 }
 
-type options struct {
+type token struct {
 	duration time.Duration
 	time     time.Time
 }
 
 // TokenOption is token generation option.
-type TokenOption func(opts *options)
+type TokenOption func(opts *token)
 
 // WithDuration sets token duration.
 func WithDuration(d time.Duration) TokenOption {
-	return func(opts *options) {
+	return func(opts *token) {
 		opts.duration = d
 	}
 }
 
 // WithCurrentTime overrides current time clock.
 func WithCurrentTime(t time.Time) TokenOption {
-	return func(opts *options) {
+	return func(opts *token) {
 		opts.time = t
 	}
 }
@@ -81,11 +84,15 @@ func (c *Credentials) GenerateToken(uri string, opts ...TokenOption) (string, er
 	if uri == "" {
 		return "", errors.New("uri is blank")
 	}
+	if c.SAS != nil {
+		return c.SAS(uri, opts...)
+	}
+
 	if c.SharedAccessKey == "" {
 		return "", errors.New("SharedAccessKey is blank")
 	}
 
-	topts := &options{
+	topts := &token{
 		duration: time.Hour,
 		time:     time.Now(),
 	}

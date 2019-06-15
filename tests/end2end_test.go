@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/iotdevice"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
@@ -88,12 +86,6 @@ func TestEnd2End(t *testing.T) {
 				opts []iotdevice.ClientOption
 				test string
 			}{
-				"custom": {
-					[]iotdevice.ClientOption{
-						iotdevice.WithCredentials(&thirdPartyCreds{creds}),
-					},
-					"DeviceToCloud", // just need to check access
-				},
 				"x509": {
 					[]iotdevice.ClientOption{
 						iotdevice.WithX509FromFile(
@@ -106,6 +98,16 @@ func TestEnd2End(t *testing.T) {
 					"DeviceToCloud", // just need to check access
 				},
 				"sas": {
+					[]iotdevice.ClientOption{
+						iotdevice.WithCredentials(&credentials.Credentials{
+							DeviceID: creds.DeviceID,
+							HostName: creds.HostName,
+							SAS:      creds.GenerateToken,
+						}),
+					},
+					"DeviceToCloud",
+				},
+				"sak": {
 					[]iotdevice.ClientOption{
 						iotdevice.WithConnectionString(dcs),
 					},
@@ -145,34 +147,6 @@ func TestEnd2End(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-}
-
-// we're just simulating that sas token is requested some other way, like an external API.
-type thirdPartyCreds struct {
-	creds *credentials.Credentials
-}
-
-func (c *thirdPartyCreds) DeviceID() string {
-	return c.creds.DeviceID
-}
-
-func (c *thirdPartyCreds) Hostname() string {
-	return c.creds.HostName
-}
-
-func (c *thirdPartyCreds) IsSAS() bool {
-	return true
-}
-
-func (c *thirdPartyCreds) TLSConfig() *tls.Config {
-	return &tls.Config{
-		ServerName: c.creds.HostName,
-		RootCAs:    common.RootCAs(),
-	}
-}
-
-func (c *thirdPartyCreds) Token(ctx context.Context, uri string, d time.Duration) (string, error) {
-	return c.creds.GenerateToken(uri, credentials.WithDuration(d))
 }
 
 func testDeviceToCloud(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client) {

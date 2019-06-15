@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
 )
 
@@ -35,10 +36,7 @@ func WithTransport(tr transport.Transport) ClientOption {
 }
 
 // WithCredentials sets custom authentication credentials, e.g. 3rd-party token provider.
-func WithCredentials(creds transport.Credentials) ClientOption {
-	if creds == nil {
-		panic("creds is nil")
-	}
+func WithCredentials(creds *credentials.Credentials) ClientOption {
 	return func(c *Client) error {
 		c.creds = creds
 		return nil
@@ -49,11 +47,11 @@ func WithCredentials(creds transport.Credentials) ClientOption {
 // but it parses the given connection string first.
 func WithConnectionString(cs string) ClientOption {
 	return func(c *Client) error {
-		var err error
-		c.creds, err = NewSASCredentials(cs)
+		creds, err := credentials.ParseConnectionString(cs)
 		if err != nil {
 			return err
 		}
+		c.creds = creds
 		return nil
 	}
 }
@@ -61,10 +59,10 @@ func WithConnectionString(cs string) ClientOption {
 // WithX509FromCert enables x509 authentication.
 func WithX509FromCert(deviceID, hostname string, crt *tls.Certificate) ClientOption {
 	return func(c *Client) error {
-		var err error
-		c.creds, err = NewX509Credentials(deviceID, hostname, crt)
-		if err != nil {
-			return err
+		c.creds = &credentials.Credentials{
+			DeviceID: deviceID,
+			HostName: hostname,
+			X509:     crt,
 		}
 		return nil
 	}
@@ -107,8 +105,7 @@ func New(opts ...ClientOption) (*Client, error) {
 		if cs == "" {
 			return nil, errors.New("$IOTHUB_DEVICE_CONNECTION_STRING is empty")
 		}
-		c.creds, err = NewSASCredentials(cs)
-		if err != nil {
+		if err := WithConnectionString(cs)(c); err != nil {
 			return nil, err
 		}
 	}
@@ -120,7 +117,7 @@ func New(opts ...ClientOption) (*Client, error) {
 
 // Client is iothub device client.
 type Client struct {
-	creds transport.Credentials
+	creds *credentials.Credentials
 	tr    transport.Transport
 
 	logger common.Logger
@@ -139,7 +136,7 @@ type DirectMethodHandler func(p map[string]interface{}) (map[string]interface{},
 
 // DeviceID returns iothub device id.
 func (c *Client) DeviceID() string {
-	return c.creds.DeviceID()
+	return c.creds.DeviceID
 }
 
 // Connect connects to the iothub all subsequent calls

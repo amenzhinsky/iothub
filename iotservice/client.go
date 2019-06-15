@@ -76,7 +76,6 @@ func New(opts ...ClientOption) (*Client, error) {
 		done:   make(chan struct{}),
 		logger: common.NewLoggerFromEnv("iotservice", "IOTHUB_SERVICE_LOG_LEVEL"),
 	}
-
 	var err error
 	for _, opt := range opts {
 		if err = opt(c); err != nil {
@@ -94,7 +93,6 @@ func New(opts ...ClientOption) (*Client, error) {
 			return nil, err
 		}
 	}
-
 	if c.tls == nil {
 		c.tls = &tls.Config{RootCAs: common.RootCAs()}
 	}

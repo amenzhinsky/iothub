@@ -1,7 +1,6 @@
 package common
 
 import (
-	"crypto/tls"
 	"crypto/x509"
 )
 
@@ -77,13 +76,6 @@ PIWmawomDeCTmGCufsYkl4phX5GOZpIJhzbNi5stPvZR1FDUWSi9g/LMKHtThm3Y
 Johw1+qRzT65ysCQblrGXnRl11z+o+I=
 -----END CERTIFICATE-----
 `)
-
-func TLSConfig(hostname string) *tls.Config {
-	return &tls.Config{
-		ServerName: hostname,
-		RootCAs:    RootCAs(),
-	}
-}
 
 // RootCAs root CA certificates pool for connecting to the cloud.
 func RootCAs() *x509.CertPool {

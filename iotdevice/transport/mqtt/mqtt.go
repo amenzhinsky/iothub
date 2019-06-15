@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
@@ -84,25 +86,32 @@ func (tr *Transport) SetLogger(logger common.Logger) {
 	tr.logger = logger
 }
 
-func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) error {
+func (tr *Transport) Connect(ctx context.Context, creds *credentials.Credentials) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
 		return errors.New("already connected")
 	}
 
-	username := creds.Hostname() + "/" + creds.DeviceID() + "/api-version=2019-03-30"
+	tlsCfg := &tls.Config{
+		RootCAs: common.RootCAs(),
+	}
+	if creds.X509 != nil {
+		tlsCfg.Certificates = append(tlsCfg.Certificates, *creds.X509)
+	}
+
+	username := creds.HostName + "/" + creds.DeviceID + "/api-version=2019-03-30"
 	o := mqtt.NewClientOptions()
-	o.SetTLSConfig(creds.TLSConfig())
-	o.AddBroker("tls://" + creds.Hostname() + ":8883")
-	o.SetClientID(creds.DeviceID())
+	o.SetTLSConfig(tlsCfg)
+	o.AddBroker("tls://" + creds.HostName + ":8883")
+	o.SetClientID(creds.DeviceID)
 	o.SetCredentialsProvider(func() (string, string) {
-		if !creds.IsSAS() {
+		if creds.X509 != nil {
 			return username, ""
 		}
 		// TODO: renew token only when it expires in case an external token provider is used
 		// TODO: this can slow down the reconnect feature, so need to figure out max token lifetime
-		password, err := creds.Token(ctx, creds.Hostname(), time.Hour)
+		password, err := creds.GenerateToken(creds.HostName, credentials.WithDuration(time.Hour))
 		if err != nil {
 			panic(err)
 		}
@@ -133,7 +142,7 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 		return err
 	}
 
-	tr.did = creds.DeviceID()
+	tr.did = creds.DeviceID
 	tr.conn = c
 	return nil
 }
