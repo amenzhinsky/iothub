@@ -37,6 +37,7 @@ var (
 	caFlag            bool
 	statusFlag        iotservice.DeviceStatus
 	statusReasonFlag  string
+	capabilitiesFlag  map[string]interface{}
 	forceFlag         bool
 
 	// send
@@ -155,6 +156,7 @@ func run() error {
 				f.BoolVar(&caFlag, "ca", false, "use certificate authority authentication")
 				f.StringVar((*string)(&statusFlag), "status", "", "device status")
 				f.StringVar(&statusReasonFlag, "status-reason", "", "disabled device status reason")
+				f.Var((*internal.JSONMapFlag)(&capabilitiesFlag), "capability", "device capability, key=value")
 			},
 		},
 		{
@@ -170,6 +172,7 @@ func run() error {
 				f.BoolVar(&caFlag, "ca", false, "use certificate authority authentication")
 				f.StringVar((*string)(&statusFlag), "status", "", "device status")
 				f.StringVar(&statusReasonFlag, "status-reason", "", "disabled device status reason")
+				f.Var((*internal.JSONMapFlag)(&capabilitiesFlag), "capability", "device capability, key=value")
 				f.BoolVar(&forceFlag, "force", false, "force update")
 			},
 		},
@@ -462,6 +465,7 @@ func createDevice(ctx context.Context, c *iotservice.Client, args []string) erro
 		Authentication: &iotservice.Authentication{},
 		Status:         statusFlag,
 		StatusReason:   statusReasonFlag,
+		Capabilities:   capabilitiesFlag,
 	}
 	if err := updateAuth(device.Authentication); err != nil {
 		return err
@@ -483,6 +487,7 @@ func updateDevice(ctx context.Context, c *iotservice.Client, args []string) erro
 	if statusReasonFlag != "" {
 		device.StatusReason = statusReasonFlag
 	}
+	mergeMapJSON(capabilitiesFlag, device.Capabilities)
 	if err := updateAuth(device.Authentication); err != nil {
 		return err
 	}
