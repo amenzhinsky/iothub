@@ -123,6 +123,11 @@ func run() error {
 			Handler: wrap(ctx, watchFeedback),
 		},
 		{
+			Name: "watch-file-notifications",
+			Desc: "subscribe to file upload notifications",
+			Handler: wrap(ctx, watchFileNotifications),
+		},
+		{
 			Name:    "call",
 			Args:    []string{"DEVICE", "METHOD", "PAYLOAD"},
 			Desc:    "call a direct method on the named device",
@@ -787,6 +792,12 @@ func watchEventHubEvents(ctx context.Context, cs, group string) error {
 
 func watchFeedback(ctx context.Context, c *iotservice.Client, args []string) error {
 	return c.SubscribeFeedback(ctx, func(f *iotservice.Feedback) error {
+		return output(f, nil)
+	})
+}
+
+func watchFileNotifications(ctx context.Context, c *iotservice.Client, args []string) error {
+	return c.SubscribeFileNotifications(ctx, func(f *iotservice.FileNotification) error {
 		return output(f, nil)
 	})
 }

@@ -120,17 +120,19 @@ type Client struct {
 
 	sendMu   sync.Mutex
 	sendLink *amqp.Sender
+
+	// TODO: figure out if it makes sense to cache feedback and file notification receivers
 }
 
-// connectToIoTHub connects to IoT Hub's AMQP broker,
+// newSession connects to IoT Hub's AMQP broker,
 // it's needed for sending C2S events and subscribing to events feedback.
 //
 // It establishes connection only once, subsequent calls return immediately.
-func (c *Client) connectToIoTHub(ctx context.Context) (*amqp.Client, error) {
+func (c *Client) newSession(ctx context.Context) (*amqp.Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn != nil {
-		return c.conn, nil // already connected
+		return c.conn.NewSession() // already connected
 	}
 	conn, err := amqp.Dial("amqps://"+c.creds.HostName,
 		amqp.ConnTLSConfig(c.tls),
@@ -145,8 +147,12 @@ func (c *Client) connectToIoTHub(ctx context.Context) (*amqp.Client, error) {
 		return nil, err
 	}
 
+	sess, err := conn.NewSession()
+	if err != nil {
+		return nil, err
+	}
 	c.conn = conn
-	return conn, nil
+	return sess, nil
 }
 
 // putTokenContinuously writes token first time in blocking mode and returns
@@ -247,19 +253,15 @@ func (c *Client) putToken(ctx context.Context, sess *amqp.Session, token string)
 
 // connectToEventHub connects to IoT Hub endpoint compatible with Eventhub
 // for receiving D2C events, it uses different endpoints and authentication
-// mechanisms than connectToIoTHub.
+// mechanisms than newSession.
 func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error) {
-	conn, err := c.connectToIoTHub(ctx)
+	sess, err := c.newSession(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// iothub broker should redirect us to an eventhub compatible instance
 	// straight after subscribing to events stream, for that we need to connect twice
-	sess, err := conn.NewSession()
-	if err != nil {
-		return nil, err
-	}
 	defer sess.Close(context.Background())
 
 	recv, err := sess.NewReceiver(amqp.LinkSourceAddress("messages/events/"))
@@ -445,21 +447,17 @@ func (c *Client) SendEvent(
 
 // getSendLink caches sender link between calls to speed up sending events.
 func (c *Client) getSendLink(ctx context.Context) (*amqp.Sender, error) {
-	conn, err := c.connectToIoTHub(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	c.sendMu.Lock()
 	defer c.sendMu.Unlock()
 	if c.sendLink != nil {
 		return c.sendLink, nil
 	}
-
-	sess, err := conn.NewSession()
+	sess, err := c.newSession(ctx)
 	if err != nil {
 		return nil, err
 	}
+	// since the link is cached it's supposed to be closed along with the client itself
+
 	c.sendLink, err = sess.NewSender(
 		amqp.LinkTargetAddress("/messages/devicebound"),
 	)
@@ -475,18 +473,14 @@ type FeedbackHandler func(f *Feedback) error
 
 // SubscribeFeedback subscribes to feedback of messages that ack was requested.
 func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) error {
-	conn, err := c.connectToIoTHub(ctx)
-	if err != nil {
-		return err
-	}
-	sess, err := conn.NewSession()
+	sess, err := c.newSession(ctx)
 	if err != nil {
 		return err
 	}
 	defer sess.Close(context.Background())
 
 	recv, err := sess.NewReceiver(
-		amqp.LinkSourceAddress("/messages/servicebound/feedback"),
+		amqp.LinkSourceAddress("/messages/serviceBound/feedback"),
 	)
 	if err != nil {
 		return err
@@ -527,6 +521,55 @@ type Feedback struct {
 	DeviceID           string    `json:"deviceId"`
 	EnqueuedTimeUTC    time.Time `json:"enqueuedTimeUtc"`
 	StatusCode         string    `json:"statusCode"`
+}
+
+// FileNotification is emitted once a blob file is uploaded to the hub.
+//
+// TODO: structure is yet to define.
+type FileNotification struct {
+	*amqp.Message
+}
+
+// FileNotificationHandler handles file upload notifications.
+type FileNotificationHandler func(event *FileNotification) error
+
+// SubscribeFileNotifications subscribes to file notifications.
+//
+// The feature has to be enabled in the console.
+func (c *Client) SubscribeFileNotifications(
+	ctx context.Context,
+	fn FileNotificationHandler,
+) error {
+	sess, err := c.newSession(ctx)
+	if err != nil {
+		return err
+	}
+	defer sess.Close(context.Background())
+
+	recv, err := sess.NewReceiver(
+		amqp.LinkSourceAddress("/messages/serviceBound/filenotifications"),
+	)
+	if err != nil {
+		return err
+	}
+	defer recv.Close(context.Background())
+
+	for {
+		msg, err := recv.Receive(ctx)
+		if err != nil {
+			return err
+		}
+		if len(msg.Data) == 0 {
+			c.logger.Warnf("zero length data received")
+			continue
+		}
+		if err := fn(&FileNotification{msg}); err != nil {
+			return err
+		}
+		if err = msg.Accept(); err != nil {
+			return err
+		}
+	}
 }
 
 // HostName returns service's hostname.
