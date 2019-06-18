@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/iotdevice"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
@@ -70,11 +69,6 @@ func TestEnd2End(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	creds, err := credentials.ParseConnectionString(dcs)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	for name, mktransport := range map[string]func() transport.Transport{
 		"mqtt": func() transport.Transport { return mqtt.New() },
 		// TODO: "amqp": func() transport.Transport { return amqp.New() },
@@ -86,6 +80,7 @@ func TestEnd2End(t *testing.T) {
 				opts []iotdevice.ClientOption
 				test string
 			}{
+				// TODO: ca authentication
 				"x509": {
 					[]iotdevice.ClientOption{
 						iotdevice.WithX509FromFile(
@@ -98,16 +93,6 @@ func TestEnd2End(t *testing.T) {
 					"DeviceToCloud", // just need to check access
 				},
 				"sas": {
-					[]iotdevice.ClientOption{
-						iotdevice.WithCredentials(&credentials.Credentials{
-							DeviceID: creds.DeviceID,
-							HostName: creds.HostName,
-							SAS:      creds.GenerateToken,
-						}),
-					},
-					"DeviceToCloud",
-				},
-				"sak": {
 					[]iotdevice.ClientOption{
 						iotdevice.WithConnectionString(dcs),
 					},
@@ -338,6 +323,7 @@ func testUpdateTwin(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client) {
 	}
 }
 
+// TODO: very flaky
 func testSubscribeTwin(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client) {
 	sub, err := dc.SubscribeTwinUpdates(context.Background())
 	if err != nil {

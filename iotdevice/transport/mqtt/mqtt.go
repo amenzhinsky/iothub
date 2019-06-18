@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
@@ -86,7 +85,7 @@ func (tr *Transport) SetLogger(logger common.Logger) {
 	tr.logger = logger
 }
 
-func (tr *Transport) Connect(ctx context.Context, creds *credentials.Credentials) error {
+func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.conn != nil {
@@ -96,26 +95,26 @@ func (tr *Transport) Connect(ctx context.Context, creds *credentials.Credentials
 	tlsCfg := &tls.Config{
 		RootCAs: common.RootCAs(),
 	}
-	if creds.X509 != nil {
-		tlsCfg.Certificates = append(tlsCfg.Certificates, *creds.X509)
+	if crt := creds.GetCertificate(); crt != nil {
+		tlsCfg.Certificates = append(tlsCfg.Certificates, *crt)
 	}
 
-	username := creds.HostName + "/" + creds.DeviceID + "/api-version=2019-03-30"
+	username := creds.GetHostName() + "/" + creds.GetDeviceID() + "/api-version=2019-03-30"
 	o := mqtt.NewClientOptions()
 	o.SetTLSConfig(tlsCfg)
-	o.AddBroker("tls://" + creds.HostName + ":8883")
-	o.SetClientID(creds.DeviceID)
+	o.AddBroker("tls://" + creds.GetHostName() + ":8883")
+	o.SetClientID(creds.GetDeviceID())
 	o.SetCredentialsProvider(func() (string, string) {
-		if creds.X509 != nil {
+		if crt := creds.GetCertificate(); crt != nil {
 			return username, ""
 		}
 		// TODO: renew token only when it expires in case an external token provider is used
 		// TODO: this can slow down the reconnect feature, so need to figure out max token lifetime
-		password, err := creds.GenerateToken(creds.HostName, credentials.WithDuration(time.Hour))
+		sas, err := creds.Token(creds.GetHostName(), time.Hour)
 		if err != nil {
 			panic(err)
 		}
-		return username, password
+		return username, sas.String()
 	})
 	o.SetWriteTimeout(30 * time.Second)
 	o.SetMaxReconnectInterval(30 * time.Second) // default is 15min, way to long
@@ -142,7 +141,7 @@ func (tr *Transport) Connect(ctx context.Context, creds *credentials.Credentials
 		return err
 	}
 
-	tr.did = creds.DeviceID
+	tr.did = creds.GetDeviceID()
 	tr.conn = c
 	return nil
 }

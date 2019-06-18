@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/amenzhinsky/iothub/iotservice"
 )
 
 func main() {
-	// IOTHUB_SERVICE_CONNECTION_STRING environment variable must be set
-	c, err := iotservice.New()
+	c, err := iotservice.New(
+		iotservice.WithConnectionString(os.Getenv("IOTHUB_SERVICE_CONNECTION_STRING")),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/credentials"
 	"github.com/amenzhinsky/iothub/eventhub"
 	"pack.ag/amqp"
 )
@@ -28,19 +27,31 @@ type ClientOption func(c *Client) error
 // WithConnectionString parses the given connection string instead of using `WithCredentials`.
 func WithConnectionString(cs string) ClientOption {
 	return func(c *Client) error {
-		creds, err := credentials.ParseConnectionString(cs)
+		var err error
+		c.sak, err = parseConnectionString(cs)
 		if err != nil {
 			return err
 		}
-		c.creds = creds
 		return nil
 	}
 }
 
-// WithCredentials uses the given credentials to generate GenerateToken tokens.
-func WithCredentials(creds *credentials.Credentials) ClientOption {
+func parseConnectionString(cs string) (*common.SharedAccessKey, error) {
+	m, err := common.ParseConnectionString(
+		cs, "HostName", "SharedAccessKeyName", "SharedAccessKey",
+	)
+	if err != nil {
+		return nil, err
+	}
+	return common.NewSharedAccessKey(
+		m["HostName"], m["SharedAccessKeyName"], m["SharedAccessKey"],
+	), nil
+}
+
+// WithSharedAccessKey sets client security provider.
+func WithSharedAccessKey(sak *common.SharedAccessKey) ClientOption {
 	return func(c *Client) error {
-		c.creds = creds
+		c.sak = sak
 		return nil
 	}
 }
@@ -84,12 +95,12 @@ func New(opts ...ClientOption) (*Client, error) {
 		}
 	}
 
-	if c.creds == nil {
+	if c.sak == nil {
 		cs := os.Getenv("IOTHUB_SERVICE_CONNECTION_STRING")
 		if cs == "" {
 			return nil, errorf("$IOTHUB_SERVICE_CONNECTION_STRING is empty")
 		}
-		c.creds, err = credentials.ParseConnectionString(cs)
+		c.sak, err = parseConnectionString(cs)
 		if err != nil {
 			return nil, err
 		}
@@ -115,7 +126,7 @@ type Client struct {
 	tls    *tls.Config
 	conn   *amqp.Client
 	done   chan struct{}
-	creds  *credentials.Credentials
+	sak    *common.SharedAccessKey
 	logger common.Logger
 	http   *http.Client // REST client
 
@@ -135,7 +146,7 @@ func (c *Client) newSession(ctx context.Context) (*amqp.Session, error) {
 	if c.conn != nil {
 		return c.conn.NewSession() // already connected
 	}
-	conn, err := amqp.Dial("amqps://"+c.creds.HostName,
+	conn, err := amqp.Dial("amqps://"+c.sak.HostName,
 		amqp.ConnTLSConfig(c.tls),
 		amqp.ConnProperty("com.microsoft:client-version", userAgent),
 	)
@@ -143,7 +154,7 @@ func (c *Client) newSession(ctx context.Context) (*amqp.Session, error) {
 		return nil, err
 	}
 
-	c.logger.Debugf("connected to %s", c.creds.HostName)
+	c.logger.Debugf("connected to %s", c.sak.HostName)
 	if err = c.putTokenContinuously(ctx, conn); err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -168,20 +179,13 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 		tokenUpdateSpan = 10 * time.Minute
 	)
 
-	token, err := c.creds.GenerateToken(
-		c.creds.HostName, credentials.WithDuration(tokenUpdateInterval),
-	)
-	if err != nil {
-		return err
-	}
-
 	sess, err := conn.NewSession()
 	if err != nil {
 		return err
 	}
 	defer sess.Close(context.Background())
 
-	if err := c.putToken(ctx, sess, token); err != nil {
+	if err := c.putToken(ctx, sess, tokenUpdateInterval); err != nil {
 		return err
 	}
 
@@ -192,14 +196,7 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 		for {
 			select {
 			case <-ticker.C:
-				token, err := c.creds.GenerateToken(
-					c.creds.HostName, credentials.WithDuration(tokenUpdateInterval),
-				)
-				if err != nil {
-					c.logger.Errorf("generate token error: %s", err)
-					return
-				}
-				if err := c.putToken(context.Background(), sess, token); err != nil {
+				if err := c.putToken(context.Background(), sess, tokenUpdateInterval); err != nil {
 					c.logger.Errorf("put token error: %s", err)
 					return
 				}
@@ -213,7 +210,9 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 	return nil
 }
 
-func (c *Client) putToken(ctx context.Context, sess *amqp.Session, token string) error {
+func (c *Client) putToken(
+	ctx context.Context, sess *amqp.Session, lifetime time.Duration,
+) error {
 	send, err := sess.NewSender(
 		amqp.LinkTargetAddress("$cbs"),
 	)
@@ -230,8 +229,12 @@ func (c *Client) putToken(ctx context.Context, sess *amqp.Session, token string)
 	}
 	defer recv.Close(context.Background())
 
+	sas, err := c.sak.Token(c.sak.HostName, lifetime)
+	if err != nil {
+		return err
+	}
 	if err = send.Send(ctx, &amqp.Message{
-		Value: token,
+		Value: sas.String(),
 		Properties: &amqp.MessageProperties{
 			To:      "$cbs",
 			ReplyTo: "cbs",
@@ -239,7 +242,7 @@ func (c *Client) putToken(ctx context.Context, sess *amqp.Session, token string)
 		ApplicationProperties: map[string]interface{}{
 			"operation": "put-token",
 			"type":      "servicebus.windows.net:sastoken",
-			"name":      c.creds.HostName,
+			"name":      c.sak.HostName,
 		},
 	}); err != nil {
 		return err
@@ -298,7 +301,7 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	eh, err := eventhub.Dial(host, group,
 		eventhub.WithLogger(c.logger),
 		eventhub.WithTLSConfig(tlsCfg),
-		eventhub.WithSASLPlain(c.creds.SharedAccessKeyName, c.creds.SharedAccessKey),
+		eventhub.WithSASLPlain(c.sak.SharedAccessKeyName, c.sak.SharedAccessKey),
 		eventhub.WithConnOption(amqp.ConnProperty("com.microsoft:client-version", userAgent)),
 	)
 	if err != nil {
@@ -581,7 +584,7 @@ func (c *Client) SubscribeFileNotifications(
 
 // HostName returns service's hostname.
 func (c *Client) HostName() string {
-	return c.creds.HostName
+	return c.sak.HostName
 }
 
 // DeviceConnectionString builds up a connection string for the given device.
@@ -591,7 +594,7 @@ func (c *Client) DeviceConnectionString(device *Device, secondary bool) (string,
 		return "", err
 	}
 	return fmt.Sprintf("HostName=%s;DeviceId=%s;SharedAccessKey=%s",
-		c.creds.HostName, device.DeviceID, key,
+		c.sak.HostName, device.DeviceID, key,
 	), nil
 }
 
@@ -601,7 +604,7 @@ func (c *Client) ModuleConnectionString(module *Module, secondary bool) (string,
 		return "", err
 	}
 	return fmt.Sprintf("HostName=%s;DeviceId=%s;ModuleId=%s;SharedAccessKey=%s",
-		c.creds.HostName, module.DeviceID, module.ModuleID, key,
+		c.sak.HostName, module.DeviceID, module.ModuleID, key,
 	), nil
 }
 
@@ -611,12 +614,12 @@ func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary boo
 	if err != nil {
 		return "", err
 	}
-	creds := credentials.Credentials{
-		HostName:        c.creds.HostName,
-		DeviceID:        device.DeviceID,
-		SharedAccessKey: key,
+	// TODO: accept resource path
+	sas, err := common.NewSharedAccessSignature(c.sak.HostName, "", key, time.Now().Add(duration))
+	if err != nil {
+		return "", err
 	}
-	return creds.GenerateToken(creds.HostName, credentials.WithDuration(duration))
+	return sas.String(), nil
 }
 
 func accessKey(auth *Authentication, secondary bool) (string, error) {
@@ -1140,19 +1143,19 @@ func (c *Client) call(
 		}
 	}
 
-	uri := "https://" + c.creds.HostName + "/" + path + "?api-version=2019-03-30"
+	uri := "https://" + c.sak.HostName + "/" + path + "?api-version=2019-03-30"
 	req, err := http.NewRequest(method, uri, bytes.NewReader(b))
 	if err != nil {
 		return nil, err
 	}
-	token, err := c.creds.GenerateToken(c.creds.HostName)
+	sas, err := c.sak.Token(c.sak.HostName, time.Hour)
 	if err != nil {
 		return nil, err
 	}
 
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("Authorization", token)
+	req.Header.Set("Authorization", sas.String())
 	req.Header.Set("Request-Id", genRequestID())
 	req.Header.Set("User-Agent", userAgent)
 	for k, v := range headers {

@@ -5,9 +5,47 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	"github.com/amenzhinsky/iothub/credentials"
 )
+
+func TestSendWithNegativeFeedback(t *testing.T) {
+	client := newClient(t)
+	device := newDevice(t, client)
+
+	mid := genRequestID()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errc := make(chan error, 1)
+	go func() {
+		errc <- client.SubscribeFeedback(ctx, func(f *Feedback) error {
+			if f.OriginalMessageID == mid {
+				cancel()
+			}
+			return nil
+		})
+	}()
+
+	// send a message to the previously created device that's not connected
+	if err := client.SendEvent(
+		ctx,
+		device.DeviceID,
+		nil,
+		WithSendAck(AckNegative),
+		WithSendMessageID(mid),
+		WithSendExpiryTime(time.Now()),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-errc:
+		if err != context.Canceled {
+			t.Fatal(err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out")
+	}
+}
 
 func TestETags(t *testing.T) {
 	client := newClient(t)
@@ -83,11 +121,7 @@ func TestDeleteDevice(t *testing.T) {
 func TestDeviceConnectionString(t *testing.T) {
 	client := newClient(t)
 	device := newDevice(t, client)
-	cs, err := client.DeviceConnectionString(device, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := credentials.ParseConnectionString(cs); err != nil {
+	if _, err := client.DeviceConnectionString(device, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -135,11 +169,7 @@ func TestUpdateDeviceTwin(t *testing.T) {
 func TestModuleConnectionString(t *testing.T) {
 	client := newClient(t)
 	_, module := newDeviceAndModule(t, client)
-	cs, err := client.ModuleConnectionString(module, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := credentials.ParseConnectionString(cs); err != nil {
+	if _, err := client.ModuleConnectionString(module, false); err != nil {
 		t.Fatal(err)
 	}
 }

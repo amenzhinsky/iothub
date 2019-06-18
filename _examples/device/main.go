@@ -3,15 +3,16 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
 	"github.com/amenzhinsky/iothub/iotdevice"
 	iotmqtt "github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
 )
 
 func main() {
-	// IOTHUB_DEVICE_CONNECTION_STRING environment variable must be set
 	c, err := iotdevice.New(
 		iotdevice.WithTransport(iotmqtt.New()),
+		iotdevice.WithConnectionString(os.Getenv("IOTHUB_DEVICE_CONNECTION_STRING")),
 	)
 	if err != nil {
 		log.Fatal(err)
