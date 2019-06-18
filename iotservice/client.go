@@ -69,6 +69,8 @@ func WithTLSConfig(config *tls.Config) ClientOption {
 	}
 }
 
+const userAgent = "iothub-golang-sdk/dev"
+
 // NewLogger creates new iothub service client.
 func New(opts ...ClientOption) (*Client, error) {
 	c := &Client{
@@ -135,6 +137,7 @@ func (c *Client) newSession(ctx context.Context) (*amqp.Session, error) {
 	}
 	conn, err := amqp.Dial("amqps://"+c.creds.HostName,
 		amqp.ConnTLSConfig(c.tls),
+		amqp.ConnProperty("com.microsoft:client-version", userAgent),
 	)
 	if err != nil {
 		return nil, err
@@ -219,7 +222,9 @@ func (c *Client) putToken(ctx context.Context, sess *amqp.Session, token string)
 	}
 	defer send.Close(context.Background())
 
-	recv, err := sess.NewReceiver(amqp.LinkSourceAddress("$cbs"))
+	recv, err := sess.NewReceiver(
+		amqp.LinkSourceAddress("$cbs"),
+	)
 	if err != nil {
 		return err
 	}
@@ -263,7 +268,9 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	// straight after subscribing to events stream, for that we need to connect twice
 	defer sess.Close(context.Background())
 
-	recv, err := sess.NewReceiver(amqp.LinkSourceAddress("messages/events/"))
+	recv, err := sess.NewReceiver(
+		amqp.LinkSourceAddress("messages/events/"),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +299,7 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 		eventhub.WithLogger(c.logger),
 		eventhub.WithTLSConfig(tlsCfg),
 		eventhub.WithSASLPlain(c.creds.SharedAccessKeyName, c.creds.SharedAccessKey),
+		eventhub.WithConnOption(amqp.ConnProperty("com.microsoft:client-version", userAgent)),
 	)
 	if err != nil {
 		return nil, err
@@ -1146,19 +1154,20 @@ func (c *Client) call(
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Authorization", token)
 	req.Header.Set("Request-Id", genRequestID())
+	req.Header.Set("User-Agent", userAgent)
 	for k, v := range headers {
 		for i := range v {
 			req.Header.Add(k, v[i])
 		}
 	}
 
-	c.logger.Debugf("%s", &requestOutDump{req})
+	c.logger.Debugf("%s", (*requestOutDump)(req))
 	res, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
-	c.logger.Debugf("%s", &responseDump{res})
+	c.logger.Debugf("%s", (*responseDump)(res))
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {

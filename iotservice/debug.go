@@ -6,24 +6,20 @@ import (
 	"net/http/httputil"
 )
 
-type requestOutDump struct {
-	req *http.Request
-}
+type requestOutDump http.Request
 
 func (r *requestOutDump) String() string {
-	b, err := httputil.DumpRequestOut(r.req, true)
+	b, err := httputil.DumpRequestOut((*http.Request)(r), true)
 	if err != nil {
 		panic(err)
 	}
 	return prefix(b, "> ")
 }
 
-type responseDump struct {
-	res *http.Response
-}
+type responseDump http.Response
 
 func (r *responseDump) String() string {
-	b, err := httputil.DumpResponse(r.res, true)
+	b, err := httputil.DumpResponse((*http.Response)(r), true)
 	if err != nil {
 		panic(err)
 	}
