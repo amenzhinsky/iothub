@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"strings"
@@ -1153,23 +1152,13 @@ func (c *Client) call(
 		}
 	}
 
-	db, err := httputil.DumpRequestOut(req, true)
-	if err != nil {
-		return nil, err
-	}
-	c.logger.Debugf("%s", prefix(db, "> "))
-
+	c.logger.Debugf("%s", &requestOutDump{req})
 	res, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
-
-	db, err = httputil.DumpResponse(res, true)
-	if err != nil {
-		return nil, err
-	}
-	c.logger.Debugf("%s", prefix(db, "< "))
+	c.logger.Debugf("%s", &responseDump{res})
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
@@ -1193,25 +1182,6 @@ func genRequestID() string {
 		panic(err)
 	}
 	return hex.EncodeToString(b)
-}
-
-func prefix(b []byte, prefix string) string {
-	off := 0
-	buf := bytes.NewBuffer(make([]byte, 0,
-		len(b)+(bytes.Count(b, []byte{'\n'})*len(prefix)+len(prefix))),
-	)
-	buf.WriteString(prefix)
-	for {
-		i := bytes.Index(b[off:], []byte{'\n'})
-		if i < 0 {
-			buf.Write(b[off:])
-			break
-		}
-		buf.Write(b[off : off+i+1])
-		buf.WriteString(prefix)
-		off += i + 1
-	}
-	return buf.String()
 }
 
 // Close closes transport.
