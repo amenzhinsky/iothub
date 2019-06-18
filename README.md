@@ -104,7 +104,6 @@ See `-help` for more details.
 ### iotservice
 
 1. Schedule twin updates and device method calls.
-1. Bulk registry operations.
 1. Blob files management.
 
 ### iotdevice

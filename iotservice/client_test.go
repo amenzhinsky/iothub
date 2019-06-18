@@ -71,6 +71,41 @@ func TestETags(t *testing.T) {
 	}
 }
 
+func TestBulkOperations(t *testing.T) {
+	client := newClient(t)
+	devices := []*Device{
+		{DeviceID: "bulk-0"},
+		{DeviceID: "bulk-1"},
+	}
+	for _, dev := range devices {
+		_ = client.DeleteDevice(context.Background(), dev)
+	}
+
+	res, err := client.CreateDevices(context.Background(), devices)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsSuccessful {
+		t.Fatal("create is not successful")
+	}
+
+	res, err = client.UpdateDevices(context.Background(), devices, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsSuccessful {
+		t.Fatal("update is not successful")
+	}
+
+	res, err = client.DeleteDevices(context.Background(), devices, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsSuccessful {
+		t.Fatal("delete is not successful")
+	}
+}
+
 func TestListDevices(t *testing.T) {
 	client := newClient(t)
 	device := newDevice(t, client)

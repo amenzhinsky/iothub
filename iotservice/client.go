@@ -706,6 +706,88 @@ func (c *Client) CreateDevice(ctx context.Context, device *Device) (*Device, err
 	return &res, nil
 }
 
+// CreateDevices creates array of devices in bulk mode.
+func (c *Client) CreateDevices(
+	ctx context.Context, devices []*Device,
+) (*BulkResult, error) {
+	return c.bulkRequest(ctx, devices, "create")
+}
+
+// UpdateDevices updates array of devices in bulk mode.
+func (c *Client) UpdateDevices(
+	ctx context.Context, devices []*Device, force bool,
+) (*BulkResult, error) {
+	op := "UpdateIfMatchETag"
+	if force {
+		op = "Update"
+	}
+	return c.bulkRequest(ctx, devices, op)
+}
+
+// DeleteDevices deletes array of devices in bulk mode.
+func (c *Client) DeleteDevices(
+	ctx context.Context, devices []*Device, force bool,
+) (*BulkResult, error) {
+	op := "DeleteIfMatchETag"
+	if force {
+		op = "Delete"
+	}
+	return c.bulkRequest(ctx, devices, op)
+}
+
+func (c *Client) bulkRequest(
+	ctx context.Context, devices []*Device, op string,
+) (*BulkResult, error) {
+	// convert devices into a variable map and rename deviceId to id
+	devs := make([]map[string]interface{}, 0, len(devices))
+	for _, dev := range devices {
+		m, err := toMap(dev)
+		if err != nil {
+			return nil, err
+		}
+		id := m["deviceId"]
+		delete(m, "deviceId")
+		m["id"] = id
+		m["importMode"] = op
+		devs = append(devs, m)
+	}
+
+	var res BulkResult
+	_, err := c.call(ctx, http.MethodPost, "devices", nil, devs, &res)
+	if err != nil {
+		if re, ok := err.(*RequestError); ok && re.Code == http.StatusBadRequest {
+			return &res, nil
+		}
+		return nil, err
+	}
+	return &res, err
+}
+
+// ridiculous way to convert a structure to a variable map
+func toMap(v interface{}) (map[string]interface{}, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]interface{}
+	if err = json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+type BulkResult struct {
+	IsSuccessful bool                     `json:"isSuccessful"`
+	Errors       []*BulkError             `json:"errors"`
+	Warnings     []map[string]interface{} `json:"warnings"`
+}
+
+type BulkError struct {
+	DeviceID    string `json:"deviceId"`
+	ErrorCode   uint   `json:"errorCode"`
+	ErrorStatus string `json:"errorStatus"`
+}
+
 func ifMatchHeader(etag string) http.Header {
 	if etag == "" {
 		etag = "*"
@@ -1176,16 +1258,25 @@ func (c *Client) call(
 	if err != nil {
 		return nil, err
 	}
-	if v == nil && res.StatusCode == http.StatusNoContent {
-		return nil, nil
-	}
-	if res.StatusCode != http.StatusOK {
-		return nil, errorf("code = %d, desc = %q", res.StatusCode, string(body))
+	if res.StatusCode == http.StatusNoContent {
+		return res.Header, nil
 	}
 	if err = json.Unmarshal(body, v); err != nil {
 		return nil, err
 	}
+	if res.StatusCode != http.StatusOK {
+		return nil, &RequestError{Code: res.StatusCode, Body: body}
+	}
 	return res.Header, nil
+}
+
+type RequestError struct {
+	Code int
+	Body []byte
+}
+
+func (e *RequestError) Error() string {
+	return fmt.Sprintf("code = %d, body = %q", e.Code, e.Body)
 }
 
 func genRequestID() string {
