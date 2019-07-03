@@ -403,8 +403,8 @@ func TestScheduleMethodCall(t *testing.T) {
 			TimeoutInSeconds: 0,
 		},
 		QueryCondition:            "deviceId='nonexisting'",
-		StartTime:                 time.Now(),
-		MaxExecutionTimeInSeconds: 0,
+		StartTime:                 time.Now().Add(time.Minute),
+		MaxExecutionTimeInSeconds: 5,
 	})
 	if err != nil {
 		t.Fatal(err)

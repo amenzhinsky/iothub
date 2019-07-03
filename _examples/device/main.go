@@ -23,7 +23,7 @@ func main() {
 	}
 
 	// send a device-to-cloud message
-	if err = c.SendEvent(context.Background(), []byte(`hello`)); err != nil {
+	if err = c.SendEvent(context.Background(), []byte("hello")); err != nil {
 		log.Fatal(err)
 	}
 }

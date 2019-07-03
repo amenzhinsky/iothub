@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -79,6 +81,7 @@ var (
 	excludeKeysFlag bool
 
 	// schedule jobs
+	jobIDFlag       string
 	queryFlag       string
 	startTimeFlag   time.Time
 	maxExecTimeFlag uint
@@ -425,9 +428,10 @@ func run() error {
 		},
 		{
 			Name:    "schedule-method-call",
-			Args:    []string{"JOB", "METHOD", "PAYLOAD"},
+			Args:    []string{"METHOD", "PAYLOAD"},
 			Handler: wrap(ctx, scheduleMethodCall),
 			ParseFunc: func(f *flag.FlagSet) {
+				f.StringVar(&jobIDFlag, "job-id", "", "unique job id")
 				f.StringVar(&queryFlag, "query", "*", "query condition")
 				f.Var((*internal.TimeFlag)(&startTimeFlag), "start-time", "start time in RFC3339")
 				f.UintVar(&timeoutFlag, "connect-timeout", 0, "connection timeout in seconds")
@@ -436,8 +440,14 @@ func run() error {
 		},
 		{
 			Name:    "schedule-twin-update",
-			Args:    []string{"JOB", "DEVICE"},
+			Args:    []string{}, // TODO
 			Handler: wrap(ctx, scheduleTwinUpdate),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.StringVar(&jobIDFlag, "job-id", "", "unique job id")
+				f.StringVar(&queryFlag, "query", "*", "query condition")
+				f.Var((*internal.TimeFlag)(&startTimeFlag), "start-time", "start time in RFC3339")
+				f.UintVar(&maxExecTimeFlag, "exec-timeout", 30, "maximal execution time in seconds")
+			},
 		},
 		{
 			Name:    "device-connection-string",
@@ -886,15 +896,18 @@ func cancelScheduleJob(ctx context.Context, c *iotservice.Client, args []string)
 }
 
 func scheduleMethodCall(ctx context.Context, c *iotservice.Client, args []string) error {
+	if jobIDFlag == "" {
+		jobIDFlag = genID()
+	}
 	var payload interface{}
-	if err := json.Unmarshal([]byte(args[2]), &payload); err != nil {
+	if err := json.Unmarshal([]byte(args[1]), &payload); err != nil {
 		return err
 	}
 	return output(c.CreateJobV2(ctx, &iotservice.JobV2{
-		JobID: args[0], // TODO: can be optional
+		JobID: jobIDFlag,
 		Type:  iotservice.JobTypeDeviceMethod,
 		CloudToDeviceMethod: &iotservice.DeviceMethodParams{
-			MethodName:       args[1],
+			MethodName:       args[0],
 			Payload:          payload,
 			TimeoutInSeconds: timeoutFlag,
 		},
@@ -905,16 +918,36 @@ func scheduleMethodCall(ctx context.Context, c *iotservice.Client, args []string
 }
 
 func scheduleTwinUpdate(ctx context.Context, c *iotservice.Client, args []string) error {
+	if jobIDFlag == "" {
+		jobIDFlag = genID()
+	}
 	return output(c.CreateJobV2(ctx, &iotservice.JobV2{
-		JobID: args[0], // TODO: can be optional
+		JobID: jobIDFlag,
 		Type:  iotservice.JobTypeUpdateTwin,
+
+		// TODO: should be the same as updateTwin action, query is not applied here
 		UpdateTwin: map[string]interface{}{
-			"tags": map[string]string{"foo": "bar"},
-		}, // TODO
+			"etag":     "*",
+			"deviceId": "",
+			//"tags": map[string]interface{}{"foo": 333},
+			"properties": map[string]interface{}{
+				"desired": map[string]interface{}{
+					"scheduled": 1,
+				},
+			},
+		},
 		QueryCondition:            queryFlag,
 		StartTime:                 startTimeFlag,
 		MaxExecutionTimeInSeconds: maxExecTimeFlag,
 	}))
+}
+
+func genID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }
 
 func deviceConnectionString(ctx context.Context, c *iotservice.Client, args []string) error {
