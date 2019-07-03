@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/amenzhinsky/iothub/logger"
 )
@@ -75,4 +76,19 @@ func (f *LogLevelFlag) Set(s string) error {
 
 func (f *LogLevelFlag) String() string {
 	return fmt.Sprintf("%q", strings.ToLower(logger.Level(*f).String()))
+}
+
+type TimeFlag time.Time
+
+func (f *TimeFlag) Set(s string) error {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return err
+	}
+	*f = TimeFlag(t)
+	return nil
+}
+
+func (f *TimeFlag) String() string {
+	return (*time.Time)(f).Format(time.RFC3339)
 }

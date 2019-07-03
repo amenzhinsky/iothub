@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -581,13 +582,17 @@ func (c *Client) ModuleConnectionString(module *Module, secondary bool) (string,
 }
 
 // DeviceSAS generates a GenerateToken token for the named device.
-func (c *Client) DeviceSAS(device *Device, duration time.Duration, secondary bool) (string, error) {
+func (c *Client) DeviceSAS(
+	device *Device, duration time.Duration, secondary bool,
+) (string, error) {
 	key, err := accessKey(device.Authentication, secondary)
 	if err != nil {
 		return "", err
 	}
 	// TODO: accept resource path
-	sas, err := common.NewSharedAccessSignature(c.sak.HostName, "", key, time.Now().Add(duration))
+	sas, err := common.NewSharedAccessSignature(
+		c.sak.HostName, "", key, time.Now().Add(duration),
+	)
 	if err != nil {
 		return "", err
 	}
@@ -638,6 +643,7 @@ func (c *Client) callMethod(ctx context.Context, path string, call *MethodCall) 
 		http.MethodPost,
 		path,
 		nil,
+		nil,
 		call,
 		&res,
 	); err != nil {
@@ -655,6 +661,7 @@ func (c *Client) GetDevice(ctx context.Context, deviceID string) (*Device, error
 		pathf("devices/%s", deviceID),
 		nil,
 		nil,
+		nil,
 		&res,
 	); err != nil {
 		return nil, err
@@ -669,6 +676,7 @@ func (c *Client) CreateDevice(ctx context.Context, device *Device) (*Device, err
 		ctx,
 		http.MethodPut,
 		pathf("devices/%s", device.DeviceID),
+		nil,
 		nil,
 		device,
 		&res,
@@ -725,9 +733,20 @@ func (c *Client) bulkRequest(
 	}
 
 	var res BulkResult
-	_, err := c.call(ctx, http.MethodPost, "devices", nil, devs, &res)
+	_, err := c.call(
+		ctx,
+		http.MethodPost,
+		"devices",
+		nil,
+		nil,
+		devs,
+		&res,
+	)
 	if err != nil {
-		if re, ok := err.(*RequestError); ok && re.Code == http.StatusBadRequest {
+		if re, ok := err.(*RequestError); ok && re.Res.StatusCode == http.StatusBadRequest {
+			if err = json.Unmarshal(re.Body, &res); err != nil {
+				return nil, err
+			}
 			return &res, nil
 		}
 		return nil, err
@@ -764,6 +783,7 @@ func (c *Client) UpdateDevice(ctx context.Context, device *Device) (*Device, err
 		ctx,
 		http.MethodPut,
 		pathf("devices/%s", device.DeviceID),
+		nil,
 		ifMatchHeader(device.ETag),
 		device,
 		&res,
@@ -779,6 +799,7 @@ func (c *Client) DeleteDevice(ctx context.Context, device *Device) error {
 		ctx,
 		http.MethodDelete,
 		pathf("devices/%s", device.DeviceID),
+		nil,
 		ifMatchHeader(device.ETag),
 		nil,
 		nil,
@@ -793,6 +814,7 @@ func (c *Client) ListDevices(ctx context.Context) ([]*Device, error) {
 		ctx,
 		http.MethodGet,
 		"devices",
+		nil,
 		nil,
 		nil,
 		&res,
@@ -811,6 +833,7 @@ func (c *Client) ListModules(ctx context.Context, deviceID string) ([]*Module, e
 		pathf("devices/%s/modules", deviceID),
 		nil,
 		nil,
+		nil,
 		&res,
 	); err != nil {
 		return nil, err
@@ -824,6 +847,7 @@ func (c *Client) CreateModule(ctx context.Context, module *Module) (*Module, err
 	if _, err := c.call(ctx,
 		http.MethodPut,
 		pathf("devices/%s/modules/%s", module.DeviceID, module.ModuleID),
+		nil,
 		nil,
 		module,
 		&res,
@@ -844,6 +868,7 @@ func (c *Client) GetModule(ctx context.Context, deviceID, moduleID string) (
 		pathf("devices/%s/modules/%s", deviceID, moduleID),
 		nil,
 		nil,
+		nil,
 		&res,
 	); err != nil {
 		return nil, err
@@ -858,6 +883,7 @@ func (c *Client) UpdateModule(ctx context.Context, module *Module) (*Module, err
 		ctx,
 		http.MethodPut,
 		pathf("devices/%s/modules/%s", module.DeviceID, module.ModuleID),
+		nil,
 		ifMatchHeader(module.ETag),
 		module,
 		&res,
@@ -873,6 +899,7 @@ func (c *Client) DeleteModule(ctx context.Context, module *Module) error {
 		ctx,
 		http.MethodDelete,
 		pathf("devices/%s/modules/%s", module.DeviceID, module.ModuleID),
+		nil,
 		ifMatchHeader(module.ETag),
 		nil,
 		nil,
@@ -889,6 +916,7 @@ func (c *Client) GetDeviceTwin(ctx context.Context, deviceID string) (*Twin, err
 		pathf("twins/%s", deviceID),
 		nil,
 		nil,
+		nil,
 		&res,
 	); err != nil {
 		return nil, err
@@ -897,12 +925,15 @@ func (c *Client) GetDeviceTwin(ctx context.Context, deviceID string) (*Twin, err
 }
 
 // GetModuleTwin retrieves the named module's path.
-func (c *Client) GetModuleTwin(ctx context.Context, deviceID, moduleID string) (*ModuleTwin, error) {
+func (c *Client) GetModuleTwin(ctx context.Context, deviceID, moduleID string) (
+	*ModuleTwin, error,
+) {
 	var res ModuleTwin
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
 		pathf("twins/%s/modules/%s", deviceID, moduleID),
+		nil,
 		nil,
 		nil,
 		&res,
@@ -919,6 +950,7 @@ func (c *Client) UpdateDeviceTwin(ctx context.Context, twin *Twin) (*Twin, error
 		ctx,
 		http.MethodPatch,
 		pathf("twins/%s", twin.DeviceID),
+		nil,
 		ifMatchHeader(twin.ETag),
 		twin,
 		&res,
@@ -937,6 +969,7 @@ func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (
 		ctx,
 		http.MethodPatch,
 		pathf("twins/%s/modules/%s", twin.DeviceID, twin.ModuleID),
+		nil,
 		ifMatchHeader(twin.ETag),
 		twin,
 		&res,
@@ -955,6 +988,7 @@ func (c *Client) ListConfigurations(ctx context.Context) ([]*Configuration, erro
 		"configurations",
 		nil,
 		nil,
+		nil,
 		&res,
 	); err != nil {
 		return nil, err
@@ -971,6 +1005,7 @@ func (c *Client) CreateConfiguration(ctx context.Context, config *Configuration)
 		ctx,
 		http.MethodPut,
 		pathf("configurations/%s", config.ID),
+		nil,
 		nil,
 		config,
 		&res,
@@ -991,6 +1026,7 @@ func (c *Client) GetConfiguration(ctx context.Context, configID string) (
 		pathf("configurations/%s", configID),
 		nil,
 		nil,
+		nil,
 		&res,
 	); err != nil {
 		return nil, err
@@ -1007,6 +1043,7 @@ func (c *Client) UpdateConfiguration(ctx context.Context, config *Configuration)
 		ctx,
 		http.MethodPut,
 		pathf("configurations/%s", config.ID),
+		nil,
 		ifMatchHeader(config.ETag),
 		config,
 		&res,
@@ -1022,6 +1059,7 @@ func (c *Client) DeleteConfiguration(ctx context.Context, config *Configuration)
 		ctx,
 		http.MethodDelete,
 		pathf("configurations/%s", config.ID),
+		nil,
 		ifMatchHeader(config.ETag),
 		nil,
 		nil,
@@ -1039,6 +1077,7 @@ func (c *Client) ApplyConfigurationContentOnDevice(
 		http.MethodPost,
 		pathf("devices/%s/applyConfigurationContent", deviceID),
 		nil,
+		nil,
 		content,
 		nil,
 	)
@@ -1046,48 +1085,68 @@ func (c *Client) ApplyConfigurationContentOnDevice(
 }
 
 func (c *Client) QueryDevices(
-	ctx context.Context, q *Query, fn func(v map[string]interface{}) error,
+	ctx context.Context, query string, fn func(v map[string]interface{}) error,
 ) error {
-	var token string
-ReadNext:
-	v, token, err := c.execQuery(ctx, q, token)
-	if err != nil {
-		return err
-	}
-	for i := range v {
-		if err := fn(v[i]); err != nil {
-			return err
-		}
-	}
-	if token != "" {
-		goto ReadNext
-	}
-	return nil
+	var res []map[string]interface{}
+	return c.query(
+		ctx,
+		http.MethodPost,
+		"devices/query",
+		nil,
+		0, // TODO: control page size
+		map[string]string{
+			"Query": query,
+		},
+		&res,
+		func() error {
+			for _, v := range res {
+				if err := fn(v); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	)
 }
 
-func (c *Client) execQuery(ctx context.Context, q *Query, token string) (
-	[]map[string]interface{}, string, error,
-) {
+func (c *Client) query(
+	ctx context.Context,
+	method string,
+	path string,
+	vals url.Values,
+	pageSize uint,
+	req interface{},
+	res interface{},
+	fn func() error,
+) error {
+	var token string
+QueryNext:
 	h := http.Header{}
 	if token != "" {
 		h.Add("x-ms-continuation", token)
 	}
-	if q.PageSize > 0 {
-		h.Add("x-ms-max-item-count", fmt.Sprintf("%d", q.PageSize))
+	if pageSize > 0 {
+		h.Add("x-ms-max-item-count", fmt.Sprintf("%d", pageSize))
 	}
-	var res []map[string]interface{}
 	header, err := c.call(
 		ctx,
-		http.MethodPost,
-		"devices/query",
+		method,
+		path,
+		vals,
 		h,
-		q,
+		req,
 		&res,
 	)
 	if err != nil {
-		return nil, "", err
+		return err
 	}
-	return res, header.Get("x-ms-continuation"), nil
+	if err = fn(); err != nil {
+		return err
+	}
+	if token = header.Get("x-ms-continuation"); token != "" {
+		goto QueryNext
+	}
+	return nil
 }
 
 // Stats retrieves the device registry statistic.
@@ -1097,6 +1156,7 @@ func (c *Client) Stats(ctx context.Context) (*Stats, error) {
 		ctx,
 		http.MethodGet,
 		"statistics/devices",
+		nil,
 		nil,
 		nil,
 		&res,
@@ -1116,6 +1176,7 @@ func (c *Client) CreateJob(ctx context.Context, job *Job) (map[string]interface{
 		http.MethodPost,
 		"jobs/create",
 		nil,
+		nil,
 		job,
 		&res,
 	); err != nil {
@@ -1133,6 +1194,7 @@ func (c *Client) ListJobs(ctx context.Context) ([]map[string]interface{}, error)
 		"jobs",
 		nil,
 		nil,
+		nil,
 		&res,
 	); err != nil {
 		return nil, err
@@ -1146,6 +1208,7 @@ func (c *Client) GetJob(ctx context.Context, jobID string) (map[string]interface
 		ctx,
 		http.MethodGet,
 		pathf("jobs/%s", jobID),
+		nil,
 		nil,
 		nil,
 		&res,
@@ -1163,6 +1226,7 @@ func (c *Client) CancelJob(ctx context.Context, jobID string) (map[string]interf
 		pathf("jobs/%s", jobID),
 		nil,
 		nil,
+		nil,
 		&res,
 	); err != nil {
 		return nil, err
@@ -1170,23 +1234,116 @@ func (c *Client) CancelJob(ctx context.Context, jobID string) (map[string]interf
 	return res, nil
 }
 
+type JobV2Query struct {
+	Type     JobV2Type
+	Status   JobV2Status
+	PageSize uint
+}
+
+func (c *Client) QueryJobsV2(
+	ctx context.Context, q *JobV2Query, fn func(*JobV2) error,
+) error {
+	vals := url.Values{}
+	if q.Type != "" {
+		vals.Add("jobType", string(q.Type))
+	}
+	if q.Status != "" {
+		vals.Add("jobStatus", string(q.Status))
+	}
+	var res []*JobV2
+	return c.query(
+		ctx,
+		http.MethodGet,
+		"jobs/v2/query",
+		vals,
+		q.PageSize,
+		nil,
+		&res,
+		func() error {
+			for _, v := range res {
+				if err := fn(v); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	)
+}
+
+func (c *Client) GetJobV2(ctx context.Context, jobID string) (*JobV2, error) {
+	var res JobV2
+	if _, err := c.call(
+		ctx,
+		http.MethodGet,
+		pathf("jobs/v2/%s", jobID),
+		nil,
+		nil,
+		nil,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *Client) CancelJobV2(ctx context.Context, jobID string) (*JobV2, error) {
+	var res JobV2
+	if _, err := c.call(
+		ctx,
+		http.MethodPost,
+		pathf("jobs/v2/%s/cancel", jobID),
+		nil,
+		nil,
+		nil,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *Client) CreateJobV2(ctx context.Context, job *JobV2) (*JobV2, error) {
+	var res JobV2
+	_, err := c.call(
+		ctx,
+		http.MethodPut,
+		pathf("jobs/v2/%s", job.JobID),
+		nil,
+		nil,
+		job,
+		&res,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 func (c *Client) call(
 	ctx context.Context,
-	method, path string,
+	method string,
+	path string,
+	vals url.Values,
 	headers http.Header,
 	r, v interface{}, // request and response objects
 ) (http.Header, error) {
-	var b []byte
+	var br io.Reader
 	if r != nil {
-		var err error
-		b, err = json.Marshal(r)
+		b, err := json.Marshal(r)
 		if err != nil {
 			return nil, err
 		}
+		br = bytes.NewReader(b)
+	}
+	q := url.Values{"api-version": []string{"2019-03-30"}}
+	for k, vv := range vals {
+		for _, v := range vv {
+			q.Add(k, v)
+		}
 	}
 
-	uri := "https://" + c.sak.HostName + "/" + path + "?api-version=2019-03-30"
-	req, err := http.NewRequest(method, uri, bytes.NewReader(b))
+	uri := "https://" + c.sak.HostName + "/" + path + "?" + q.Encode()
+	req, err := http.NewRequest(method, uri, br)
 	if err != nil {
 		return nil, err
 	}
@@ -1198,7 +1355,7 @@ func (c *Client) call(
 	req = req.WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Authorization", sas.String())
-	req.Header.Set("Request-Id", genRequestID())
+	req.Header.Set("Request-Id", genID())
 	req.Header.Set("User-Agent", userAgent)
 	for k, v := range headers {
 		for i := range v {
@@ -1218,28 +1375,37 @@ func (c *Client) call(
 	if err != nil {
 		return nil, err
 	}
-	if res.StatusCode == http.StatusNoContent {
+
+	switch res.StatusCode {
+	case http.StatusNoContent:
 		return res.Header, nil
+	case http.StatusOK:
+		return res.Header, json.Unmarshal(body, v)
+	case http.StatusBadRequest:
+		// try to decode a registry error, because some operations like
+		// bulk requests may return the bad request code along with a valid body
+		var e BadRequestError
+		if err = json.Unmarshal(body, &e); err == nil && e.Message != "" {
+			return nil, &e
+		}
 	}
-	if err = json.Unmarshal(body, v); err != nil {
-		return nil, err
-	}
-	if res.StatusCode != http.StatusOK {
-		return nil, &RequestError{Code: res.StatusCode, Body: body}
-	}
-	return res.Header, nil
+	return nil, &RequestError{Res: res, Body: body}
 }
 
+// RequestError is an API request error.
+//
+// Response body is already read out to Body attribute,
+// so there's no need read it manually and call `e.Res.Body.Close()`
 type RequestError struct {
-	Code int
+	Res  *http.Response
 	Body []byte
 }
 
 func (e *RequestError) Error() string {
-	return fmt.Sprintf("code = %d, body = %q", e.Code, e.Body)
+	return fmt.Sprintf("code = %d, body = %q", e.Res.StatusCode, e.Body)
 }
 
-func genRequestID() string {
+func genID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)

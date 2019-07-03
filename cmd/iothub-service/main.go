@@ -77,6 +77,15 @@ var (
 
 	// export
 	excludeKeysFlag bool
+
+	// schedule jobs
+	queryFlag       string
+	startTimeFlag   time.Time
+	maxExecTimeFlag uint
+	timeoutFlag     uint
+
+	jobTypeFlag   iotservice.JobV2Type
+	jobStatusFlag iotservice.JobV2Status
 )
 
 func main() {
@@ -392,6 +401,45 @@ func run() error {
 			Handler: wrap(ctx, cancelJob),
 		},
 		{
+			Name:    "schedule-jobs",
+			Desc:    "list all scheduled jobs",
+			Handler: wrap(ctx, listScheduleJobs),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.StringVar((*string)(&jobTypeFlag), "type", "",
+					"job type <scheduleUpdateTwin|scheduleDeviceMethod>")
+				f.StringVar((*string)(&jobStatusFlag), "status", "",
+					"job status <queued|scheduled|running|cancelled|completed>")
+			},
+		},
+		{
+			Name:    "get-schedule-job",
+			Args:    []string{"JOB"},
+			Desc:    "retrieve the named job information from the registry",
+			Handler: wrap(ctx, getScheduleJob),
+		},
+		{
+			Name:    "cancel-schedule-job",
+			Args:    []string{"JOB"},
+			Desc:    "cancel the named job",
+			Handler: wrap(ctx, cancelScheduleJob),
+		},
+		{
+			Name:    "schedule-method-call",
+			Args:    []string{"JOB", "METHOD", "PAYLOAD"},
+			Handler: wrap(ctx, scheduleMethodCall),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.StringVar(&queryFlag, "query", "*", "query condition")
+				f.Var((*internal.TimeFlag)(&startTimeFlag), "start-time", "start time in RFC3339")
+				f.UintVar(&timeoutFlag, "connect-timeout", 0, "connection timeout in seconds")
+				f.UintVar(&maxExecTimeFlag, "exec-timeout", 30, "maximal execution time in seconds")
+			},
+		},
+		{
+			Name:    "schedule-twin-update",
+			Args:    []string{"JOB", "DEVICE"},
+			Handler: wrap(ctx, scheduleTwinUpdate),
+		},
+		{
 			Name:    "device-connection-string",
 			Args:    []string{"DEVICE"},
 			Desc:    "get a device's connection string",
@@ -671,10 +719,7 @@ func applyConfiguration(ctx context.Context, c *iotservice.Client, args []string
 }
 
 func query(ctx context.Context, c *iotservice.Client, args []string) error {
-	return c.QueryDevices(ctx, &iotservice.Query{
-		Query:    args[0],
-		PageSize: pageSizeFlag,
-	}, func(v map[string]interface{}) error {
+	return c.QueryDevices(ctx, args[0], func(v map[string]interface{}) error {
 		return output(v, nil)
 	})
 }
@@ -820,6 +865,56 @@ func getJob(ctx context.Context, c *iotservice.Client, args []string) error {
 
 func cancelJob(ctx context.Context, c *iotservice.Client, args []string) error {
 	return output(c.CancelJob(ctx, args[0]))
+}
+
+func listScheduleJobs(ctx context.Context, c *iotservice.Client, args []string) error {
+	return c.QueryJobsV2(ctx, &iotservice.JobV2Query{
+		Type:     jobTypeFlag,
+		Status:   jobStatusFlag,
+		PageSize: pageSizeFlag,
+	}, func(job *iotservice.JobV2) error {
+		return output(job, nil)
+	})
+}
+
+func getScheduleJob(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.GetJobV2(ctx, args[0]))
+}
+
+func cancelScheduleJob(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.CancelJobV2(ctx, args[0]))
+}
+
+func scheduleMethodCall(ctx context.Context, c *iotservice.Client, args []string) error {
+	var payload interface{}
+	if err := json.Unmarshal([]byte(args[2]), &payload); err != nil {
+		return err
+	}
+	return output(c.CreateJobV2(ctx, &iotservice.JobV2{
+		JobID: args[0], // TODO: can be optional
+		Type:  iotservice.JobTypeDeviceMethod,
+		CloudToDeviceMethod: &iotservice.DeviceMethodParams{
+			MethodName:       args[1],
+			Payload:          payload,
+			TimeoutInSeconds: timeoutFlag,
+		},
+		QueryCondition:            queryFlag,
+		StartTime:                 startTimeFlag,
+		MaxExecutionTimeInSeconds: maxExecTimeFlag,
+	}))
+}
+
+func scheduleTwinUpdate(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.CreateJobV2(ctx, &iotservice.JobV2{
+		JobID: args[0], // TODO: can be optional
+		Type:  iotservice.JobTypeUpdateTwin,
+		UpdateTwin: map[string]interface{}{
+			"tags": map[string]string{"foo": "bar"},
+		}, // TODO
+		QueryCondition:            queryFlag,
+		StartTime:                 startTimeFlag,
+		MaxExecutionTimeInSeconds: maxExecTimeFlag,
+	}))
 }
 
 func deviceConnectionString(ctx context.Context, c *iotservice.Client, args []string) error {

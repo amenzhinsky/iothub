@@ -33,3 +33,14 @@ func TestKVFlag(t *testing.T) {
 		t.Fatalf("\n\thave: %#v\n\twant: %#v", kv, want)
 	}
 }
+
+func TestTimeFlag(t *testing.T) {
+	f := &TimeFlag{}
+	s := "2019-06-28T07:33:25Z"
+	if err := f.Set(s); err != nil {
+		t.Fatal(err)
+	}
+	if f.String() != s {
+		t.Errorf("parsed time = %q, want %q", f.String(), s)
+	}
+}

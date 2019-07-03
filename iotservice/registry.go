@@ -157,11 +157,6 @@ type ConfigurationMetrics struct {
 	Queries map[string]string `json:"queries,omitempty"`
 }
 
-type Query struct {
-	Query    string `json:"query,omitempty"`
-	PageSize uint   `json:"-"`
-}
-
 type JobType string
 
 const (
@@ -190,13 +185,51 @@ type BulkError struct {
 	ErrorStatus string `json:"errorStatus"`
 }
 
-type RegistryError struct {
+type JobV2 struct {
+	JobID  string      `json:"jobId"`
+	Type   JobV2Type   `json:"type"`
+	Status JobV2Status `json:"status,omitempty"`
+
+	CloudToDeviceMethod *DeviceMethodParams `json:"cloudToDeviceMethod,omitempty"`
+	UpdateTwin          interface{}         `json:"updateTwin,omitempty"`
+
+	QueryCondition            string    `json:"queryCondition"`
+	StartTime                 time.Time `json:"startTime"`
+	MaxExecutionTimeInSeconds uint      `json:"maxExecutionTimeInSeconds"`
+}
+
+type JobV2Type string
+
+const (
+	JobTypeUnknown      JobV2Type = "unknown"
+	JobTypeUpdateTwin   JobV2Type = "scheduleUpdateTwin"
+	JobTypeDeviceMethod JobV2Type = "scheduleDeviceMethod"
+)
+
+type JobV2Status string
+
+const (
+	JobStatusUnknown   JobV2Status = "unknown"
+	JobStatusQueued    JobV2Status = "queued"
+	JobStatusScheduled JobV2Status = "scheduled"
+	JobStatusRunning   JobV2Status = "running"
+	JobStatusCancelled JobV2Status = "cancelled"
+	JobStatusCompleted JobV2Status = "completed"
+)
+
+type DeviceMethodParams struct {
+	MethodName       string      `json:"methodName"`
+	Payload          interface{} `json:"payload"`
+	TimeoutInSeconds uint        `json:"timeoutInSeconds"`
+}
+
+type BadRequestError struct {
 	Message          string `json:"Message"`
 	ExceptionMessage string `json:"ExceptionMessage"`
 }
 
-func (e *RegistryError) Error() string {
-	return "registry error: " + e.Message
+func (e *BadRequestError) Error() string {
+	return "bad request: " + e.Message
 }
 
 // MicrosoftTime is a hack to parse time json attributes that

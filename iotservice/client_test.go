@@ -2,6 +2,7 @@ package iotservice
 
 import (
 	"context"
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ func TestSendWithNegativeFeedback(t *testing.T) {
 	client := newClient(t)
 	device := newDevice(t, client)
 
-	mid := genRequestID()
+	mid := genID()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -128,6 +129,18 @@ func TestBulkErrors(t *testing.T) {
 	}
 	if len(res.Errors) != 1 {
 		t.Errorf("no errors returned")
+	}
+}
+
+func TestRegistryError(t *testing.T) {
+	client := newClient(t)
+	_, err := client.CreateDevice(context.Background(), &Device{DeviceID: "!@#$%^&"})
+	re, ok := err.(*BadRequestError)
+	if !ok {
+		t.Fatalf("expected a registry error, got = %v", err)
+	}
+	if re.Message == "" || re.ExceptionMessage == "" {
+		t.Fatal("message is empty")
 	}
 }
 
@@ -354,7 +367,7 @@ func TestStats(t *testing.T) {
 	}
 }
 
-func TestQuery(t *testing.T) {
+func TestQueryDevices(t *testing.T) {
 	client := newClient(t)
 	device := newDevice(t, client)
 
@@ -364,10 +377,7 @@ func TestQuery(t *testing.T) {
 	var found bool
 	if err := client.QueryDevices(
 		context.Background(),
-		&Query{
-			Query:    "select deviceId from devices",
-			PageSize: 1,
-		},
+		"select deviceId from devices",
 		func(v map[string]interface{}) error {
 			if v["deviceId"].(string) == device.DeviceID {
 				found = true
@@ -379,6 +389,59 @@ func TestQuery(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("requested device not found")
+	}
+}
+
+func TestScheduleMethodCall(t *testing.T) {
+	client := newClient(t)
+	job, err := client.CreateJobV2(context.Background(), &JobV2{
+		JobID: genID(),
+		Type:  JobTypeDeviceMethod,
+		CloudToDeviceMethod: &DeviceMethodParams{
+			MethodName:       "dist-upgrade",
+			Payload:          map[string]interface{}{"time": "now"},
+			TimeoutInSeconds: 0,
+		},
+		QueryCondition:            "deviceId='nonexisting'",
+		StartTime:                 time.Now(),
+		MaxExecutionTimeInSeconds: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// simply test that job can be found
+	job, err = client.GetJobV2(context.Background(), job.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// cancel job immediately because free-tier accounts support only one running job
+	job, err = client.CancelJobV2(context.Background(), job.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Status != JobStatusCancelled {
+		t.Errorf("job status = %q, want %q", job.Status, JobStatusCancelled)
+	}
+
+	// find just cancelled job
+	var found bool
+	if err = client.QueryJobsV2(context.Background(), &JobV2Query{
+		Type:     JobTypeDeviceMethod,
+		Status:   JobStatusCancelled,
+		PageSize: 10,
+	}, func(j *JobV2) error {
+		if j.JobID == job.JobID {
+			found = true
+			return io.EOF
+		}
+		return nil
+	}); err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Errorf("QueryJobsV2 hasn't found the job")
 	}
 }
 

@@ -108,8 +108,8 @@ See `-help` for more details.
 
 ### iotservice
 
-1. Schedule twin updates and device method calls.
-1. Blob files management.
+1. Stabilize API
+1. Fix TODOs
 
 ### iotdevice
 
