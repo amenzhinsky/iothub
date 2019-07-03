@@ -138,7 +138,6 @@ func (m *twinStateMux) Dispatch(b []byte) {
 		panic("already closed")
 	default:
 	}
-	close(m.done)
 	for _, sub := range m.subs {
 		go func(sub *TwinStateSub) {
 			select {
