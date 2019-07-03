@@ -13,12 +13,14 @@ import (
 	"github.com/amenzhinsky/iothub/cmd/internal"
 	"github.com/amenzhinsky/iothub/eventhub"
 	"github.com/amenzhinsky/iothub/iotservice"
+	"github.com/amenzhinsky/iothub/logger"
 )
 
 // globally accessible by command handlers, is it a good idea?
 var (
 	// common
-	formatFlag string
+	formatFlag   string
+	logLevelFlag = logger.LevelWarn
 
 	// send
 	uidFlag             string
@@ -93,6 +95,7 @@ func run() error {
 	ctx := context.Background()
 	return internal.New(help, func(f *flag.FlagSet) {
 		f.StringVar(&formatFlag, "format", "json-pretty", "data output format <json|json-pretty>")
+		f.Var((*internal.LogLevelFlag)(&logLevelFlag), "log-level", "log `level` <error|warn|info|debug>")
 	}, []*internal.Command{
 		{
 			Name:    "send",
@@ -123,8 +126,8 @@ func run() error {
 			Handler: wrap(ctx, watchFeedback),
 		},
 		{
-			Name: "watch-file-notifications",
-			Desc: "subscribe to file upload notifications",
+			Name:    "watch-file-notifications",
+			Desc:    "subscribe to file upload notifications",
 			Handler: wrap(ctx, watchFileNotifications),
 		},
 		{
@@ -425,7 +428,12 @@ func wrap(
 	fn func(context.Context, *iotservice.Client, []string) error,
 ) internal.HandlerFunc {
 	return func(args []string) error {
-		c, err := iotservice.New()
+		c, err := iotservice.NewFromConnectionString(
+			os.Getenv("IOTHUB_SERVICE_CONNECTION_STRING"),
+			iotservice.WithLogger(
+				logger.New(logLevelFlag, nil),
+			),
+		)
 		if err != nil {
 			return err
 		}

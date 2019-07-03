@@ -5,57 +5,35 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"os"
 	"sync"
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/logger"
 )
 
 // ClientOption is a client configuration option.
-type ClientOption func(c *Client) error
+type ClientOption func(c *Client)
 
 // WithLogger changes default logger, default it an stdout logger.
-func WithLogger(l common.Logger) ClientOption {
-	return func(c *Client) error {
+func WithLogger(l logger.Logger) ClientOption {
+	return func(c *Client) {
 		c.logger = l
-		return nil
 	}
 }
 
-// WithTransport changes default transport.
-func WithTransport(tr transport.Transport) ClientOption {
-	if tr == nil {
-		panic("transport is nil")
+// NewFromConnectionString creates a device client based on the given connection string.
+func NewFromConnectionString(
+	transport transport.Transport, cs string, opts ...ClientOption,
+) (*Client, error) {
+	creds, err := ParseConnectionString(cs)
+	if err != nil {
+		return nil, err
 	}
-	return func(c *Client) error {
-		c.tr = tr
-		return nil
-	}
+	return New(transport, creds, opts...)
 }
 
-// WithCredentials sets custom authentication credentials, e.g. 3rd-party token provider.
-func WithCredentials(creds transport.Credentials) ClientOption {
-	return func(c *Client) error {
-		c.creds = creds
-		return nil
-	}
-}
-
-// WithConnectionString same as WithCredentials,
-// but it parses the given connection string first.
-func WithConnectionString(cs string) ClientOption {
-	return func(c *Client) error {
-		creds, err := parseConnectionString(cs)
-		if err != nil {
-			return err
-		}
-		c.creds = creds
-		return nil
-	}
-}
-
-func parseConnectionString(cs string) (*SharedAccessKeyCredentials, error) {
+func ParseConnectionString(cs string) (*SharedAccessKeyCredentials, error) {
 	m, err := common.ParseConnectionString(cs, "DeviceId", "SharedAccessKey")
 	if err != nil {
 		return nil, err
@@ -70,58 +48,49 @@ func parseConnectionString(cs string) (*SharedAccessKeyCredentials, error) {
 	}, nil
 }
 
-// WithX509FromCert enables x509 authentication.
-func WithX509FromCert(deviceID, hostname string, crt *tls.Certificate) ClientOption {
-	return func(c *Client) error {
-		c.creds = &X509Credentials{
-			DeviceID:    deviceID,
-			HostName:    hostname,
-			Certificate: crt,
-		}
-		return nil
-	}
+func NewFromX509Cert(
+	transport transport.Transport,
+	deviceID, hostName string, crt *tls.Certificate,
+	opts ...ClientOption,
+) (*Client, error) {
+	return New(transport, &X509Credentials{
+		DeviceID:    deviceID,
+		HostName:    hostName,
+		Certificate: crt,
+	}, opts...)
 }
 
-// WithX509FromFile is same as `WithX509FromCert` but parses the given pem files first.
-func WithX509FromFile(deviceID, hostname, certFile, keyFile string) ClientOption {
-	return func(c *Client) error {
-		crt, err := tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			return err
-		}
-		return WithX509FromCert(deviceID, hostname, &crt)(c)
+func NewFromX509FromFile(
+	transport transport.Transport,
+	deviceID, hostname, certFile, keyFile string,
+	opts ...ClientOption,
+) (*Client, error) {
+	crt, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
 	}
+	return NewFromX509Cert(transport, deviceID, hostname, &crt, opts...)
 }
 
-// NewLogger returns new iothub client.
-func New(opts ...ClientOption) (*Client, error) {
+// New returns new iothub client.
+func New(
+	transport transport.Transport, creds transport.Credentials, opts ...ClientOption,
+) (*Client, error) {
 	c := &Client{
+		tr:    transport,
+		creds: creds,
+
 		ready:  make(chan struct{}),
 		done:   make(chan struct{}),
-		logger: common.NewLoggerFromEnv("iotdevice", "IOTHUB_DEVICE_LOG_LEVEL"),
+		logger: logger.New(logger.LevelWarn, nil),
 
 		evMux: newEventsMux(),
 		tsMux: newTwinStateMux(),
 		dmMux: newMethodMux(),
 	}
 
-	var err error
 	for _, opt := range opts {
-		if err = opt(c); err != nil {
-			return nil, err
-		}
-	}
-	if c.tr == nil {
-		return nil, errors.New("transport required")
-	}
-	if c.creds == nil {
-		cs := os.Getenv("IOTHUB_DEVICE_CONNECTION_STRING")
-		if cs == "" {
-			return nil, errors.New("$IOTHUB_DEVICE_CONNECTION_STRING is empty")
-		}
-		if err := WithConnectionString(cs)(c); err != nil {
-			return nil, err
-		}
+		opt(c)
 	}
 
 	// transport uses the same logger as the client
@@ -134,7 +103,7 @@ type Client struct {
 	creds transport.Credentials
 	tr    transport.Transport
 
-	logger common.Logger
+	logger logger.Logger
 
 	mu    sync.RWMutex
 	ready chan struct{}

@@ -10,9 +10,8 @@ import (
 )
 
 func main() {
-	c, err := iotdevice.New(
-		iotdevice.WithTransport(iotmqtt.New()),
-		iotdevice.WithConnectionString(os.Getenv("IOTHUB_DEVICE_CONNECTION_STRING")),
+	c, err := iotdevice.NewFromConnectionString(
+		iotmqtt.New(), os.Getenv("IOTHUB_DEVICE_CONNECTION_STRING"),
 	)
 	if err != nil {
 		log.Fatal(err)

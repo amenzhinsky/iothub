@@ -130,7 +130,7 @@ func wrap(ctx context.Context, fn func(context.Context, *iotdevice.Client, []str
 			return err
 		}
 
-		opts := []iotdevice.ClientOption{iotdevice.WithTransport(t)}
+		var client *iotdevice.Client
 		if tlsCertFlag != "" && tlsKeyFlag != "" {
 			if hostnameFlag == "" {
 				return errors.New("hostname is required for x509 authentication")
@@ -138,19 +138,21 @@ func wrap(ctx context.Context, fn func(context.Context, *iotdevice.Client, []str
 			if deviceIDFlag == "" {
 				return errors.New("device-id is required for x509 authentication")
 			}
-			opts = append(opts,
-				iotdevice.WithX509FromFile(deviceIDFlag, hostnameFlag, tlsCertFlag, tlsKeyFlag),
+			client, err = iotdevice.NewFromX509FromFile(
+				t, deviceIDFlag, hostnameFlag, tlsCertFlag, tlsKeyFlag,
+			)
+		} else {
+			client, err = iotdevice.NewFromConnectionString(
+				t, os.Getenv("IOTHUB_DEVICE_CONNECTION_STRING"),
 			)
 		}
-
-		c, err := iotdevice.New(opts...)
 		if err != nil {
 			return err
 		}
-		if err := c.Connect(ctx); err != nil {
+		if err := client.Connect(ctx); err != nil {
 			return err
 		}
-		return fn(ctx, c, args)
+		return fn(ctx, client, args)
 	}
 }
 

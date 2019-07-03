@@ -6,7 +6,51 @@ API is subject to change until `v1.0.0`. Bumping minor version indicates breakin
 
 See [TODO](#todo) section to see what's missing in the library.
 
-## Examples
+## Installation
+
+To install the library as a dependency:
+
+```bash
+go get -u github.com/amenzhinsky/iothub
+```
+
+To install CLI applications:
+
+```bash
+GO111MODULE=on go get -u github.com/amenzhinsky/iothub/cmd/{iothub-service,iothub-device}
+```
+
+## Usage Example
+
+Receive and print messages from IoT devices in a backend application:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/amenzhinsky/iothub/iotservice"
+)
+
+func main() {
+	c, err := iotservice.NewFromConnectionString(
+		os.Getenv("IOTHUB_SERVICE_CONNECTION_STRING"),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// subscribe to device-to-cloud events
+	log.Fatal(c.SubscribeEvents(context.Background(), func(msg *iotservice.Event) error {
+		fmt.Printf("%q sends %q", msg.ConnectionDeviceID, msg.Payload)
+		return nil
+	}))
+}
+```
 
 Send a message from an IoT device:
 
@@ -16,15 +60,15 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
 	"github.com/amenzhinsky/iothub/iotdevice"
 	iotmqtt "github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
 )
 
 func main() {
-	// IOTHUB_DEVICE_CONNECTION_STRING environment variable must be set
-	c, err := iotdevice.New(
-		iotdevice.WithTransport(iotmqtt.New()),
+	c, err := iotdevice.NewFromConnectionString(
+		iotmqtt.New(), os.Getenv("IOTHUB_DEVICE_CONNECTION_STRING"),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -42,46 +86,7 @@ func main() {
 }
 ```
 
-Receive and print messages from IoT devices in a backend application:
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-
-	"github.com/amenzhinsky/iothub/iotservice"
-)
-
-func main() {
-	// IOTHUB_SERVICE_CONNECTION_STRING environment variable must be set
-	c, err := iotservice.New()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// subscribe to device-to-cloud events
-	log.Fatal(c.SubscribeEvents(context.Background(), func(msg *iotservice.Event) error {
-		fmt.Printf("%q sends %q", msg.ConnectionDeviceID, msg.Payload)
-		return nil
-	}))
-}
-```
-
 [cmd/iothub-service](https://github.com/amenzhinsky/iothub/blob/master/cmd/iothub-service) and [cmd/iothub-device](https://github.com/amenzhinsky/iothub/blob/master/cmd/iothub-device) are reference implementations of almost all available features. 
-
-## Environment Variables
-
-The following environment variables are used by the library unless corresponding options are set explicitly:
-
-- `IOTHUB_SERVICE_CONNECTION_STRING` a shared access policy connection string.
-- `IOTHUB_DEVICE_CONNECTION_STRING` a device connection string.
-- `IOTHUB_SERVICE_LOG_LEVEL` controls `iotservice` log level.
-- `IOTHUB_DEVICE_LOG_LEVEL` controls `iotdevice` log level.
-
-Valid log level values are: `error`, `warn`, `info` and `debug`, default is `warn`.
 
 ## CLI
 

@@ -11,32 +11,43 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/eventhub"
+	"github.com/amenzhinsky/iothub/logger"
 	"pack.ag/amqp"
 )
 
 // ClientOption is a client configuration option.
-type ClientOption func(c *Client) error
+type ClientOption func(c *Client)
 
-// WithConnectionString parses the given connection string instead of using `WithCredentials`.
-func WithConnectionString(cs string) ClientOption {
-	return func(c *Client) error {
-		var err error
-		c.sak, err = parseConnectionString(cs)
-		if err != nil {
-			return err
-		}
-		return nil
+// WithHTTPClient changes default http rest client.
+func WithHTTPClient(client *http.Client) ClientOption {
+	return func(c *Client) {
+		c.http = client
 	}
 }
 
-func parseConnectionString(cs string) (*common.SharedAccessKey, error) {
+// WithLogger sets client logger.
+func WithLogger(l logger.Logger) ClientOption {
+	return func(c *Client) {
+		c.logger = l
+	}
+}
+
+// WithTLSConfig sets TLS config that's used by REST HTTP and AMQP clients.
+func WithTLSConfig(config *tls.Config) ClientOption {
+	return func(c *Client) {
+		c.tls = config
+	}
+}
+
+const userAgent = "iothub-golang-sdk/dev"
+
+func ParseConnectionString(cs string) (*common.SharedAccessKey, error) {
 	m, err := common.ParseConnectionString(
 		cs, "HostName", "SharedAccessKeyName", "SharedAccessKey",
 	)
@@ -48,62 +59,23 @@ func parseConnectionString(cs string) (*common.SharedAccessKey, error) {
 	), nil
 }
 
-// WithSharedAccessKey sets client security provider.
-func WithSharedAccessKey(sak *common.SharedAccessKey) ClientOption {
-	return func(c *Client) error {
-		c.sak = sak
-		return nil
+func NewFromConnectionString(cs string, opts ...ClientOption) (*Client, error) {
+	sak, err := ParseConnectionString(cs)
+	if err != nil {
+		return nil, err
 	}
+	return New(sak, opts...)
 }
 
-// WithHTTPClient changes default http rest client.
-func WithHTTPClient(client *http.Client) ClientOption {
-	return func(c *Client) error {
-		c.http = client
-		return nil
-	}
-}
-
-// WithLogger sets client logger.
-func WithLogger(l common.Logger) ClientOption {
-	return func(c *Client) error {
-		c.logger = l
-		return nil
-	}
-}
-
-// WithTLSConfig sets TLS config that's used by REST HTTP and AMQP clients.
-func WithTLSConfig(config *tls.Config) ClientOption {
-	return func(c *Client) error {
-		c.tls = config
-		return nil
-	}
-}
-
-const userAgent = "iothub-golang-sdk/dev"
-
-// NewLogger creates new iothub service client.
-func New(opts ...ClientOption) (*Client, error) {
+// New creates new iothub service client.
+func New(sak *common.SharedAccessKey, opts ...ClientOption) (*Client, error) {
 	c := &Client{
+		sak:    sak,
 		done:   make(chan struct{}),
-		logger: common.NewLoggerFromEnv("iotservice", "IOTHUB_SERVICE_LOG_LEVEL"),
+		logger: logger.New(logger.LevelWarn, nil),
 	}
-	var err error
 	for _, opt := range opts {
-		if err = opt(c); err != nil {
-			return nil, err
-		}
-	}
-
-	if c.sak == nil {
-		cs := os.Getenv("IOTHUB_SERVICE_CONNECTION_STRING")
-		if cs == "" {
-			return nil, errorf("$IOTHUB_SERVICE_CONNECTION_STRING is empty")
-		}
-		c.sak, err = parseConnectionString(cs)
-		if err != nil {
-			return nil, err
-		}
+		opt(c)
 	}
 	if c.tls == nil {
 		c.tls = &tls.Config{RootCAs: common.RootCAs()}
@@ -127,7 +99,7 @@ type Client struct {
 	conn   *amqp.Client
 	done   chan struct{}
 	sak    *common.SharedAccessKey
-	logger common.Logger
+	logger logger.Logger
 	http   *http.Client // REST client
 
 	sendMu   sync.Mutex
@@ -774,18 +746,6 @@ func toMap(v interface{}) (map[string]interface{}, error) {
 		return nil, err
 	}
 	return m, nil
-}
-
-type BulkResult struct {
-	IsSuccessful bool                     `json:"isSuccessful"`
-	Errors       []*BulkError             `json:"errors"`
-	Warnings     []map[string]interface{} `json:"warnings"`
-}
-
-type BulkError struct {
-	DeviceID    string `json:"deviceId"`
-	ErrorCode   uint   `json:"errorCode"`
-	ErrorStatus string `json:"errorStatus"`
 }
 
 func ifMatchHeader(etag string) http.Header {

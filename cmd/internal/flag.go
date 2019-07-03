@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/amenzhinsky/iothub/logger"
 )
 
 type JSONMapFlag map[string]interface{}
@@ -47,4 +49,30 @@ func (f *StringsMapFlag) Set(s string) error {
 
 func (f *StringsMapFlag) String() string {
 	return fmt.Sprintf("%v", map[string]string(*f))
+}
+
+type LogLevelFlag logger.Level
+
+func (f *LogLevelFlag) Set(s string) error {
+	var lvl logger.Level
+	switch strings.ToLower(s) {
+	case "off":
+		lvl = logger.LevelOff
+	case "e", "err", "error":
+		lvl = logger.LevelError
+	case "w", "warn", "warning":
+		lvl = logger.LevelWarn
+	case "i", "info":
+		lvl = logger.LevelInfo
+	case "d", "dbg", "debug":
+		lvl = logger.LevelDebug
+	default:
+		return fmt.Errorf("cannot parse %q level", s)
+	}
+	*(*logger.Level)(f) = lvl
+	return nil
+}
+
+func (f *LogLevelFlag) String() string {
+	return fmt.Sprintf("%q", strings.ToLower(logger.Level(*f).String()))
 }

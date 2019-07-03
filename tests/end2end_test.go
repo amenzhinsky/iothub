@@ -15,58 +15,56 @@ import (
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
 	"github.com/amenzhinsky/iothub/iotservice"
+	"github.com/amenzhinsky/iothub/logger"
 )
 
 func TestEnd2End(t *testing.T) {
-	sc := newServiceClient(t)
-
-	// delete previously created devices that weren't cleaned up
-	for _, did := range []string{"golang-iothub-sas", "golang-iothub-x509", "golang-iothub-ca"} {
-		_ = sc.DeleteDevice(context.Background(), &iotservice.Device{
-			DeviceID: did,
-		})
+	cs := os.Getenv("TEST_IOTHUB_SERVICE_CONNECTION_STRING")
+	if cs == "" {
+		t.Fatal("$TEST_IOTHUB_SERVICE_CONNECTION_STRING is empty")
 	}
+	sc, err := iotservice.NewFromConnectionString(cs,
+		iotservice.WithLogger(logger.New(logger.LevelDebug, nil)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sc.Close()
 
-	// create a device with sas authentication
-	sasDevice, err := sc.CreateDevice(context.Background(), &iotservice.Device{
+	// create devices with all possible authentication types
+	_, err = sc.DeleteDevices(context.Background(), []*iotservice.Device{
+		{DeviceID: "golang-iothub-sas"},
+		{DeviceID: "golang-iothub-self-signed"},
+		{DeviceID: "golang-iothub-ca"},
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := sc.CreateDevices(context.Background(), []*iotservice.Device{{
 		DeviceID: "golang-iothub-sas",
 		Authentication: &iotservice.Authentication{
 			Type: iotservice.AuthSAS,
 		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// create a x509 self signed device
-	x509Device, err := sc.CreateDevice(context.Background(), &iotservice.Device{
-		DeviceID: "golang-iothub-x509",
+	}, {
+		DeviceID: "golang-iothub-self-signed",
 		Authentication: &iotservice.Authentication{
+			Type: iotservice.AuthSelfSigned,
 			X509Thumbprint: &iotservice.X509Thumbprint{
 				PrimaryThumbprint:   "443ABB6DEA8F93D5987D31D2607BE2931217752C",
 				SecondaryThumbprint: "443ABB6DEA8F93D5987D31D2607BE2931217752C",
 			},
-			Type: iotservice.AuthSelfSigned,
 		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	caDevice, err := sc.CreateDevice(context.Background(), &iotservice.Device{
+	}, {
 		DeviceID: "golang-iothub-ca",
 		Authentication: &iotservice.Authentication{
 			Type: iotservice.AuthCA,
 		},
-	})
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = caDevice // test that a CA-authenticated device can be created
-
-	dcs, err := sc.DeviceConnectionString(sasDevice, false)
-	if err != nil {
-		t.Fatal(err)
+	if !result.IsSuccessful {
+		t.Fatalf("couldn't create devices: %v", result.Errors)
 	}
 
 	for name, mktransport := range map[string]func() transport.Transport{
@@ -77,24 +75,33 @@ func TestEnd2End(t *testing.T) {
 		mktransport := mktransport
 		t.Run(name, func(t *testing.T) {
 			for auth, suite := range map[string]struct {
-				opts []iotdevice.ClientOption
-				test string
+				init func(transport transport.Transport) (*iotdevice.Client, error)
+				only string
 			}{
 				// TODO: ca authentication
 				"x509": {
-					[]iotdevice.ClientOption{
-						iotdevice.WithX509FromFile(
-							x509Device.DeviceID,
+					func(transport transport.Transport) (*iotdevice.Client, error) {
+						return iotdevice.NewFromX509FromFile(
+							transport,
+							"golang-iothub-self-signed",
 							sc.HostName(),
 							"testdata/device.crt",
 							"testdata/device.key",
-						),
+						)
 					},
 					"DeviceToCloud", // just need to check access
 				},
 				"sas": {
-					[]iotdevice.ClientOption{
-						iotdevice.WithConnectionString(dcs),
+					func(transport transport.Transport) (*iotdevice.Client, error) {
+						device, err := sc.GetDevice(context.Background(), "golang-iothub-sas")
+						if err != nil {
+							return nil, err
+						}
+						dcs, err := sc.DeviceConnectionString(device, false)
+						if err != nil {
+							t.Fatal(err)
+						}
+						return iotdevice.NewFromConnectionString(transport, dcs)
 					},
 					"*",
 				},
@@ -106,31 +113,24 @@ func TestEnd2End(t *testing.T) {
 					"UpdateDeviceTwin": testUpdateTwin,
 					"SubscribeTwin":    testSubscribeTwin,
 				} {
-					if suite.test != "*" && suite.test != name {
+					if suite.only != "*" && suite.only != name {
 						continue
 					}
-
-					test := test
-					suite := suite
-					mktransport := mktransport
+					test, suite, mktransport := test, suite, mktransport
 					t.Run(auth+"/"+name, func(t *testing.T) {
-						dc, sc := newDeviceAndServiceClient(t, context.Background(),
-							append(suite.opts, iotdevice.WithTransport(mktransport()))...,
-						)
-						defer closeDeviceService(t, dc, sc)
-
+						dc, err := suite.init(mktransport())
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer dc.Close()
+						if err := dc.Connect(context.Background()); err != nil {
+							t.Fatal(err)
+						}
 						test(t, sc, dc)
 					})
 				}
 			}
 		})
-	}
-	for _, did := range []string{sasDevice.DeviceID, x509Device.DeviceID} {
-		if err = sc.DeleteDevice(context.Background(), &iotservice.Device{
-			DeviceID: did,
-		}); err != nil {
-			t.Fatal(err)
-		}
 	}
 }
 
@@ -405,45 +405,6 @@ func testDirectMethod(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client)
 			t.Errorf("direct-method result = %v, want %v", v, w)
 		}
 	case err := <-errc:
-		t.Fatal(err)
-	}
-}
-
-func newDeviceAndServiceClient(
-	t *testing.T,
-	ctx context.Context,
-	opts ...iotdevice.ClientOption,
-) (*iotdevice.Client, *iotservice.Client) {
-	sc := newServiceClient(t)
-	dc, err := iotdevice.New(opts...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = dc.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	return dc, sc
-}
-
-func newServiceClient(t *testing.T) *iotservice.Client {
-	cs := os.Getenv("TEST_IOTHUB_SERVICE_CONNECTION_STRING")
-	if cs == "" {
-		t.Fatal("$TEST_IOTHUB_SERVICE_CONNECTION_STRING is empty")
-	}
-	c, err := iotservice.New(
-		iotservice.WithConnectionString(cs),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
-}
-
-func closeDeviceService(t *testing.T, dc *iotdevice.Client, sc *iotservice.Client) {
-	if err := dc.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := sc.Close(); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/amenzhinsky/iothub/logger"
 	"net/url"
 	"strconv"
 	"strings"
@@ -25,7 +26,7 @@ type TransportOption func(tr *Transport)
 
 // WithLogger sets logger for errors and warnings
 // plus debug messages when it's enabled.
-func WithLogger(l common.Logger) TransportOption {
+func WithLogger(l logger.Logger) TransportOption {
 	return func(tr *Transport) {
 		tr.logger = l
 	}
@@ -45,7 +46,7 @@ func WithClientOptionsConfig(fn func(opts *mqtt.ClientOptions)) TransportOption 
 	}
 }
 
-// NewLogger returns new Transport transport.
+// New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 func New(opts ...TransportOption) transport.Transport {
 	tr := &Transport{
@@ -70,7 +71,7 @@ type Transport struct {
 	done chan struct{}         // closed when the transport is closed
 	resp map[uint32]chan *resp // responses from iothub
 
-	logger common.Logger
+	logger logger.Logger
 	cocfg  func(opts *mqtt.ClientOptions)
 }
 
@@ -81,7 +82,7 @@ type resp struct {
 	ver int // twin response only
 }
 
-func (tr *Transport) SetLogger(logger common.Logger) {
+func (tr *Transport) SetLogger(logger logger.Logger) {
 	tr.logger = logger
 }
 

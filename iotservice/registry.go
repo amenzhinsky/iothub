@@ -176,6 +176,29 @@ type Job struct {
 	ExcludeKeysInExport    bool    `json:"excludeKeysInExport"`
 }
 
+type BulkResult struct {
+	IsSuccessful bool         `json:"isSuccessful"`
+	Errors       []*BulkError `json:"errors"`
+
+	// TODO: figure out the2 structure of a warning
+	Warnings []interface{} `json:"warnings"`
+}
+
+type BulkError struct {
+	DeviceID    string `json:"deviceId"`
+	ErrorCode   uint   `json:"errorCode"`
+	ErrorStatus string `json:"errorStatus"`
+}
+
+type RegistryError struct {
+	Message          string `json:"Message"`
+	ExceptionMessage string `json:"ExceptionMessage"`
+}
+
+func (e *RegistryError) Error() string {
+	return "registry error: " + e.Message
+}
+
 // MicrosoftTime is a hack to parse time json attributes that
 // don't follow RFC3339 and don't put timezone at the end of timestamp.
 type MicrosoftTime struct {

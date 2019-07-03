@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"crypto/tls"
+	"github.com/amenzhinsky/iothub/logger"
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
@@ -10,7 +11,7 @@ import (
 
 // Transport interface.
 type Transport interface {
-	SetLogger(logger common.Logger)
+	SetLogger(logger logger.Logger)
 	Connect(ctx context.Context, creds Credentials) error
 	Send(ctx context.Context, msg *common.Message) error
 	RegisterDirectMethods(ctx context.Context, mux MethodDispatcher) error

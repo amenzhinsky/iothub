@@ -74,8 +74,8 @@ func TestETags(t *testing.T) {
 func TestBulkOperations(t *testing.T) {
 	client := newClient(t)
 	devices := []*Device{
-		{DeviceID: "bulk-0"},
-		{DeviceID: "bulk-1"},
+		{DeviceID: "test-bulk-0"},
+		{DeviceID: "test-bulk-1"},
 	}
 	for _, dev := range devices {
 		_ = client.DeleteDevice(context.Background(), dev)
@@ -103,6 +103,31 @@ func TestBulkOperations(t *testing.T) {
 	}
 	if !res.IsSuccessful {
 		t.Fatal("delete is not successful")
+	}
+}
+
+func TestBulkErrors(t *testing.T) {
+	client := newClient(t)
+	devices := []*Device{
+		{DeviceID: "test-bulk-0"},
+		{DeviceID: "test-bulk-1"},
+	}
+	for _, dev := range devices {
+		_ = client.DeleteDevice(context.Background(), dev)
+	}
+	if _, err := client.CreateDevice(context.Background(), devices[0]); err != nil {
+		t.Fatal(err)
+	}
+	res, err := client.CreateDevices(context.Background(), devices)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.IsSuccessful {
+		t.Errorf("IsSuccessful = true, want false")
+	}
+	if len(res.Errors) != 1 {
+		t.Errorf("no errors returned")
 	}
 }
 
@@ -363,7 +388,7 @@ func newClient(t *testing.T) *Client {
 	if cs == "" {
 		t.Fatal("$TEST_IOTHUB_SERVICE_CONNECTION_STRING is empty")
 	}
-	c, err := New(WithConnectionString(cs))
+	c, err := NewFromConnectionString(cs)
 	if err != nil {
 		t.Fatal(err)
 	}

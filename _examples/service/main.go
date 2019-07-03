@@ -10,8 +10,8 @@ import (
 )
 
 func main() {
-	c, err := iotservice.New(
-		iotservice.WithConnectionString(os.Getenv("IOTHUB_SERVICE_CONNECTION_STRING")),
+	c, err := iotservice.NewFromConnectionString(
+		os.Getenv("IOTHUB_SERVICE_CONNECTION_STRING"),
 	)
 	if err != nil {
 		log.Fatal(err)
