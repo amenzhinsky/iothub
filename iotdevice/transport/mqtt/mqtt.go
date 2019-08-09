@@ -355,8 +355,6 @@ func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp
 			return nil, fmt.Errorf("request failed with %d response code", r.code)
 		}
 		return r, nil
-	case <-time.After(30 * time.Second):
-		return nil, errors.New("request timed out")
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
