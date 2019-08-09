@@ -175,7 +175,7 @@ type BulkResult struct {
 	IsSuccessful bool         `json:"isSuccessful"`
 	Errors       []*BulkError `json:"errors"`
 
-	// TODO: figure out the2 structure of a warning
+	// TODO: figure out the structure of a warning
 	Warnings []interface{} `json:"warnings"`
 }
 
@@ -242,7 +242,11 @@ func (t *MicrosoftTime) UnmarshalJSON(b []byte) error {
 	if len(b) < 2 {
 		return errors.New("malformed time")
 	}
-	n, err := time.Parse("2006-01-02T15:04:05", string(b[1:len(b)-1]))
+	layout := "2006-01-02T15:04:05"
+	if b[len(b)-2] == 'Z' {
+		layout = "2006-01-02T15:04:05Z"
+	}
+	n, err := time.Parse(layout, string(b[1:len(b)-1]))
 	if err != nil {
 		return err
 	}
