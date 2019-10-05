@@ -582,16 +582,20 @@ func (c *Client) ModuleConnectionString(module *Module, secondary bool) (string,
 }
 
 // DeviceSAS generates a GenerateToken token for the named device.
+//
+// Resource shouldn't include hostname.
 func (c *Client) DeviceSAS(
-	device *Device, duration time.Duration, secondary bool,
+	device *Device, resource string, duration time.Duration, secondary bool,
 ) (string, error) {
 	key, err := accessKey(device.Authentication, secondary)
 	if err != nil {
 		return "", err
 	}
-	// TODO: accept resource path
 	sas, err := common.NewSharedAccessSignature(
-		c.sak.HostName, "", key, time.Now().Add(duration),
+		c.sak.HostName+"/"+strings.TrimLeft(resource, "/"),
+		"",
+		key,
+		time.Now().Add(duration),
 	)
 	if err != nil {
 		return "", err

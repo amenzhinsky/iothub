@@ -202,7 +202,7 @@ func TestDeviceConnectionString(t *testing.T) {
 func TestDeviceSAS(t *testing.T) {
 	client := newClient(t)
 	device := newDevice(t, client)
-	sas, err := client.DeviceSAS(device, time.Hour, false)
+	sas, err := client.DeviceSAS(device, "", time.Hour, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,6 +424,9 @@ func TestScheduleMethodCall(t *testing.T) {
 	if job.Status != JobStatusCancelled {
 		t.Errorf("job status = %q, want %q", job.Status, JobStatusCancelled)
 	}
+
+	// sometimes Azure is being slow
+	time.Sleep(time.Second)
 
 	// find just cancelled job
 	var found bool

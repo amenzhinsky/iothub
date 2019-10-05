@@ -15,3 +15,5 @@ require (
 	golang.org/x/text v0.3.2 // indirect
 	pack.ag/amqp v0.11.0
 )
+
+go 1.11

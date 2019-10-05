@@ -929,7 +929,7 @@ func scheduleTwinUpdate(ctx context.Context, c *iotservice.Client, args []string
 		UpdateTwin: map[string]interface{}{
 			"etag":     "*",
 			"deviceId": "",
-			//"tags": map[string]interface{}{"foo": 333},
+			"tags":     map[string]interface{}{},
 			"properties": map[string]interface{}{
 				"desired": map[string]interface{}{
 					"scheduled": 1,
@@ -971,7 +971,7 @@ func sas(ctx context.Context, c *iotservice.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-	return output(c.DeviceSAS(device, durationFlag, secondaryFlag))
+	return output(c.DeviceSAS(device, "", durationFlag, secondaryFlag))
 }
 
 func output(v interface{}, err error) error {
