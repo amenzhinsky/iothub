@@ -244,28 +244,22 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	// straight after subscribing to events stream, for that we need to connect twice
 	defer sess.Close(context.Background())
 
-	recv, err := sess.NewReceiver(
+	_, err = sess.NewReceiver(
 		amqp.LinkSourceAddress("messages/events/"),
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer recv.Close(context.Background())
-	_, err = recv.Receive(ctx)
 	if err == nil {
 		return nil, errorf("expected redirect error")
 	}
-
-	rerr, ok := err.(*amqp.DetachError)
-	if !ok || rerr.RemoteError.Condition != amqp.ErrorLinkRedirect {
+	rerr, ok := err.(*amqp.Error)
+	if !ok || rerr.Condition != amqp.ErrorLinkRedirect {
 		return nil, err
 	}
 
 	// "amqps://{host}:5671/{consumerGroup}/"
-	group := rerr.RemoteError.Info["address"].(string)
+	group := rerr.Info["address"].(string)
 	group = group[strings.Index(group, ":5671/")+6 : len(group)-1]
 
-	host := rerr.RemoteError.Info["hostname"].(string)
+	host := rerr.Info["hostname"].(string)
 	c.logger.Debugf("redirected to %s eventhub", host)
 
 	tlsCfg := c.tls.Clone()
