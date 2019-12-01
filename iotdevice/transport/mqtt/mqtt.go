@@ -114,7 +114,8 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 		// TODO: this can slow down the reconnect feature, so need to figure out max token lifetime
 		sas, err := creds.Token(creds.GetHostName(), time.Hour)
 		if err != nil {
-			panic(err)
+			tr.logger.Errorf("cannot generate token: %s", err)
+			return "", ""
 		}
 		return username, sas.String()
 	})
