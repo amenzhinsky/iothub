@@ -9,11 +9,11 @@ require (
 	github.com/fortytw2/leaktest v1.3.0 // indirect
 	github.com/google/go-cmp v0.3.0 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
-	golang.org/x/net v0.0.0-20190606173856-1492cefac77f // indirect
+	golang.org/x/net v0.0.0-20191209160850-c0dbc17a3553 // indirect
 	golang.org/x/sync v0.0.0-20190423024810-112230192c58 // indirect
 	golang.org/x/sys v0.0.0-20190606203320-7fc4e5ec1444 // indirect
 	golang.org/x/text v0.3.2 // indirect
-	pack.ag/amqp v0.12.3
+	pack.ag/amqp v0.12.5
 )
 
 go 1.11
