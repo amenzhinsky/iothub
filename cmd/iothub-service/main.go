@@ -751,6 +751,8 @@ func createDeployment(ctx context.Context, c *iotservice.Client, args []string) 
 								"type": "docker",
 								"settings": map[string]interface{}{
 									"image": args[2],
+
+									// https://docs.docker.com/engine/api/v1.30/#operation/ContainerCreate
 									// TODO: "createOptions": "{\"Cmd\":\"date\"}",
 								},
 								// TODO: "env": map[string]interface{}{
