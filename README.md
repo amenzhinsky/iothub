@@ -108,6 +108,7 @@ See `-help` for more details.
 
 ### iotservice
 
+1. Complete IoT Edge support
 1. Stabilize API
 1. Fix TODOs
 
