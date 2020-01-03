@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -54,7 +55,7 @@ func (r *CLI) Run(argv []string) error {
 		panic("empty argv")
 	}
 
-	sm := flag.NewFlagSet(argv[0], flag.ContinueOnError)
+	sm := flag.NewFlagSet(filepath.Base(argv[0]), flag.ContinueOnError)
 	if r.main != nil {
 		r.main(sm)
 	}

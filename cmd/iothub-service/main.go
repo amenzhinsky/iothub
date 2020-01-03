@@ -43,6 +43,7 @@ var (
 	statusReasonFlag  string
 	capabilitiesFlag  map[string]interface{}
 	forceFlag         bool
+	edgeFlag          bool
 
 	// send
 	propsFlag map[string]string
@@ -177,6 +178,7 @@ func run() error {
 				f.StringVar((*string)(&statusFlag), "status", "", "device status")
 				f.StringVar(&statusReasonFlag, "status-reason", "", "disabled device status reason")
 				f.Var((*internal.JSONMapFlag)(&capabilitiesFlag), "capability", "device capability, key=value")
+				f.BoolVar(&edgeFlag, "edge", false, "create an IoT Edge device (same as -capability=iotEdge=true)")
 			},
 		},
 		{
@@ -531,6 +533,13 @@ func listDevices(ctx context.Context, c *iotservice.Client, args []string) error
 }
 
 func createDevice(ctx context.Context, c *iotservice.Client, args []string) error {
+	if edgeFlag {
+		if capabilitiesFlag == nil {
+			capabilitiesFlag = map[string]interface{}{}
+		}
+		capabilitiesFlag["iotEdge"] = true
+	}
+
 	device := &iotservice.Device{
 		DeviceID:       args[0],
 		Authentication: &iotservice.Authentication{},
