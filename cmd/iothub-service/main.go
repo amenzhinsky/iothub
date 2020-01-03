@@ -316,7 +316,6 @@ func run() error {
 				f.StringVar(&targetConditionFlag, "target-condition", "*", "target condition")
 				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query, key=value")
 				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property, key=value")
-				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property, key=value")
 			},
 		},
 		{
@@ -337,7 +336,6 @@ func run() error {
 				f.StringVar(&targetConditionFlag, "target-condition", "*", "target condition")
 				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query, key=value")
 				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property, key=value")
-				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property, key=value")
 				f.BoolVar(&forceFlag, "force", false, "force update")
 			},
 		},
@@ -357,6 +355,26 @@ func run() error {
 			Handler: wrap(ctx, applyConfiguration),
 			ParseFunc: func(f *flag.FlagSet) {
 				f.Var((*internal.JSONMapFlag)(&devicesContentFlag), "device-prop", "device property, key=value")
+				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property, key=value")
+			},
+		},
+		{
+			Name:    "deployments",
+			Args:    []string{},
+			Desc:    "list all IoT Edge deployments (configurations)",
+			Handler: wrap(ctx, listDeployments),
+		},
+		{
+			Name:    "create-deployment",
+			Args:    []string{"DEPLOYMENT", "MODULE", "IMAGE"},
+			Desc:    "create an IoT Edge deployment",
+			Handler: wrap(ctx, createDeployment),
+			ParseFunc: func(f *flag.FlagSet) {
+				f.UintVar(&priorityFlag, "priority", 10, "priority to resolve configuration conflicts")
+				f.StringVar(&schemaVersionFlag, "schema-version", "1.0", "configuration schema version")
+				f.Var((*internal.StringsMapFlag)(&labelsFlag), "label", "specific label, key=value")
+				f.StringVar(&targetConditionFlag, "target-condition", "*", "target condition")
+				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query, key=value")
 				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property, key=value")
 			},
 		},
@@ -667,7 +685,33 @@ func deleteModule(ctx context.Context, c *iotservice.Client, args []string) erro
 }
 
 func listConfigurations(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.ListConfigurations(ctx))
+	return listConfigurationsFiltered(ctx, c, func(cfg *iotservice.Configuration) bool {
+		return cfg.Content.DeviceContent != nil
+	})
+}
+
+func listDeployments(ctx context.Context, c *iotservice.Client, args []string) error {
+	return listConfigurationsFiltered(ctx, c, func(cfg *iotservice.Configuration) bool {
+		return cfg.Content.ModulesContent != nil
+	})
+}
+
+func listConfigurationsFiltered(
+	ctx context.Context,
+	c *iotservice.Client,
+	matches func(configuration *iotservice.Configuration) bool,
+) error {
+	configurations, err := c.ListConfigurations(ctx)
+	if err != nil {
+		return err
+	}
+	filtered := make([]*iotservice.Configuration, 0, len(configurations))
+	for _, configuration := range configurations {
+		if matches(configuration) {
+			filtered = append(filtered, configuration)
+		}
+	}
+	return output(filtered, nil)
 }
 
 func getConfiguration(ctx context.Context, c *iotservice.Client, args []string) error {
@@ -682,8 +726,96 @@ func createConfiguration(ctx context.Context, c *iotservice.Client, args []strin
 		Labels:          labelsFlag,
 		TargetCondition: targetConditionFlag,
 		Content: &iotservice.ConfigurationContent{
-			ModulesContent: modulesContentFlag,
-			DeviceContent:  devicesContentFlag,
+			DeviceContent: devicesContentFlag,
+		},
+		Metrics: &iotservice.ConfigurationMetrics{
+			Queries: metricsFlag,
+		},
+	}))
+}
+
+// https://github.com/Azure/azure-iot-cli-extension/blob/v0.8.7/azext_iot/assets/edge-deploy-2.0.schema.json
+func createDeployment(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.CreateConfiguration(ctx, &iotservice.Configuration{
+		ID:              args[0],
+		SchemaVersion:   schemaVersionFlag,
+		Priority:        priorityFlag,
+		Labels:          labelsFlag,
+		TargetCondition: targetConditionFlag,
+		Content: &iotservice.ConfigurationContent{
+			ModulesContent: map[string]interface{}{
+				"$edgeAgent": map[string]interface{}{
+					"properties.desired": map[string]interface{}{
+						"modules": map[string]interface{}{
+							args[1]: map[string]interface{}{
+								"type": "docker",
+								"settings": map[string]interface{}{
+									"image": args[2],
+									// TODO: "createOptions": "{\"Cmd\":\"date\"}",
+								},
+								// TODO: "env": map[string]interface{}{
+								// TODO: 	"KEY": map[string]interface{}{
+								// TODO: 		"value": "value",
+								// TODO: 	},
+								// TODO: },
+								"status":        "running",
+								"restartPolicy": "always",
+								"version":       "1.0",
+							},
+						},
+
+						"runtime": map[string]interface{}{
+							"type": "docker",
+							"settings": map[string]interface{}{
+								"minDockerVersion":    "v1.25",
+								"registryCredentials": map[string]interface{}{
+									// TODO: "REGISTRYNAME": map[string]interface{}{
+									// TODO: 	"address":  "docker.com",
+									// TODO: 	"password": "pwd",
+									// TODO: 	"username": "test",
+									// TODO: },
+								},
+							},
+						},
+
+						"schemaVersion": "1.0",
+						"systemModules": map[string]interface{}{
+							"edgeAgent": map[string]interface{}{
+								"settings": map[string]interface{}{
+									"image":         "mcr.microsoft.com/azureiotedge-agent:1.0",
+									"createOptions": "",
+								},
+								"type": "docker",
+							},
+							"edgeHub": map[string]interface{}{
+								"settings": map[string]interface{}{
+									"image":         "mcr.microsoft.com/azureiotedge-hub:1.0",
+									"createOptions": "{\"HostConfig\":{\"PortBindings\":{\"8883/tcp\":[{\"HostPort\":\"8883\"}],\"5671/tcp\":[{\"HostPort\":\"5671\"}],\"443/tcp\":[{\"HostPort\":\"443\"}]}}}",
+								},
+								"type":          "docker",
+								"status":        "running",
+								"restartPolicy": "always",
+							},
+						},
+					},
+				},
+
+				"$edgeHub": map[string]interface{}{
+					"properties.desired": map[string]interface{}{
+						"routes":        map[string]interface{}{},
+						"schemaVersion": "1.0",
+						"storeAndForwardConfiguration": map[string]interface{}{
+							"timeToLiveSecs": 7200,
+						},
+					},
+				},
+
+				// TODO: "testmodulename": map[string]interface{}{
+				// TODO: 	"properties.desired.test": map[string]interface{}{
+				// TODO: 		"foo": "bar",
+				// TODO: 	},
+				// TODO: },
+			},
 		},
 		Metrics: &iotservice.ConfigurationMetrics{
 			Queries: metricsFlag,

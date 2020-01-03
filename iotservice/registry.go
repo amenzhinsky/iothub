@@ -232,6 +232,20 @@ func (e *BadRequestError) Error() string {
 	return "bad request: " + e.Message
 }
 
+type Deployment struct {
+	ID              string                `json:"id"`
+	Labels          map[string]string     `json:"labels"`
+	Priority        uint                  `json:"priority"`
+	TargetCondition string                `json:"targetCondition"`
+	Content         *DeploymentContent    `json:"content"`
+	Metrics         *ConfigurationMetrics `json:"metrics"`
+	ETag            string                `json:"etag"`
+}
+
+type DeploymentContent struct {
+	ModulesContent map[string]interface{} `json:"modulesContent"`
+}
+
 // MicrosoftTime is a hack to parse time json attributes that
 // don't follow RFC3339 and don't put timezone at the end of timestamp.
 type MicrosoftTime struct {
