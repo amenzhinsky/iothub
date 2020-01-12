@@ -2,7 +2,7 @@
 
 Azure IoT Hub SDK for Golang, provides both device-to-cloud ([`iotdevice`](iotdevice)) and cloud-to-device ([`iotservice`](iotservice)) packages for end-to-end communication.
 
-API is subject to change until `v1.0.0`. Bumping minor version indicates breaking changes.
+API is subject to change until `v1.0.0`. Bumping minor version may indicate breaking changes.
 
 See [TODO](#todo) section to see what's missing in the library.
 

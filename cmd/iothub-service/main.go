@@ -90,6 +90,12 @@ var (
 
 	jobTypeFlag   iotservice.JobV2Type
 	jobStatusFlag iotservice.JobV2Status
+
+	// deployments
+	envFlag map[string]interface{}
+
+	// https://docs.docker.com/engine/api/v1.30/#operation/ContainerCreate
+	createOptionsFlag map[string]interface{}
 )
 
 func main() {
@@ -376,6 +382,8 @@ func run() error {
 				f.StringVar(&targetConditionFlag, "target-condition", "*", "target condition")
 				f.Var((*internal.StringsMapFlag)(&metricsFlag), "metric", "metric name and query, key=value")
 				f.Var((*internal.JSONMapFlag)(&modulesContentFlag), "module-prop", "module property, key=value")
+				f.Var((*internal.JSONMapFlag)(&envFlag), "env", "container environment, key=value")
+				f.Var((*internal.JSONMapFlag)(&createOptionsFlag), "create-options", "container create options, key=value")
 			},
 		},
 		{
@@ -736,6 +744,17 @@ func createConfiguration(ctx context.Context, c *iotservice.Client, args []strin
 
 // https://github.com/Azure/azure-iot-cli-extension/blob/v0.8.7/azext_iot/assets/edge-deploy-2.0.schema.json
 func createDeployment(ctx context.Context, c *iotservice.Client, args []string) error {
+	env := make(map[string]interface{}, len(envFlag))
+	for k, v := range envFlag {
+		env[k] = map[string]interface{}{
+			"value": v,
+		}
+	}
+	createOptions, err := json.Marshal(createOptionsFlag)
+	if err != nil {
+		return err
+	}
+
 	return output(c.CreateConfiguration(ctx, &iotservice.Configuration{
 		ID:              args[0],
 		SchemaVersion:   schemaVersionFlag,
@@ -750,16 +769,10 @@ func createDeployment(ctx context.Context, c *iotservice.Client, args []string) 
 							args[1]: map[string]interface{}{
 								"type": "docker",
 								"settings": map[string]interface{}{
-									"image": args[2],
-
-									// https://docs.docker.com/engine/api/v1.30/#operation/ContainerCreate
-									// TODO: "createOptions": "{\"Cmd\":\"date\"}",
+									"image":         args[2],
+									"createOptions": string(createOptions),
 								},
-								// TODO: "env": map[string]interface{}{
-								// TODO: 	"KEY": map[string]interface{}{
-								// TODO: 		"value": "value",
-								// TODO: 	},
-								// TODO: },
+								"env":           env,
 								"status":        "running",
 								"restartPolicy": "always",
 								"version":       "1.0",
