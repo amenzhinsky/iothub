@@ -106,6 +106,7 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 
 	tlsCfg := &tls.Config{
 		RootCAs: common.RootCAs(),
+		Renegotiation: tls.RenegotiateOnceAsClient,
 	}
 	if crt := creds.GetCertificate(); crt != nil {
 		tlsCfg.Certificates = append(tlsCfg.Certificates, *crt)
