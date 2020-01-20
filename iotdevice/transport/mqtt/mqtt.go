@@ -47,6 +47,14 @@ func WithClientOptionsConfig(fn func(opts *mqtt.ClientOptions)) TransportOption 
 	}
 }
 
+// WithWebSocket makes the mqtt client use MQTT over WebSockets on port 443,
+// which is great if e.g. port 8883 is blocked.
+func WithWebSocket() TransportOption {
+	return func(tr *Transport) {
+		tr.webSocket = true
+	}
+}
+
 // New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 func New(opts ...TransportOption) transport.Transport {
@@ -74,6 +82,8 @@ type Transport struct {
 
 	logger logger.Logger
 	cocfg  func(opts *mqtt.ClientOptions)
+	
+	webSocket bool
 }
 
 type resp struct {
@@ -96,6 +106,7 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 
 	tlsCfg := &tls.Config{
 		RootCAs: common.RootCAs(),
+		Renegotiation: tls.RenegotiateOnceAsClient,
 	}
 	if crt := creds.GetCertificate(); crt != nil {
 		tlsCfg.Certificates = append(tlsCfg.Certificates, *crt)
@@ -104,7 +115,12 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	username := creds.GetHostName() + "/" + creds.GetDeviceID() + "/api-version=2019-03-30"
 	o := mqtt.NewClientOptions()
 	o.SetTLSConfig(tlsCfg)
-	o.AddBroker("tls://" + creds.GetHostName() + ":8883")
+	if tr.webSocket {
+		o.AddBroker("wss://" + creds.GetHostName() + ":443/$iothub/websocket") // https://github.com/MicrosoftDocs/azure-docs/issues/21306
+	} else {
+		o.AddBroker("tls://" + creds.GetHostName() + ":8883")
+	}
+	o.SetProtocolVersion(4) // 4 = MQTT 3.1.1
 	o.SetClientID(creds.GetDeviceID())
 	o.SetCredentialsProvider(func() (string, string) {
 		if crt := creds.GetCertificate(); crt != nil {
