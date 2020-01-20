@@ -18,7 +18,7 @@ import (
 
 var transports = map[string]func() (transport.Transport, error){
 	"mqtt": func() (transport.Transport, error) {
-		return mqtt.New(), nil
+		return mqtt.New(mqtt.WithWebSocket(wsFlag)), nil
 	},
 	"amqp": func() (transport.Transport, error) {
 		return nil, errors.New("not implemented")
@@ -29,6 +29,7 @@ var transports = map[string]func() (transport.Transport, error){
 }
 
 var (
+	wsFlag        bool
 	debugFlag     bool
 	formatFlag    string
 	quiteFlag     bool
@@ -63,6 +64,7 @@ $IOTHUB_DEVICE_CONNECTION_STRING environment variable is required unless you use
 func run() error {
 	ctx := context.Background()
 	return internal.New(help, func(f *flag.FlagSet) {
+		f.BoolVar(&wsFlag, "ws", false, "enable MQTT-over-WebSocket transport")
 		f.BoolVar(&debugFlag, "debug", false, "enable debug mode")
 		f.StringVar(&formatFlag, "format", "json-pretty", "data output format <json|json-pretty>")
 		f.StringVar(&transportFlag, "transport", "mqtt", "transport to use <mqtt|amqp|http>")

@@ -66,7 +66,8 @@ func TestEnd2End(t *testing.T) {
 	}
 
 	for name, mktransport := range map[string]func() transport.Transport{
-		"mqtt": func() transport.Transport { return mqtt.New() },
+		"mqtt":    func() transport.Transport { return mqtt.New() },
+		"mqtt-ws": func() transport.Transport { return mqtt.New(mqtt.WithWebSocket(true)) },
 		// TODO: "amqp": func() transport.Transport { return amqp.New() },
 		// TODO: "http": func() transport.Transport { return http.New() },
 	} {

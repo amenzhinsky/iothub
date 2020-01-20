@@ -49,9 +49,9 @@ func WithClientOptionsConfig(fn func(opts *mqtt.ClientOptions)) TransportOption 
 
 // WithWebSocket makes the mqtt client use MQTT over WebSockets on port 443,
 // which is great if e.g. port 8883 is blocked.
-func WithWebSocket() TransportOption {
+func WithWebSocket(enable bool) TransportOption {
 	return func(tr *Transport) {
-		tr.webSocket = true
+		tr.webSocket = enable
 	}
 }
 
@@ -82,7 +82,7 @@ type Transport struct {
 
 	logger logger.Logger
 	cocfg  func(opts *mqtt.ClientOptions)
-	
+
 	webSocket bool
 }
 
@@ -105,7 +105,7 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	}
 
 	tlsCfg := &tls.Config{
-		RootCAs: common.RootCAs(),
+		RootCAs:       common.RootCAs(),
 		Renegotiation: tls.RenegotiateOnceAsClient,
 	}
 	if crt := creds.GetCertificate(); crt != nil {
