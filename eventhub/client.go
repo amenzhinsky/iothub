@@ -187,8 +187,8 @@ func (c *Client) Subscribe(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	msgc := make(chan *amqp.Message, len(ids))
-	errc := make(chan error, len(ids))
+	msgc := make(chan *amqp.Message)
+	errc := make(chan error)
 
 	for _, id := range ids {
 		addr := fmt.Sprintf("/%s/ConsumerGroups/%s/Partitions/%s", c.name, s.group, id)
@@ -206,10 +206,16 @@ func (c *Client) Subscribe(
 			for {
 				msg, err := recv.Receive(ctx)
 				if err != nil {
-					errc <- err
+					select {
+					case errc <- err:
+					case <-ctx.Done():
+					}
 					return
 				}
-				msgc <- msg
+				select {
+				case msgc <- msg:
+				case <-ctx.Done():
+				}
 			}
 		}(recv)
 	}
