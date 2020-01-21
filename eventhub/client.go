@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"pack.ag/amqp"
+	"github.com/Azure/go-amqp"
 )
 
 // Credentials is an evenhub connection string representation.
