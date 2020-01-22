@@ -260,13 +260,12 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	group = group[strings.Index(group, ":5671/")+6 : len(group)-1]
 
 	host := rerr.Info["hostname"].(string)
-	c.logger.Debugf("redirected to %s eventhub", host)
+	c.logger.Debugf("redirected to %s:%s eventhub", host, group)
 
 	tlsCfg := c.tls.Clone()
 	tlsCfg.ServerName = host
 
 	eh, err := eventhub.Dial(host, group,
-		eventhub.WithLogger(c.logger),
 		eventhub.WithTLSConfig(tlsCfg),
 		eventhub.WithSASLPlain(c.sak.SharedAccessKeyName, c.sak.SharedAccessKey),
 		eventhub.WithConnOption(amqp.ConnProperty("com.microsoft:client-version", userAgent)),
@@ -274,6 +273,7 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	if err != nil {
 		return nil, err
 	}
+	c.logger.Debugf("connected to %s:%s eventhub", host, group)
 	return eh, nil
 }
 

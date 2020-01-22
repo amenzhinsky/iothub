@@ -71,18 +71,6 @@ func WithConnOption(opt amqp.ConnOption) Option {
 	}
 }
 
-// WithLogger sets client logger.
-func WithLogger(l Logger) Option {
-	return func(c *Client) {
-		c.logger = l
-	}
-}
-
-// Logger is a logging instance.
-type Logger interface {
-	Debugf(format string, v ...interface{})
-}
-
 // Dial connects to the named EventHub and returns a client instance.
 func Dial(host, name string, opts ...Option) (*Client, error) {
 	c := &Client{name: name}
@@ -95,8 +83,6 @@ func Dial(host, name string, opts ...Option) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	c.debugf("connected to %s", host)
 	return c, nil
 }
 
@@ -113,10 +99,9 @@ func DialConnectionString(cs string, opts ...Option) (*Client, error) {
 
 // Client is an EventHub client.
 type Client struct {
-	name   string
-	conn   *amqp.Client
-	opts   []amqp.ConnOption
-	logger Logger
+	name string
+	conn *amqp.Client
+	opts []amqp.ConnOption
 }
 
 // SubscribeOption is a Subscribe option.
@@ -192,8 +177,6 @@ func (c *Client) Subscribe(
 
 	for _, id := range ids {
 		addr := fmt.Sprintf("/%s/ConsumerGroups/%s/Partitions/%s", c.name, s.group, id)
-		c.debugf("subscribing to %s", addr)
-
 		recv, err := sess.NewReceiver(
 			append([]amqp.LinkOption{amqp.LinkSourceAddress(addr)}, s.opts...)...,
 		)
@@ -293,12 +276,6 @@ func (c *Client) getPartitionIDs(ctx context.Context, sess *amqp.Session) ([]str
 		return nil, errors.New("unable to typecast partition_ids")
 	}
 	return ids, nil
-}
-
-func (c *Client) debugf(format string, v ...interface{}) {
-	if c.logger != nil {
-		c.logger.Debugf(format, v...)
-	}
 }
 
 // Close closes underlying AMQP connection.
