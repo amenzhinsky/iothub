@@ -15,7 +15,7 @@ func (tg *topicGenerator) base() string {
 }
 
 // New - returns a new topicGenerator
-func New(DeviceID, ModuleID string) *topicGenerator {
+func NewTopicGenerator(DeviceID, ModuleID string) *topicGenerator {
 	return &topicGenerator{
 		DeviceID: DeviceID,
 		ModuleID: ModuleID,
