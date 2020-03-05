@@ -2,6 +2,10 @@ package common
 
 import (
 	"crypto/x509"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
 )
 
 // DigiCert Baltimore Root
@@ -84,4 +88,44 @@ func RootCAs() *x509.CertPool {
 		panic("tls: unable to append certificates")
 	}
 	return p
+}
+
+// TrustBundleResponse aids parsing the response from the edge.
+type TrustBundleResponse struct {
+	Certificate string `json:"certificate"`
+}
+
+// TrustBundle root CA certificates pool for connecting to EdgeHub Gateway.
+func TrustBundle(workloadURI string) (*x509.CertPool, error) {
+
+	// format uri string
+	uri := fmt.Sprintf("%strust-bundle?api-version=2019-11-05", workloadURI)
+
+	// get http response and handle error
+	resp, err := http.Get(uri)
+	if err != nil {
+		return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
+	}
+	defer resp.Body.Close()
+
+	// read response
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
+	}
+
+	// convert to struct
+	tbr := TrustBundleResponse{}
+	err = json.Unmarshal(body, &tbr)
+	if err != nil {
+		return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
+	}
+
+	p := x509.NewCertPool()
+	if ok := p.AppendCertsFromPEM([]byte(tbr.Certificate)); !ok {
+		err = fmt.Errorf("tls: unable to append certificates: count not append certs to pool")
+	}
+
+	return p, err
+
 }

@@ -45,6 +45,69 @@ func (c *SharedAccessKeyCredentials) GetHostName() string {
 	return c.SharedAccessKey.HostName
 }
 
+// NOT IMPLEMENTED
+
+// GetCertificate not implemented for SharedAccessKeyCredentials
 func (c *SharedAccessKeyCredentials) GetCertificate() *tls.Certificate {
 	return nil
+}
+
+// GetModuleID not implemented for SharedAccessKeyCredentials
+func (c *SharedAccessKeyCredentials) GetModuleID() string {
+	return ""
+}
+
+// GetGenerationID not implemented for SharedAccessKeyCredentials
+func (c *SharedAccessKeyCredentials) GetGenerationID() string {
+	return ""
+}
+
+// GetGateway not implemented for SharedAccessKeyCredentials
+func (c *SharedAccessKeyCredentials) GetGateway() string {
+	return ""
+}
+
+// GetBroker not implemented for SharedAccessKeyCredentials
+func (c *SharedAccessKeyCredentials) GetBroker() string {
+	return ""
+}
+
+// GetWorkloadURI not implemented for SharedAccessKeyCredentials
+func (c *SharedAccessKeyCredentials) GetWorkloadURI() string {
+	return ""
+}
+
+// UseEdgeGateway not implemented for SharedAccessKeyCredentials
+func (c *SharedAccessKeyCredentials) UseEdgeGateway() bool {
+	return false
+}
+
+// GetModuleID not implemented for X509Credentials
+func (c *X509Credentials) GetModuleID() string {
+	return ""
+}
+
+// GetGenerationID not implemented for X509Credentials
+func (c *X509Credentials) GetGenerationID() string {
+	return ""
+}
+
+// GetGateway not implemented for X509Credentials
+func (c *X509Credentials) GetGateway() string {
+	return ""
+}
+
+// GetBroker not implemented for X509Credentials
+func (c *X509Credentials) GetBroker() string {
+	return ""
+}
+
+// GetWorkloadURI not implemented for X509Credentials
+func (c *X509Credentials) GetWorkloadURI() string {
+	return ""
+}
+
+// UseEdgeGateway not implemented for X509Credentials
+func (c *X509Credentials) UseEdgeGateway() bool {
+	return false
 }
