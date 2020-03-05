@@ -22,11 +22,18 @@ type Transport interface {
 	Close() error
 }
 
+// Credentials interface.
 type Credentials interface {
 	GetDeviceID() string
 	GetHostName() string
 	GetCertificate() *tls.Certificate
 	Token(resource string, lifetime time.Duration) (*common.SharedAccessSignature, error)
+	GetModuleID() string
+	GetGenerationID() string
+	GetGateway() string
+	GetBroker() string
+	GetWorkloadURI() string
+	UseEdgeGateway() bool
 }
 
 // MessageDispatcher handles incoming messages.
