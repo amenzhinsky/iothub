@@ -228,7 +228,6 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 	}
 
 	payloadJSON, _ := json.Marshal(payload)
-	log.Printf("\npayload: %s\n", payloadJSON)
 
 	// get http response and handle error
 	resp, err := http.Post(uri, "text/plain", bytes.NewBuffer(payloadJSON))
@@ -242,7 +241,6 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 	if err != nil {
 		return "", fmt.Errorf("sign: unable to sign request (read): %s", err.Error())
 	}
-	log.Printf("\nbody: %s\n", body)
 
 	// convert to struct
 	esrr := EdgeSignRequestResponse{}
