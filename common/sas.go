@@ -119,7 +119,7 @@ func mksig(sr, key string, se time.Time) (string, error) {
 		return "", err
 	}
 	h := hmac.New(sha256.New, b)
-	if _, err := fmt.Fprintf(h, "%s\n%d", sr, se.Unix()); err != nil {
+	if _, err := fmt.Fprintf(h, "%s\n%d", url.QueryEscape(sr), se.Unix()); err != nil {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(h.Sum(nil)), nil
