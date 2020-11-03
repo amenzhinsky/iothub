@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -212,8 +213,24 @@ type EdgeSignRequestResponse struct {
 	Message string `json:"message"`
 }
 
-func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPayload) (string, error) {
+var sharedUnixHTTPClient http.Client
+var doOnce sync.Once
 
+func setSharedUnixHTTPClient(addrName string) http.Client {
+	doOnce.Do(func() {
+		sharedUnixHTTPClient = http.Client{
+			Transport: &http.Transport{
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+					return net.Dial("unix", addrName)
+				},
+			},
+		}
+	})
+
+	return sharedUnixHTTPClient
+}
+
+func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPayload) (string, error) {
 	esrr := EdgeSignRequestResponse{}
 
 	// validate payload properties
@@ -233,21 +250,16 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 			return "", err
 		}
 
-		httpc := http.Client{
-			Transport: &http.Transport{
-				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", addr.Name)
-				},
-			},
-		}
+		setSharedUnixHTTPClient(addr.Name)
 
 		var response *http.Response
 		//var err error
 
-		response, err = httpc.Post("http://iotedge"+fmt.Sprintf("/modules/%s/genid/%s/sign?api-version=2018-06-28", name, genid), "text/plain", bytes.NewBuffer(payloadJSON))
+		response, err = sharedUnixHTTPClient.Post("http://iotedge"+fmt.Sprintf("/modules/%s/genid/%s/sign?api-version=2018-06-28", name, genid), "text/plain", bytes.NewBuffer(payloadJSON))
 		if err != nil {
 			return "", fmt.Errorf("sign: unable to sign request (resp): %s", err.Error())
 		}
+		defer response.Body.Close()
 
 		body, err := ioutil.ReadAll(response.Body)
 		if err != nil {
