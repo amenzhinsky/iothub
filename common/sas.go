@@ -216,7 +216,7 @@ type EdgeSignRequestResponse struct {
 var sharedUnixHTTPClient http.Client
 var doOnce sync.Once
 
-func setSharedUnixHTTPClient(addrName string) http.Client {
+func setSharedUnixHTTPClient(addrName string) {
 	doOnce.Do(func() {
 		sharedUnixHTTPClient = http.Client{
 			Transport: &http.Transport{
@@ -226,8 +226,6 @@ func setSharedUnixHTTPClient(addrName string) http.Client {
 			},
 		}
 	})
-
-	return sharedUnixHTTPClient
 }
 
 func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPayload) (string, error) {
