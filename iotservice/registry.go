@@ -108,18 +108,19 @@ type Twin struct {
 }
 
 type ModuleTwin struct {
-	DeviceID           string          `json:"deviceId,omitempty"`
-	ModuleID           string          `json:"moduleId,omitempty"`
-	ETag               string          `json:"etag,omitempty"`
-	DeviceETag         string          `json:"deviceEtag,omitempty"`
-	Status             DeviceStatus    `json:"status,omitempty"`
-	StatusUpdateTime   *MicrosoftTime  `json:"statusUpdateTime,omitempty"`
-	ConnectionState    ConnectionState `json:"connectionState,omitempty"`
-	LastActivityTime   *MicrosoftTime  `json:"lastActivityTime,omitempty"`
-	AuthenticationType string          `json:"authenticationType,omitempty"`
-	X509Thumbprint     *X509Thumbprint `json:"x509Thumbprint,omitempty"`
-	Version            uint            `json:"version,omitempty"`
-	Properties         *Properties     `json:"properties,omitempty"`
+	DeviceID           string                 `json:"deviceId,omitempty"`
+	ModuleID           string                 `json:"moduleId,omitempty"`
+	ETag               string                 `json:"etag,omitempty"`
+	DeviceETag         string                 `json:"deviceEtag,omitempty"`
+	Status             DeviceStatus           `json:"status,omitempty"`
+	StatusUpdateTime   *MicrosoftTime         `json:"statusUpdateTime,omitempty"`
+	ConnectionState    ConnectionState        `json:"connectionState,omitempty"`
+	LastActivityTime   *MicrosoftTime         `json:"lastActivityTime,omitempty"`
+	AuthenticationType string                 `json:"authenticationType,omitempty"`
+	X509Thumbprint     *X509Thumbprint        `json:"x509Thumbprint,omitempty"`
+	Version            uint                   `json:"version,omitempty"`
+	Tags               map[string]interface{} `json:"tags,omitempty"`
+	Properties         *Properties            `json:"properties,omitempty"`
 }
 
 type Properties struct {
