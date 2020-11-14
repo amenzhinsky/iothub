@@ -263,7 +263,7 @@ func (c *Client) getPartitionIDs(ctx context.Context, sess *amqp.Session) ([]str
 	if msg.Properties.CorrelationID != mid {
 		return nil, errors.New("message-id mismatch")
 	}
-	if err := msg.Accept(); err != nil {
+	if err := msg.Accept(ctx); err != nil {
 		return nil, err
 	}
 
