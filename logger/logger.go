@@ -3,6 +3,7 @@ package logger
 import (
 	"fmt"
 	"log"
+	"strings"
 )
 
 // Logger is common logging interface.
@@ -48,11 +49,33 @@ type OutputFunc func(lvl Level, s string)
 // New creates a new leveled logger instance with the given parameters.
 //
 // If out is nil it uses the standard logger for output.
-func New(lvl Level, out OutputFunc) *LevelLogger {
+func New(lvl Level, out OutputFunc) Logger {
 	if out == nil {
 		out = logStd
 	}
 	return &LevelLogger{lvl: lvl, out: out}
+}
+
+// NewFromString creates a logger with s severity parsed from string.
+//
+// If s is empty or invalid it defaults to WARN.
+func NewFromString(s string) Logger {
+	var lvl Level
+	switch strings.ToUpper(s) {
+	case "OFF":
+		lvl = LevelOff
+	case "ERROR":
+		lvl = LevelError
+	case "WARN":
+		lvl = LevelWarn
+	case "INFO":
+		lvl = LevelInfo
+	case "DEBUG":
+		lvl = LevelDebug
+	default:
+		lvl = LevelWarn
+	}
+	return New(lvl, nil)
 }
 
 func logStd(lvl Level, s string) {

@@ -464,7 +464,7 @@ func newClient(t *testing.T) *Client {
 func newDevice(t *testing.T, c *Client) *Device {
 	t.Helper()
 	device := &Device{
-		DeviceID: "golang-iothub-test",
+		DeviceID: "test-device",
 	}
 	_ = c.DeleteDevice(context.Background(), device)
 	device, err := c.CreateDevice(context.Background(), device)
@@ -479,7 +479,7 @@ func newDeviceAndModule(t *testing.T, c *Client) (*Device, *Module) {
 	device := newDevice(t, c)
 	module := &Module{
 		DeviceID:  device.DeviceID,
-		ModuleID:  "golang-iothub-test",
+		ModuleID:  "test-module",
 		ManagedBy: "admin",
 	}
 	_ = c.DeleteModule(context.Background(), module)
@@ -493,10 +493,10 @@ func newDeviceAndModule(t *testing.T, c *Client) (*Device, *Module) {
 func newConfiguration(t *testing.T, c *Client) *Configuration {
 	t.Helper()
 	config := &Configuration{
-		ID:              "golang-iothub-test",
+		ID:              "test-configuration",
 		Priority:        10,
 		SchemaVersion:   "1.0",
-		TargetCondition: "deviceId='golang-iothub-test'",
+		TargetCondition: "deviceId='test-device'",
 		Labels: map[string]string{
 			"test": "test",
 		},

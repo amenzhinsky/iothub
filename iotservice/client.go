@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -73,7 +74,7 @@ func New(sak *common.SharedAccessKey, opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		sak:    sak,
 		done:   make(chan struct{}),
-		logger: logger.New(logger.LevelWarn, nil),
+		logger: logger.NewFromString(os.Getenv("IOTHUB_SERVICE_LOG_LEVEL")),
 	}
 	for _, opt := range opts {
 		opt(c)
