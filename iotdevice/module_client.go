@@ -22,7 +22,6 @@ func NewModuleFromConnectionString(
 	edge bool,
 	opts ...ClientOption,
 ) (*ModuleClient, error) {
-
 	creds, err := ParseModuleConnectionString(cs)
 	if err != nil {
 		return nil, err

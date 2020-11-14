@@ -37,13 +37,11 @@ func (m *eventsMux) once(fn func() error) error {
 func (m *eventsMux) Dispatch(msg *common.Message) {
 	m.mu.RLock()
 	for _, s := range m.subs {
-		//go func() {
 		select {
 		case <-s.done:
 		case <-m.done:
 		case s.ch <- msg:
 		}
-		//}()
 	}
 	m.mu.RUnlock()
 }

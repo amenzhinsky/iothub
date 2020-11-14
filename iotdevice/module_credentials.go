@@ -6,7 +6,7 @@ import (
 
 // ModuleSharedAccessKeyCredentials is a SharedAccessKeyCredentials struct adapted for module connections
 type ModuleSharedAccessKeyCredentials struct {
-	SharedAccessKeyCredentials        //embedded SharedAccessKeyCredentials struct
+	SharedAccessKeyCredentials        // embedded SharedAccessKeyCredentials struct
 	ModuleID                   string // moduleID
 	Gateway                    string // name of host gateway
 	GenerationID               string // module generation ID

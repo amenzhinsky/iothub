@@ -22,8 +22,7 @@ func TestEnd2End(t *testing.T) {
 	if cs == "" {
 		t.Fatal("$TEST_IOTHUB_SERVICE_CONNECTION_STRING is empty")
 	}
-	sc, err := iotservice.NewFromConnectionString(cs) //iotservice.WithLogger(logger.New(logger.LevelDebug, nil)),
-
+	sc, err := iotservice.NewFromConnectionString(cs) // iotservice.WithLogger(logger.New(logger.LevelDebug, nil)),
 	if err != nil {
 		t.Fatal(err)
 	}

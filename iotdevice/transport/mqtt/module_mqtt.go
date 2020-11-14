@@ -69,7 +69,6 @@ func (tr *ModuleTransport) Connect(ctx context.Context, creds transport.Credenti
 			return username, ""
 		}
 		audience := creds.GetHostName() + "/devices/" + url.QueryEscape(creds.GetDeviceID()) + "/modules/" + url.QueryEscape(creds.GetModuleID())
-		sas := common.SharedAccessSignature{}
 		if creds.UseEdgeGateway() {
 			sas, err := creds.TokenFromEdge(creds.GetWorkloadURI(), creds.GetModuleID(), creds.GetGenerationID(), audience, time.Hour)
 			if err != nil {
@@ -77,13 +76,12 @@ func (tr *ModuleTransport) Connect(ctx context.Context, creds transport.Credenti
 				return "", ""
 			}
 			return username, sas.String()
-		} else {
-			sas, err := creds.Token(url.QueryEscape(audience), time.Hour)
-			if err != nil {
-				tr.logger.Errorf("cannot generate token: %s", err)
-				return "", ""
-			}
-			return username, sas.String()
+		}
+
+		sas, err := creds.Token(url.QueryEscape(audience), time.Hour)
+		if err != nil {
+			tr.logger.Errorf("cannot generate token: %s", err)
+			return "", ""
 		}
 		return username, sas.String()
 	})

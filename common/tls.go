@@ -99,13 +99,11 @@ type TrustBundleResponse struct {
 
 // TrustBundle root CA certificates pool for connecting to EdgeHub Gateway.
 func TrustBundle(workloadURI string) (*x509.CertPool, error) {
-
 	tbr := TrustBundleResponse{}
 	var err error
 
 	// catch unix domain sockets URIs
 	if strings.Contains(workloadURI, "unix://") {
-
 		addr, err := net.ResolveUnixAddr("unix", strings.TrimPrefix(workloadURI, "unix://"))
 		if err != nil {
 			fmt.Printf("Failed to resolve: %v\n", err)
@@ -113,11 +111,7 @@ func TrustBundle(workloadURI string) (*x509.CertPool, error) {
 		}
 
 		setSharedUnixHTTPClient(addr.Name)
-
-		var response *http.Response
-		//var err error
-
-		response, err = sharedUnixHTTPClient.Get("http://iotedge" + "/trust-bundle?api-version=2019-11-05")
+		response, err := sharedUnixHTTPClient.Get("http://iotedge" + "/trust-bundle?api-version=2019-11-05")
 		if err != nil {
 			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
 		}
@@ -132,9 +126,7 @@ func TrustBundle(workloadURI string) (*x509.CertPool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
 		}
-
 	} else {
-
 		// format uri string
 		uri := fmt.Sprintf("%strust-bundle?api-version=2019-11-05", workloadURI)
 
@@ -163,5 +155,4 @@ func TrustBundle(workloadURI string) (*x509.CertPool, error) {
 	}
 
 	return p, err
-
 }
