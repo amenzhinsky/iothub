@@ -742,7 +742,7 @@ func (c *Client) bulkRequest(
 		&res,
 	)
 	if err != nil {
-		if re, ok := err.(*RequestError); ok && re.Res.StatusCode == http.StatusBadRequest {
+		if re, ok := err.(*RequestError); ok && re.Code == http.StatusBadRequest {
 			if err = json.Unmarshal(re.Body, &res); err != nil {
 				return nil, err
 			}
@@ -1388,7 +1388,7 @@ func (c *Client) call(
 			return nil, &e
 		}
 	}
-	return nil, &RequestError{Res: res, Body: body}
+	return nil, &RequestError{Code: res.StatusCode, Body: body}
 }
 
 // RequestError is an API request error.
@@ -1396,12 +1396,12 @@ func (c *Client) call(
 // Response body is already read out to Body attribute,
 // so there's no need read it manually and call `e.Res.Body.Close()`
 type RequestError struct {
-	Res  *http.Response
+	Code int
 	Body []byte
 }
 
 func (e *RequestError) Error() string {
-	return fmt.Sprintf("code = %d, body = %q", e.Res.StatusCode, e.Body)
+	return fmt.Sprintf("code = %d, body = %q", e.Code, e.Body)
 }
 
 func genID() string {
