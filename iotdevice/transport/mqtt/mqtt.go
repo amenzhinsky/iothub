@@ -369,7 +369,7 @@ func (tr *Transport) request(ctx context.Context, topic string, b []byte) (*resp
 
 	select {
 	case r := <-rch:
-		if r.code < 200 && r.code > 299 {
+		if r.code < 200 || r.code > 299 {
 			return nil, fmt.Errorf("request failed with %d response code", r.code)
 		}
 		return r, nil

@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -73,7 +74,7 @@ func New(sak *common.SharedAccessKey, opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		sak:    sak,
 		done:   make(chan struct{}),
-		logger: logger.New(logger.LevelWarn, nil),
+		logger: logger.NewFromString(os.Getenv("IOTHUB_SERVICE_LOG_LEVEL")),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -225,7 +226,7 @@ func (c *Client) putToken(
 	if err != nil {
 		return err
 	}
-	if err = msg.Accept(); err != nil {
+	if err = msg.Accept(ctx); err != nil {
 		return err
 	}
 	return eventhub.CheckMessageResponse(msg)
@@ -301,7 +302,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, fn EventHandler) error {
 		if err := fn(&Event{FromAMQPMessage(msg.Message)}); err != nil {
 			return err
 		}
-		return msg.Accept()
+		return msg.Accept(ctx)
 	},
 		eventhub.WithSubscribeSince(time.Now()),
 	)
@@ -484,7 +485,7 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) erro
 				return err
 			}
 		}
-		if err = msg.Accept(); err != nil {
+		if err = msg.Accept(ctx); err != nil {
 			return err
 		}
 	}
@@ -543,7 +544,7 @@ func (c *Client) SubscribeFileNotifications(
 		if err := fn(&FileNotification{msg}); err != nil {
 			return err
 		}
-		if err = msg.Accept(); err != nil {
+		if err = msg.Accept(ctx); err != nil {
 			return err
 		}
 	}
@@ -741,7 +742,7 @@ func (c *Client) bulkRequest(
 		&res,
 	)
 	if err != nil {
-		if re, ok := err.(*RequestError); ok && re.Res.StatusCode == http.StatusBadRequest {
+		if re, ok := err.(*RequestError); ok && re.Code == http.StatusBadRequest {
 			if err = json.Unmarshal(re.Body, &res); err != nil {
 				return nil, err
 			}
@@ -1387,7 +1388,7 @@ func (c *Client) call(
 			return nil, &e
 		}
 	}
-	return nil, &RequestError{Res: res, Body: body}
+	return nil, &RequestError{Code: res.StatusCode, Body: body}
 }
 
 // RequestError is an API request error.
@@ -1395,12 +1396,12 @@ func (c *Client) call(
 // Response body is already read out to Body attribute,
 // so there's no need read it manually and call `e.Res.Body.Close()`
 type RequestError struct {
-	Res  *http.Response
+	Code int
 	Body []byte
 }
 
 func (e *RequestError) Error() string {
-	return fmt.Sprintf("code = %d, body = %q", e.Res.StatusCode, e.Body)
+	return fmt.Sprintf("code = %d, body = %q", e.Code, e.Body)
 }
 
 func genID() string {

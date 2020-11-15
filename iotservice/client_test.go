@@ -3,7 +3,9 @@ package iotservice
 import (
 	"context"
 	"io"
+	"net/http"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -461,16 +463,23 @@ func newClient(t *testing.T) *Client {
 	return c
 }
 
+var testRunID = strconv.Itoa(int(time.Now().Unix()))
+
 func newDevice(t *testing.T, c *Client) *Device {
 	t.Helper()
 	device := &Device{
-		DeviceID: "golang-iothub-test",
+		DeviceID: "test-device-" + testRunID,
 	}
-	_ = c.DeleteDevice(context.Background(), device)
 	device, err := c.CreateDevice(context.Background(), device)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		device.ETag = ""
+		if err := c.DeleteDevice(context.Background(), device); err != nil && !isNotFound(err) {
+			t.Fatal(err)
+		}
+	})
 	return device
 }
 
@@ -479,24 +488,34 @@ func newDeviceAndModule(t *testing.T, c *Client) (*Device, *Module) {
 	device := newDevice(t, c)
 	module := &Module{
 		DeviceID:  device.DeviceID,
-		ModuleID:  "golang-iothub-test",
+		ModuleID:  "test-module-" + testRunID,
 		ManagedBy: "admin",
 	}
-	_ = c.DeleteModule(context.Background(), module)
 	module, err := c.CreateModule(context.Background(), module)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		module.ETag = ""
+		if err := c.DeleteModule(context.Background(), module); err != nil && !isNotFound(err) {
+			t.Fatal(err)
+		}
+	})
 	return device, module
+}
+
+func isNotFound(err error) bool {
+	e, ok := err.(*RequestError)
+	return ok && e.Code == http.StatusNotFound
 }
 
 func newConfiguration(t *testing.T, c *Client) *Configuration {
 	t.Helper()
 	config := &Configuration{
-		ID:              "golang-iothub-test",
+		ID:              "test-configuration",
 		Priority:        10,
 		SchemaVersion:   "1.0",
-		TargetCondition: "deviceId='golang-iothub-test'",
+		TargetCondition: "deviceId='test-device'",
 		Labels: map[string]string{
 			"test": "test",
 		},
@@ -511,10 +530,15 @@ func newConfiguration(t *testing.T, c *Client) *Configuration {
 			},
 		},
 	}
-	_ = c.DeleteConfiguration(context.Background(), config)
 	config, err := c.CreateConfiguration(context.Background(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		config.ETag = ""
+		if err := c.DeleteConfiguration(context.Background(), config); err != nil && !isNotFound(err) {
+			t.Fatal(err)
+		}
+	})
 	return config
 }

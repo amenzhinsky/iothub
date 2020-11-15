@@ -191,7 +191,6 @@ type EdgeSignRequestPayload struct {
 
 // Validate the properties on EdgeSignRequestPayload
 func (esrp *EdgeSignRequestPayload) Validate() error {
-
 	if len(esrp.Algo) < 1 {
 		esrp.Algo = "HMACSHA256"
 	}
@@ -213,8 +212,10 @@ type EdgeSignRequestResponse struct {
 	Message string `json:"message"`
 }
 
-var sharedUnixHTTPClient http.Client
-var doOnce sync.Once
+var (
+	sharedUnixHTTPClient http.Client
+	doOnce               sync.Once
+)
 
 func setSharedUnixHTTPClient(addrName string) {
 	doOnce.Do(func() {
@@ -241,7 +242,6 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 
 	// catch unix domain sockets URIs
 	if strings.Contains(workloadURI, "unix://") {
-
 		addr, err := net.ResolveUnixAddr("unix", strings.TrimPrefix(workloadURI, "unix://"))
 		if err != nil {
 			fmt.Printf("Failed to resolve: %v\n", err)
@@ -249,11 +249,7 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 		}
 
 		setSharedUnixHTTPClient(addr.Name)
-
-		var response *http.Response
-		//var err error
-
-		response, err = sharedUnixHTTPClient.Post("http://iotedge"+fmt.Sprintf("/modules/%s/genid/%s/sign?api-version=2018-06-28", name, genid), "text/plain", bytes.NewBuffer(payloadJSON))
+		response, err := sharedUnixHTTPClient.Post("http://iotedge"+fmt.Sprintf("/modules/%s/genid/%s/sign?api-version=2018-06-28", name, genid), "text/plain", bytes.NewBuffer(payloadJSON))
 		if err != nil {
 			return "", fmt.Errorf("sign: unable to sign request (resp): %s", err.Error())
 		}
@@ -268,7 +264,6 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 		if err != nil {
 			return "", fmt.Errorf("sign: unable to sign request (unm): %s", err.Error())
 		}
-
 	} else {
 		// format uri string for base uri
 		uri := fmt.Sprintf("%smodules/%s/genid/%s/sign?api-version=2018-06-28", workloadURI, name, genid)

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"os"
 	"sync"
 
 	"github.com/amenzhinsky/iothub/common"
@@ -82,7 +83,7 @@ func New(
 
 		ready:  make(chan struct{}),
 		done:   make(chan struct{}),
-		logger: logger.New(logger.LevelWarn, nil),
+		logger: logger.NewFromString(os.Getenv("IOTHUB_DEVICE_LOG_LEVEL")),
 
 		evMux: newEventsMux(),
 		tsMux: newTwinStateMux(),
@@ -209,7 +210,7 @@ func (s TwinState) Version() int {
 }
 
 // RetrieveTwinState returns desired and reported twin device states.
-func (c *Client) RetrieveTwinState(ctx context.Context) (desired TwinState, reported TwinState, err error) {
+func (c *Client) RetrieveTwinState(ctx context.Context) (desired, reported TwinState, err error) {
 	if err := c.checkConnection(ctx); err != nil {
 		return nil, nil, err
 	}
