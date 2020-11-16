@@ -55,6 +55,14 @@ func WithWebSocket(enable bool) TransportOption {
 	}
 }
 
+// WithModelId makes the mqtt client register the specified DTDL modeldID when a connection
+// is established, this is useful for Azure PNP integration.
+func WithModelID(modeldID string) TransportOption {
+	return func(tr *Transport) {
+		tr.mid = modelID
+	}
+}
+
 // New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 func New(opts ...TransportOption) transport.Transport {
@@ -73,6 +81,7 @@ type Transport struct {
 
 	did string // device id
 	rid uint32 // request id, incremented each request
+	mid string // model id
 
 	subm sync.RWMutex // cannot use mu for protecting subs
 	subs []subFunc    // on-connect mqtt subscriptions
@@ -112,7 +121,11 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 		tlsCfg.Certificates = append(tlsCfg.Certificates, *crt)
 	}
 
-	username := creds.GetHostName() + "/" + creds.GetDeviceID() + "/api-version=2019-03-30"
+	username := creds.GetHostName() + "/" + creds.GetDeviceID() + "/api-version=2020-09-30"
+	if tr.mid != "" {
+		username += "&model-id=" + url.QueryEscape(tr.mid)
+	}
+
 	o := mqtt.NewClientOptions()
 	o.SetTLSConfig(tlsCfg)
 	if tr.webSocket {
