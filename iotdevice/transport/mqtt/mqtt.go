@@ -55,11 +55,11 @@ func WithWebSocket(enable bool) TransportOption {
 	}
 }
 
-// WithModelId makes the mqtt client use MQTT over WebSockets on port 443,
-// which is great if e.g. port 8883 is blocked.
-func WithModelId(modelId string) TransportOption {
+// WithModelId makes the mqtt client register the specified DTDL modeldID when a connection
+// is established, this is useful for Azure PNP integration.
+func WithModelID(modeldID string) TransportOption {
 	return func(tr *Transport) {
-		tr.mid = modelId
+		tr.mid = modelID
 	}
 }
 
