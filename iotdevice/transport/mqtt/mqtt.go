@@ -57,7 +57,7 @@ func WithWebSocket(enable bool) TransportOption {
 
 // WithModelId makes the mqtt client register the specified DTDL modeldID when a connection
 // is established, this is useful for Azure PNP integration.
-func WithModelID(modeldID string) TransportOption {
+func WithModelID(modelID string) TransportOption {
 	return func(tr *Transport) {
 		tr.mid = modelID
 	}
