@@ -235,6 +235,13 @@ func (m *methodMux) remove(method string) {
 func (m *methodMux) Dispatch(method string, b []byte) (int, []byte, error) {
 	m.mu.RLock()
 	f, ok := m.m[method]
+	wildcard := false
+	if !ok {
+		f, ok = m.m["#"]
+		if ok {
+			wildcard = true
+		}
+	}
 	m.mu.RUnlock()
 	if !ok {
 		return 0, nil, fmt.Errorf("method %q is not registered", method)
@@ -243,6 +250,9 @@ func (m *methodMux) Dispatch(method string, b []byte) (int, []byte, error) {
 	var v map[string]interface{}
 	if err := json.Unmarshal(b, &v); err != nil {
 		return jsonErr(err)
+	}
+	if wildcard {
+		v["_method"] = method
 	}
 	v, err := f(v)
 	if err != nil {
