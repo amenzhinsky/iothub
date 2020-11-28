@@ -304,7 +304,7 @@ func (tr *Transport) subDirectMethods(ctx context.Context, mux transport.MethodD
 					tr.logger.Errorf("dispatch error: %s", err)
 					return
 				}
-				dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%d", rc, rid)
+				dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%x", rc, rid)
 				if err = tr.send(ctx, dst, DefaultQoS, b); err != nil {
 					tr.logger.Errorf("method response error: %s", err)
 					return
@@ -337,15 +337,15 @@ func parseDirectMethodTopic(s string) (string, int, error) {
 	if len(q["$rid"]) != 1 {
 		return "", 0, errors.New("$rid is not available")
 	}
-	rid, err := strconv.Atoi(q["$rid"][0])
+	rid, err := strconv.ParseInt(q["$rid"][0], 16, 32)
 	if err != nil {
 		return "", 0, fmt.Errorf("$rid parse error: %s", err)
 	}
-	return p[len(prefix):], rid, nil
+	return p[len(prefix):], int(rid), nil
 }
 
 func (tr *Transport) RetrieveTwinProperties(ctx context.Context) ([]byte, error) {
-	r, err := tr.request(ctx, "$iothub/twin/GET/?$rid=%d", nil)
+	r, err := tr.request(ctx, "$iothub/twin/GET/?$rid=%x", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +353,7 @@ func (tr *Transport) RetrieveTwinProperties(ctx context.Context) ([]byte, error)
 }
 
 func (tr *Transport) UpdateTwinProperties(ctx context.Context, b []byte) (int, error) {
-	r, err := tr.request(ctx, "$iothub/twin/PATCH/properties/reported/?$rid=%d", b)
+	r, err := tr.request(ctx, "$iothub/twin/PATCH/properties/reported/?$rid=%x", b)
 	if err != nil {
 		return 0, err
 	}
@@ -463,7 +463,7 @@ func parseTwinPropsTopic(s string) (int, int, int, error) {
 	if len(q["$rid"]) != 1 {
 		return 0, 0, 0, errors.New("$rid is not available")
 	}
-	rid, err := strconv.Atoi(q["$rid"][0])
+	rid, err := strconv.ParseInt(q["$rid"][0], 16, 32)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("$rid parse error: %s", err)
 	}
@@ -475,7 +475,7 @@ func parseTwinPropsTopic(s string) (int, int, int, error) {
 			return 0, 0, 0, err
 		}
 	}
-	return rc, rid, ver, nil
+	return rc, int(rid), ver, nil
 }
 
 func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
