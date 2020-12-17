@@ -147,7 +147,7 @@ func (c *Client) Connect(ctx context.Context) error {
 // ErrClosed the client is already closed.
 var ErrClosed = errors.New("closed")
 
-func (c *Client) checkConnection(ctx context.Context) error {
+func (c *Client) CheckConnection(ctx context.Context) error {
 	select {
 	case <-c.ready:
 		return nil
