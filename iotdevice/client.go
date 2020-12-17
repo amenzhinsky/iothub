@@ -160,7 +160,7 @@ func (c *Client) CheckConnection(ctx context.Context) error {
 
 // SubscribeEvents subscribes to cloud-to-device events and returns a subscription struct.
 func (c *Client) SubscribeEvents(ctx context.Context) (*EventSub, error) {
-	if err := c.checkConnection(ctx); err != nil {
+	if err := c.CheckConnection(ctx); err != nil {
 		return nil, err
 	}
 	if err := c.evMux.once(func() error {
@@ -181,7 +181,7 @@ func (c *Client) UnsubscribeEvents(sub *EventSub) {
 // If f returns an error and empty body its error string
 // used as value of the error attribute in the result json.
 func (c *Client) RegisterMethod(ctx context.Context, name string, fn DirectMethodHandler) error {
-	if err := c.checkConnection(ctx); err != nil {
+	if err := c.CheckConnection(ctx); err != nil {
 		return err
 	}
 	if name == "" {
@@ -211,7 +211,7 @@ func (s TwinState) Version() int {
 
 // RetrieveTwinState returns desired and reported twin device states.
 func (c *Client) RetrieveTwinState(ctx context.Context) (desired, reported TwinState, err error) {
-	if err := c.checkConnection(ctx); err != nil {
+	if err := c.CheckConnection(ctx); err != nil {
 		return nil, nil, err
 	}
 	b, err := c.tr.RetrieveTwinProperties(ctx)
@@ -231,7 +231,7 @@ func (c *Client) RetrieveTwinState(ctx context.Context) (desired, reported TwinS
 // UpdateTwinState updates twin device's state and returns new version.
 // To remove any attribute set its value to nil.
 func (c *Client) UpdateTwinState(ctx context.Context, s TwinState) (int, error) {
-	if err := c.checkConnection(ctx); err != nil {
+	if err := c.CheckConnection(ctx); err != nil {
 		return 0, err
 	}
 	b, err := json.Marshal(s)
@@ -243,7 +243,7 @@ func (c *Client) UpdateTwinState(ctx context.Context, s TwinState) (int, error) 
 
 // SubscribeTwinUpdates registers fn as a desired state changes handler.
 func (c *Client) SubscribeTwinUpdates(ctx context.Context) (*TwinStateSub, error) {
-	if err := c.checkConnection(ctx); err != nil {
+	if err := c.CheckConnection(ctx); err != nil {
 		return nil, err
 	}
 	if err := c.tsMux.once(func() error {
@@ -317,7 +317,7 @@ func WithSendProperties(m map[string]string) SendOption {
 // SendEvent sends a device-to-cloud message.
 // Panics when event is nil.
 func (c *Client) SendEvent(ctx context.Context, payload []byte, opts ...SendOption) error {
-	if err := c.checkConnection(ctx); err != nil {
+	if err := c.CheckConnection(ctx); err != nil {
 		return err
 	}
 	msg := &common.Message{Payload: payload}
