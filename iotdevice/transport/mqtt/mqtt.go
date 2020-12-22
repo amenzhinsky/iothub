@@ -63,6 +63,18 @@ func WithModelID(modelID string) TransportOption {
 	}
 }
 
+func WithConnectCallback(callback func(*Transport)) TransportOption {
+	return func(tr *Transport) {
+		tr.connectCallback = callback
+	}
+}
+
+func WithDisconnectCallback(callback func(*Transport)) TransportOption {
+	return func(tr *Transport) {
+		tr.disconnectCallback = callback
+	}
+}
+
 // New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 func New(opts ...TransportOption) transport.Transport {
@@ -93,6 +105,9 @@ type Transport struct {
 	cocfg  func(opts *mqtt.ClientOptions)
 
 	webSocket bool
+
+	connectCallback    func(tr *Transport)
+	disconnectCallback func(tr *Transport)
 }
 
 type resp struct {
@@ -159,9 +174,15 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 			}
 		}
 		tr.subm.RUnlock()
+		if tr.connectCallback != nil {
+			go tr.connectCallback(tr)
+		}
 	})
 	o.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
 		tr.logger.Debugf("connection lost: %v", err)
+		if tr.disconnectCallback != nil {
+			go tr.disconnectCallback(tr)
+		}
 	})
 
 	if tr.cocfg != nil {
