@@ -12,10 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/amenzhinsky/iothub/logger"
-
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/logger"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
