@@ -28,8 +28,8 @@ func TestParseDirectMethodTopic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m != "add" || r != 666 {
-		t.Errorf("parseDirectMethodTopic(%q) = %q, %q, want %q, %q", s, m, r, "add", 666)
+	if m != "add" || r != 0x666 {
+		t.Errorf("parseDirectMethodTopic(%q) = %q, %d, want %q, %d", s, m, r, "add", 0x666)
 	}
 }
 
@@ -39,7 +39,9 @@ func TestParseTwinPropsTopic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c != 200 || r != 12 || v != 4 {
-		t.Errorf("ParseTwinPropsTopic(%q) = %d, %q, %d, _, want %d, %q, %d, _", s, c, r, v, 200, 12, 4)
+	if c != 200 || r != 0x12 || v != 4 {
+		t.Errorf("ParseTwinPropsTopic(%q) = %d, %d, %d, _, want %d, %d, %d, _",
+			s, c, r, v, 200, 0x12, 4,
+		)
 	}
 }
