@@ -47,9 +47,9 @@ type Device struct {
 }
 
 type PurgeMessageQueueResult struct {
-	DeviceID string `json:"deviceID,omitempty"`
-	ModuleID string `json:"moduleID,omitempty"`
-	TotalMessagesPurged int `json:"totalMessagesPurged,omitempty"`
+	DeviceID            string `json:"deviceID,omitempty"`
+	ModuleID            string `json:"moduleID,omitempty"`
+	TotalMessagesPurged int    `json:"totalMessagesPurged,omitempty"`
 }
 
 type Module struct {
