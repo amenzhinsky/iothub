@@ -297,6 +297,16 @@ func TestGetModuleTwin(t *testing.T) {
 	}
 }
 
+func TestPurgeQueue(t *testing.T) {
+	client := newClient(t)
+	device, _ := newDeviceAndModule(t, client)
+	if _, err := client.PurgeQueue(
+		context.Background(), device.DeviceID,
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUpdateModuleTwin(t *testing.T) {
 	client := newClient(t)
 	device, module := newDeviceAndModule(t, client)
