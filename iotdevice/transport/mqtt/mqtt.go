@@ -315,32 +315,28 @@ func (tr *Transport) subDirectMethods(ctx context.Context, mux transport.MethodD
 
 // returns method name and rid
 // format: $iothub/methods/POST/{method}/?$rid={rid}
-func parseDirectMethodTopic(s string) (string, int, error) {
+func parseDirectMethodTopic(s string) (string, string, error) {
 	const prefix = "$iothub/methods/POST/"
 
 	s, err := url.QueryUnescape(s)
 	if err != nil {
-		return "", 0, err
+		return "", "", err
 	}
 	u, err := url.Parse(s)
 	if err != nil {
-		return "", 0, err
+		return "", "", err
 	}
 
 	p := strings.TrimRight(u.Path, "/")
 	if !strings.HasPrefix(p, prefix) {
-		return "", 0, errors.New("malformed direct method topic")
+		return "", "", errors.New("malformed direct method topic")
 	}
 
 	q := u.Query()
 	if len(q["$rid"]) != 1 {
-		return "", 0, errors.New("$rid is not available")
+		return "", "", errors.New("$rid is not available")
 	}
-	rid, err := strconv.ParseInt(q["$rid"][0], 16, 0)
-	if err != nil {
-		return "", 0, fmt.Errorf("$rid parse error: %s", err)
-	}
-	return p[len(prefix):], int(rid), nil
+	return p[len(prefix):], q["$rid"][0], nil
 }
 
 func (tr *Transport) RetrieveTwinProperties(ctx context.Context) ([]byte, error) {
