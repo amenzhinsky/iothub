@@ -59,9 +59,6 @@ var (
 	ehcsFlag string
 	ehcgFlag string
 
-	// query
-	pageSizeFlag uint
-
 	// twins
 	tagsFlag      map[string]interface{}
 	twinPropsFlag map[string]interface{}
@@ -391,9 +388,6 @@ func run() error {
 			Args:    []string{"SQL"},
 			Desc:    "execute sql query on devices",
 			Handler: wrap(ctx, query),
-			ParseFunc: func(f *flag.FlagSet) {
-				f.UintVar(&pageSizeFlag, "page-size", 0, "number of records per request")
-			},
 		},
 		{
 			Name:    "statistics",
@@ -1035,9 +1029,8 @@ func cancelJob(ctx context.Context, c *iotservice.Client, args []string) error {
 
 func listScheduleJobs(ctx context.Context, c *iotservice.Client, args []string) error {
 	return c.QueryJobsV2(ctx, &iotservice.JobV2Query{
-		Type:     jobTypeFlag,
-		Status:   jobStatusFlag,
-		PageSize: pageSizeFlag,
+		Type:   jobTypeFlag,
+		Status: jobStatusFlag,
 	}, func(job *iotservice.JobV2) error {
 		return output(job, nil)
 	})

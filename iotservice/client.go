@@ -1128,7 +1128,6 @@ func (c *Client) QueryDevices(
 		http.MethodPost,
 		"devices/query",
 		nil,
-		0, // TODO: control page size
 		map[string]string{
 			"Query": query,
 		},
@@ -1149,20 +1148,13 @@ func (c *Client) query(
 	method string,
 	path string,
 	vals url.Values,
-	pageSize uint,
 	req interface{},
 	res interface{},
 	fn func() error,
 ) error {
-	var token string
-QueryNext:
 	h := http.Header{}
-	if token != "" {
-		h.Add("x-ms-continuation", token)
-	}
-	if pageSize > 0 {
-		h.Add("x-ms-max-item-count", fmt.Sprintf("%d", pageSize))
-	}
+	// h.Add("x-ms-max-item-count", "1") // 1..100
+QueryNext:
 	header, err := c.call(
 		ctx,
 		method,
@@ -1179,7 +1171,8 @@ QueryNext:
 	if err = fn(); err != nil {
 		return err
 	}
-	if token = header.Get("x-ms-continuation"); token != "" {
+	if s := header.Get("x-ms-continuation"); s != "" {
+		h.Set("x-ms-continuation", s)
 		goto QueryNext
 	}
 	return nil
@@ -1276,9 +1269,8 @@ func (c *Client) CancelJob(ctx context.Context, jobID string) (map[string]interf
 }
 
 type JobV2Query struct {
-	Type     JobV2Type
-	Status   JobV2Status
-	PageSize uint
+	Type   JobV2Type
+	Status JobV2Status
 }
 
 func (c *Client) QueryJobsV2(
@@ -1297,7 +1289,6 @@ func (c *Client) QueryJobsV2(
 		http.MethodGet,
 		"jobs/v2/query",
 		vals,
-		q.PageSize,
 		nil,
 		&res,
 		func() error {
