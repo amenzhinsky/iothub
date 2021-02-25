@@ -443,9 +443,8 @@ func TestScheduleMethodCall(t *testing.T) {
 	// find just cancelled job
 	var found bool
 	if err = client.QueryJobsV2(context.Background(), &JobV2Query{
-		Type:     JobTypeDeviceMethod,
-		Status:   JobStatusCancelled,
-		PageSize: 10,
+		Type:   JobTypeDeviceMethod,
+		Status: JobStatusCancelled,
 	}, func(j *JobV2) error {
 		if j.JobID == job.JobID {
 			found = true
