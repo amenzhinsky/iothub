@@ -303,7 +303,7 @@ func (tr *Transport) subDirectMethods(ctx context.Context, mux transport.MethodD
 					tr.logger.Errorf("dispatch error: %s", err)
 					return
 				}
-				dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%x", rc, rid)
+				dst := fmt.Sprintf("$iothub/methods/res/%d/?$rid=%s", rc, rid)
 				if err = tr.send(ctx, dst, DefaultQoS, b); err != nil {
 					tr.logger.Errorf("method response error: %s", err)
 					return
