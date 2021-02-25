@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -255,7 +255,7 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 		}
 		defer response.Body.Close()
 
-		body, err := ioutil.ReadAll(response.Body)
+		body, err := io.ReadAll(response.Body)
 		if err != nil {
 			return "", fmt.Errorf("sign: unable to sign request (read): %s", err.Error())
 		}
@@ -276,7 +276,7 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 		defer resp.Body.Close()
 
 		// read response
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return "", fmt.Errorf("sign: unable to sign request (read): %s", err.Error())
 		}

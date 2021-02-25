@@ -3,7 +3,6 @@ package internal
 import (
 	"flag"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -52,7 +51,7 @@ func TestRun(t *testing.T) {
 
 // capture stdout
 func capture(fn func() error) ([]byte, error) {
-	f, err := ioutil.TempFile("", "")
+	f, err := os.CreateTemp("", "")
 	if err != nil {
 		return nil, err
 	}
@@ -68,5 +67,5 @@ func capture(fn func() error) ([]byte, error) {
 	if _, err = f.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	return ioutil.ReadAll(f)
+	return io.ReadAll(f)
 }

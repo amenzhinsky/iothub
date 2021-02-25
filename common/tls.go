@@ -4,7 +4,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -272,7 +272,7 @@ func TrustBundle(workloadURI string) (*x509.CertPool, error) {
 		}
 		defer response.Body.Close()
 
-		body, err := ioutil.ReadAll(response.Body)
+		body, err := io.ReadAll(response.Body)
 		if err != nil {
 			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
 		}
@@ -293,7 +293,7 @@ func TrustBundle(workloadURI string) (*x509.CertPool, error) {
 		defer resp.Body.Close()
 
 		// read response
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
 		}
