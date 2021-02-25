@@ -644,7 +644,6 @@ func (c *Client) callMethod(ctx context.Context, path string, call *MethodCall) 
 		nil,
 		call,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -662,7 +661,6 @@ func (c *Client) GetDevice(ctx context.Context, deviceID string) (*Device, error
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -679,7 +677,6 @@ func (c *Client) PurgeQueue(ctx context.Context, deviceID string) (*PurgeMessage
 		nil,
 		nil,
 		&res,
-		"2020-05-31-preview",
 	)
 	return &res, err
 }
@@ -695,7 +692,6 @@ func (c *Client) CreateDevice(ctx context.Context, device *Device) (*Device, err
 		nil,
 		device,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -757,7 +753,6 @@ func (c *Client) bulkRequest(
 		nil,
 		devs,
 		&res,
-		"",
 	)
 	if err != nil {
 		if re, ok := err.(*RequestError); ok && re.Code == http.StatusBadRequest {
@@ -804,7 +799,6 @@ func (c *Client) UpdateDevice(ctx context.Context, device *Device) (*Device, err
 		ifMatchHeader(device.ETag),
 		device,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -821,7 +815,6 @@ func (c *Client) DeleteDevice(ctx context.Context, device *Device) error {
 		ifMatchHeader(device.ETag),
 		nil,
 		nil,
-		"",
 	)
 	return err
 }
@@ -837,7 +830,6 @@ func (c *Client) ListDevices(ctx context.Context) ([]*Device, error) {
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -855,7 +847,6 @@ func (c *Client) ListModules(ctx context.Context, deviceID string) ([]*Module, e
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -872,7 +863,6 @@ func (c *Client) CreateModule(ctx context.Context, module *Module) (*Module, err
 		nil,
 		module,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -892,7 +882,6 @@ func (c *Client) GetModule(ctx context.Context, deviceID, moduleID string) (
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -910,7 +899,6 @@ func (c *Client) UpdateModule(ctx context.Context, module *Module) (*Module, err
 		ifMatchHeader(module.ETag),
 		module,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -927,7 +915,6 @@ func (c *Client) DeleteModule(ctx context.Context, module *Module) error {
 		ifMatchHeader(module.ETag),
 		nil,
 		nil,
-		"",
 	)
 	return err
 }
@@ -943,7 +930,6 @@ func (c *Client) GetDeviceTwin(ctx context.Context, deviceID string) (*Twin, err
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -963,7 +949,6 @@ func (c *Client) GetModuleTwin(ctx context.Context, deviceID, moduleID string) (
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -981,7 +966,6 @@ func (c *Client) UpdateDeviceTwin(ctx context.Context, twin *Twin) (*Twin, error
 		ifMatchHeader(twin.ETag),
 		twin,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1001,7 +985,6 @@ func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (
 		ifMatchHeader(twin.ETag),
 		twin,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1019,7 +1002,6 @@ func (c *Client) ListConfigurations(ctx context.Context) ([]*Configuration, erro
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1039,7 +1021,6 @@ func (c *Client) CreateConfiguration(ctx context.Context, config *Configuration)
 		nil,
 		config,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1059,7 +1040,6 @@ func (c *Client) GetConfiguration(ctx context.Context, configID string) (
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1079,7 +1059,6 @@ func (c *Client) UpdateConfiguration(ctx context.Context, config *Configuration)
 		ifMatchHeader(config.ETag),
 		config,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1096,7 +1075,6 @@ func (c *Client) DeleteConfiguration(ctx context.Context, config *Configuration)
 		ifMatchHeader(config.ETag),
 		nil,
 		nil,
-		"",
 	)
 	return err
 }
@@ -1114,7 +1092,6 @@ func (c *Client) ApplyConfigurationContentOnDevice(
 		nil,
 		content,
 		nil,
-		"",
 	)
 	return err
 }
@@ -1163,7 +1140,6 @@ QueryNext:
 		h,
 		req,
 		&res,
-		"",
 	)
 	if err != nil {
 		return err
@@ -1189,7 +1165,6 @@ func (c *Client) Stats(ctx context.Context) (*Stats, error) {
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1209,7 +1184,6 @@ func (c *Client) CreateJob(ctx context.Context, job *Job) (map[string]interface{
 		nil,
 		job,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1227,7 +1201,6 @@ func (c *Client) ListJobs(ctx context.Context) ([]map[string]interface{}, error)
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1244,7 +1217,6 @@ func (c *Client) GetJob(ctx context.Context, jobID string) (map[string]interface
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1261,7 +1233,6 @@ func (c *Client) CancelJob(ctx context.Context, jobID string) (map[string]interf
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1312,7 +1283,6 @@ func (c *Client) GetJobV2(ctx context.Context, jobID string) (*JobV2, error) {
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1329,7 +1299,6 @@ func (c *Client) CancelJobV2(ctx context.Context, jobID string) (*JobV2, error) 
 		nil,
 		nil,
 		&res,
-		"",
 	); err != nil {
 		return nil, err
 	}
@@ -1346,7 +1315,6 @@ func (c *Client) CreateJobV2(ctx context.Context, job *JobV2) (*JobV2, error) {
 		nil,
 		job,
 		&res,
-		"",
 	)
 	if err != nil {
 		return nil, err
@@ -1361,7 +1329,6 @@ func (c *Client) call(
 	vals url.Values,
 	headers http.Header,
 	r, v interface{}, // request and response objects
-	apiVersion string,
 ) (http.Header, error) {
 	var br io.Reader
 	if r != nil {
@@ -1371,12 +1338,8 @@ func (c *Client) call(
 		}
 		br = bytes.NewReader(b)
 	}
-	q := make(url.Values)
-	if apiVersion == "" {
-		q.Add("api-version", "2019-03-30")
-	} else {
-		q.Add("api-version", apiVersion)
-	}
+	q := url.Values{}
+	q.Set("api-version", "2020-05-31-preview")
 	for k, vv := range vals {
 		for _, v := range vv {
 			q.Add(k, v)
