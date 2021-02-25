@@ -15,7 +15,7 @@ import (
 
 // New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
-func NewModuleTransport(opts ...TransportOption) transport.Transport {
+func NewModuleTransport(opts ...TransportOption) *ModuleTransport {
 	tr := &ModuleTransport{
 		Transport: Transport{
 			done: make(chan struct{}),

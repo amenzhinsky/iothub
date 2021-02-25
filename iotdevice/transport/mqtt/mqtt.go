@@ -64,7 +64,7 @@ func WithModelID(modelID string) TransportOption {
 
 // New returns new Transport transport.
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
-func New(opts ...TransportOption) transport.Transport {
+func New(opts ...TransportOption) *Transport {
 	tr := &Transport{
 		done: make(chan struct{}),
 	}
