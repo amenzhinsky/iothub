@@ -28,8 +28,9 @@ func TestParseDirectMethodTopic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m != "add" || r != 0x666 {
-		t.Errorf("parseDirectMethodTopic(%q) = %q, %d, want %q, %d", s, m, r, "add", 0x666)
+
+	if m != "add" || r != "666" {
+		t.Errorf("parseDirectMethodTopic(%q) = %q, %q, want %q, %q", s, m, r, "add", 666)
 	}
 }
 
