@@ -1154,13 +1154,29 @@ QueryNext:
 	return nil
 }
 
-// Stats retrieves the device registry statistic.
-func (c *Client) Stats(ctx context.Context) (*Stats, error) {
-	var res Stats
+// DeviceStats retrieves the device registry statistic.
+func (c *Client) DeviceStats(ctx context.Context) (*DeviceStats, error) {
+	var res DeviceStats
 	if _, err := c.call(
 		ctx,
 		http.MethodGet,
 		"statistics/devices",
+		nil,
+		nil,
+		nil,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *Client) ServiceStats(ctx context.Context) (*ServiceStats, error) {
+	var res ServiceStats
+	if _, err := c.call(
+		ctx,
+		http.MethodGet,
+		"statistics/service",
 		nil,
 		nil,
 		nil,

@@ -390,9 +390,14 @@ func run() error {
 			Handler: wrap(ctx, query),
 		},
 		{
-			Name:    "statistics",
-			Desc:    "get statistics the registry statistics",
-			Handler: wrap(ctx, statistics),
+			Name:    "device-statistics",
+			Desc:    "get device statistics of the identity registry",
+			Handler: wrap(ctx, deviceStats),
+		},
+		{
+			Name:    "service-statistics",
+			Desc:    "get service statistics of the identity registry",
+			Handler: wrap(ctx, serviceStats),
 		},
 		{
 			Name:    "import",
@@ -884,8 +889,12 @@ func query(ctx context.Context, c *iotservice.Client, args []string) error {
 	})
 }
 
-func statistics(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.Stats(ctx))
+func deviceStats(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.DeviceStats(ctx))
+}
+
+func serviceStats(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.ServiceStats(ctx))
 }
 
 func importFromBlob(ctx context.Context, c *iotservice.Client, args []string) error {

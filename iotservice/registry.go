@@ -134,10 +134,14 @@ type Properties struct {
 	Reported map[string]interface{} `json:"reported,omitempty"`
 }
 
-type Stats struct {
+type DeviceStats struct {
 	DisabledDeviceCount uint `json:"disabledDeviceCount,omitempty"`
 	EnabledDeviceCount  uint `json:"enabledDeviceCount,omitempty"`
 	TotalDeviceCount    uint `json:"totalDeviceCount,omitempty"`
+}
+
+type ServiceStats struct {
+	ConnectedDeviceCount uint `json:"connectedDeviceCount"`
 }
 
 type Configuration struct {

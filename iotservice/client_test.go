@@ -372,9 +372,16 @@ func TestDeleteConfiguration(t *testing.T) {
 	}
 }
 
-func TestStats(t *testing.T) {
+func TestDeviceStats(t *testing.T) {
 	client := newClient(t)
-	if _, err := client.Stats(context.Background()); err != nil {
+	if _, err := client.DeviceStats(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServiceStats(t *testing.T) {
+	client := newClient(t)
+	if _, err := client.ServiceStats(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }
