@@ -303,6 +303,38 @@ func run() error {
 			},
 		},
 		{
+			Name:    "digital-twin",
+			Args:    []string{"DEVICE"},
+			Desc:    "inspect the named digital twin",
+			Handler: wrap(ctx, getDigitalTwin),
+		},
+		{
+			Name:    "update-digital-twin",
+			Args:    []string{"DEVICE", "PATCH"},
+			Desc:    "update the named digital twin",
+			Handler: wrap(ctx, updateDigitalTwin),
+		},
+		{
+			Name: "call-digital-twin",
+			Args: []string{"DEVICE", "COMMAND", "PAYLOAD"},
+			Desc: "invoke the named digital twin command",
+			ParseFunc: func(f *flag.FlagSet) {
+				f.UintVar(&connectTimeoutFlag, "connect-timeout", 0, "connect timeout in seconds")
+				f.UintVar(&responseTimeoutFlag, "response-timeout", 30, "response timeout in seconds")
+			},
+			Handler: wrap(ctx, callDigitalTwin),
+		},
+		{
+			Name: "call-digital-twin-component",
+			Args: []string{"DEVICE", "COMPONENT", "COMMAND", "PAYLOAD"},
+			Desc: "invoke the named digital twin component command",
+			ParseFunc: func(f *flag.FlagSet) {
+				f.UintVar(&connectTimeoutFlag, "connect-timeout", 0, "connect timeout in seconds")
+				f.UintVar(&responseTimeoutFlag, "response-timeout", 30, "response timeout in seconds")
+			},
+			Handler: wrap(ctx, callDigitalTwinComponent),
+		},
+		{
 			Name:    "configurations",
 			Desc:    "list all configurations",
 			Handler: wrap(ctx, listConfigurations),
@@ -944,6 +976,32 @@ func updateModuleTwin(ctx context.Context, c *iotservice.Client, args []string) 
 	}
 	mergeMapJSON(twin.Properties.Desired, twinPropsFlag)
 	return output(c.UpdateModuleTwin(ctx, twin))
+}
+
+func getDigitalTwin(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.GetDigitalTwin(ctx, args[0]))
+}
+
+func updateDigitalTwin(ctx context.Context, c *iotservice.Client, args []string) error {
+	var patch []map[string]interface{}
+	if err := json.Unmarshal([]byte(args[1]), &patch); err != nil {
+		return err
+	}
+	return output(c.UpdateDigitalTwin(ctx, args[0], patch))
+}
+
+func callDigitalTwin(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.CallDigitalTwin(ctx, args[0], args[1], []byte(args[2]),
+		iotservice.WithCallDigitalTwinConnectTimeout(int(connectTimeoutFlag)),
+		iotservice.WithCallDigitalTwinResponseTimeout(int(responseTimeoutFlag)),
+	))
+}
+
+func callDigitalTwinComponent(ctx context.Context, c *iotservice.Client, args []string) error {
+	return output(c.CallDigitalTwinComponent(ctx, args[0], args[1], args[2], []byte(args[3]),
+		iotservice.WithCallDigitalTwinConnectTimeout(int(connectTimeoutFlag)),
+		iotservice.WithCallDigitalTwinResponseTimeout(int(responseTimeoutFlag)),
+	))
 }
 
 func callDevice(ctx context.Context, c *iotservice.Client, args []string) error {

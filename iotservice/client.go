@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -991,6 +992,98 @@ func (c *Client) UpdateModuleTwin(ctx context.Context, twin *ModuleTwin) (
 	return &res, nil
 }
 
+func (c *Client) GetDigitalTwin(
+	ctx context.Context, digitalTwinID string,
+) (map[string]interface{}, error) {
+	var res map[string]interface{}
+	if _, err := c.call(
+		ctx,
+		http.MethodGet,
+		pathf("digitaltwins/%s", digitalTwinID),
+		nil,
+		nil,
+		nil,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (c *Client) UpdateDigitalTwin(
+	ctx context.Context, digitalTwinID string, patch []map[string]interface{},
+) (map[string]interface{}, error) {
+	var res map[string]interface{}
+	if _, err := c.call(
+		ctx,
+		http.MethodPatch,
+		pathf("digitaltwins/%s", digitalTwinID),
+		nil,
+		nil, // TODO: ifMatchHeader(twin.ETag),
+		patch,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+type CallDigitalTwinOption func(q url.Values)
+
+func WithCallDigitalTwinConnectTimeout(seconds int) CallDigitalTwinOption {
+	return func(q url.Values) {
+		q.Set("connectTimeoutInSeconds", strconv.Itoa(seconds))
+	}
+}
+
+func WithCallDigitalTwinResponseTimeout(seconds int) CallDigitalTwinOption {
+	return func(q url.Values) {
+		q.Set("responseTimeoutInSeconds", strconv.Itoa(seconds))
+	}
+}
+
+func (c *Client) CallDigitalTwin(ctx context.Context,
+	digitalTwinID, command string, payload []byte, opts ...CallDigitalTwinOption,
+) (map[string]interface{}, error) {
+	return c.callDigitalTwin(ctx,
+		fmt.Sprintf("digitaltwins/%s/commands/%s", digitalTwinID, command),
+		payload, opts...,
+	)
+}
+
+func (c *Client) CallDigitalTwinComponent(ctx context.Context,
+	digitalTwinID, component, command string, payload []byte, opts ...CallDigitalTwinOption,
+) (map[string]interface{}, error) {
+	return c.callDigitalTwin(ctx,
+		fmt.Sprintf("digitaltwins/%s/components/%s/commands/%s",
+			digitalTwinID, component, command,
+		),
+		payload, opts...,
+	)
+}
+
+func (c *Client) callDigitalTwin(ctx context.Context,
+	path string, payload []byte, opts ...CallDigitalTwinOption,
+) (map[string]interface{}, error) {
+	var res map[string]interface{}
+	q := url.Values{}
+	for _, opt := range opts {
+		opt(q)
+	}
+	if _, err := c.call(
+		ctx,
+		http.MethodPost,
+		path,
+		nil,
+		nil,
+		payload,
+		&res,
+	); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 // ListConfigurations gets all available configurations from the registry.
 func (c *Client) ListConfigurations(ctx context.Context) ([]*Configuration, error) {
 	var res []*Configuration
@@ -1348,14 +1441,20 @@ func (c *Client) call(
 ) (http.Header, error) {
 	var br io.Reader
 	if r != nil {
-		b, err := json.Marshal(r)
-		if err != nil {
-			return nil, err
+		var b []byte
+		if body, ok := r.([]byte); ok {
+			b = body
+		} else {
+			var err error
+			b, err = json.Marshal(r)
+			if err != nil {
+				return nil, err
+			}
 		}
 		br = bytes.NewReader(b)
 	}
 	q := url.Values{}
-	q.Set("api-version", "2020-05-31-preview")
+	q.Set("api-version", "2020-09-30")
 	for k, vv := range vals {
 		for _, v := range vv {
 			q.Add(k, v)
