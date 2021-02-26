@@ -365,8 +365,8 @@ func testDirectMethod(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client)
 	if err := dc.RegisterMethod(
 		context.Background(),
 		"sum",
-		func(v map[string]interface{}) (map[string]interface{}, error) {
-			return map[string]interface{}{
+		func(v map[string]interface{}) (int, map[string]interface{}, error) {
+			return 222, map[string]interface{}{
 				"result": v["a"].(float64) + v["b"].(float64),
 			}, nil
 		},
@@ -395,7 +395,7 @@ func testDirectMethod(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client)
 	select {
 	case v := <-resc:
 		w := &iotservice.MethodResult{
-			Status: 200,
+			Status: 222,
 			Payload: map[string]interface{}{
 				"result": 4.5,
 			},

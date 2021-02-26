@@ -244,7 +244,7 @@ func (m *methodMux) Dispatch(method string, b []byte) (int, []byte, error) {
 	if err := json.Unmarshal(b, &v); err != nil {
 		return jsonErr(err)
 	}
-	v, err := f(v)
+	code, v, err := f(v)
 	if err != nil {
 		return jsonErr(err)
 	}
@@ -255,7 +255,7 @@ func (m *methodMux) Dispatch(method string, b []byte) (int, []byte, error) {
 	if err != nil {
 		return jsonErr(err)
 	}
-	return 200, b, nil
+	return code, b, nil
 }
 
 func jsonErr(err error) (int, []byte, error) {

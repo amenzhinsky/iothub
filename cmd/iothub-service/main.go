@@ -991,17 +991,25 @@ func updateDigitalTwin(ctx context.Context, c *iotservice.Client, args []string)
 }
 
 func callDigitalTwin(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.CallDigitalTwin(ctx, args[0], args[1], []byte(args[2]),
+	_, v, err := c.CallDigitalTwin(ctx, args[0], args[1], []byte(args[2]),
 		iotservice.WithCallDigitalTwinConnectTimeout(int(connectTimeoutFlag)),
 		iotservice.WithCallDigitalTwinResponseTimeout(int(responseTimeoutFlag)),
-	))
+	)
+	if err != nil {
+		return err
+	}
+	return output(v, nil)
 }
 
 func callDigitalTwinComponent(ctx context.Context, c *iotservice.Client, args []string) error {
-	return output(c.CallDigitalTwinComponent(ctx, args[0], args[1], args[2], []byte(args[3]),
+	_, v, err := c.CallDigitalTwinComponent(ctx, args[0], args[1], args[2], []byte(args[3]),
 		iotservice.WithCallDigitalTwinConnectTimeout(int(connectTimeoutFlag)),
 		iotservice.WithCallDigitalTwinResponseTimeout(int(responseTimeoutFlag)),
-	))
+	)
+	if err != nil {
+		return err
+	}
+	return output(v, nil)
 }
 
 func callDevice(ctx context.Context, c *iotservice.Client, args []string) error {

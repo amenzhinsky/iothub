@@ -202,14 +202,14 @@ func directMethod(ctx context.Context, c *iotdevice.Client, args []string) error
 	mu := &sync.Mutex{}
 
 	if err := c.RegisterMethod(ctx, args[0],
-		func(p map[string]interface{}) (map[string]interface{}, error) {
+		func(p map[string]interface{}) (int, map[string]interface{}, error) {
 			mu.Lock()
 			defer mu.Unlock()
 
 			b, err := json.Marshal(p)
 			if err != nil {
 				errc <- err
-				return nil, err
+				return 0, nil, err
 			}
 			if quiteFlag {
 				fmt.Println(string(b))
@@ -220,18 +220,17 @@ func directMethod(ctx context.Context, c *iotdevice.Client, args []string) error
 			b, _, err = in.ReadLine()
 			if err != nil {
 				errc <- err
-				return nil, err
+				return 0, nil, err
 			}
 			var v map[string]interface{}
 			if err = json.Unmarshal(b, &v); err != nil {
 				errc <- errors.New("unable to parse json input")
-				return nil, err
+				return 0, nil, err
 			}
-			return v, nil
+			return 200, v, nil
 		}); err != nil {
 		return err
 	}
-
 	return <-errc
 }
 

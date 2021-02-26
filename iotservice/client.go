@@ -1044,18 +1044,18 @@ func WithCallDigitalTwinResponseTimeout(seconds int) CallDigitalTwinOption {
 
 func (c *Client) CallDigitalTwin(ctx context.Context,
 	digitalTwinID, command string, payload []byte, opts ...CallDigitalTwinOption,
-) (map[string]interface{}, error) {
+) (int, map[string]interface{}, error) {
 	return c.callDigitalTwin(ctx,
-		fmt.Sprintf("digitaltwins/%s/commands/%s", digitalTwinID, command),
+		pathf("digitaltwins/%s/commands/%s", digitalTwinID, command),
 		payload, opts...,
 	)
 }
 
 func (c *Client) CallDigitalTwinComponent(ctx context.Context,
 	digitalTwinID, component, command string, payload []byte, opts ...CallDigitalTwinOption,
-) (map[string]interface{}, error) {
+) (int, map[string]interface{}, error) {
 	return c.callDigitalTwin(ctx,
-		fmt.Sprintf("digitaltwins/%s/components/%s/commands/%s",
+		pathf("digitaltwins/%s/components/%s/commands/%s",
 			digitalTwinID, component, command,
 		),
 		payload, opts...,
@@ -1064,13 +1064,13 @@ func (c *Client) CallDigitalTwinComponent(ctx context.Context,
 
 func (c *Client) callDigitalTwin(ctx context.Context,
 	path string, payload []byte, opts ...CallDigitalTwinOption,
-) (map[string]interface{}, error) {
+) (int, map[string]interface{}, error) {
 	var res map[string]interface{}
 	q := url.Values{}
 	for _, opt := range opts {
 		opt(q)
 	}
-	if _, err := c.call(
+	h, err := c.call(
 		ctx,
 		http.MethodPost,
 		path,
@@ -1078,10 +1078,18 @@ func (c *Client) callDigitalTwin(ctx context.Context,
 		nil,
 		payload,
 		&res,
-	); err != nil {
-		return nil, err
+	)
+	if err != nil {
+		return 0, nil, err
 	}
-	return res, nil
+	var code int
+	if s := h.Get("X-Ms-Command-Statuscode"); s != "" {
+		code, err = strconv.Atoi(s)
+		if err != nil {
+			return 0, nil, err
+		}
+	}
+	return code, res, nil
 }
 
 // ListConfigurations gets all available configurations from the registry.

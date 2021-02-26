@@ -49,9 +49,9 @@ func TestEventsMuxClose(t *testing.T) {
 
 func TestMethodMux(t *testing.T) {
 	m := methodMux{}
-	if err := m.handle("add", func(v map[string]interface{}) (map[string]interface{}, error) {
+	if err := m.handle("add", func(v map[string]interface{}) (int, map[string]interface{}, error) {
 		v["b"] = 2
-		return v, nil
+		return 321, v, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -61,8 +61,8 @@ func TestMethodMux(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rc != 200 {
-		t.Errorf("rc = %d, want %d", rc, 200)
+	if rc != 321 {
+		t.Errorf("rc = %d, want %d", rc, 321)
 	}
 	w := []byte(`{"a":1,"b":2}`)
 	if !bytes.Equal(data, w) {
