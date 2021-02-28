@@ -105,6 +105,7 @@ type Client struct {
 	http   *http.Client // REST client
 
 	sendMu   sync.Mutex
+	sendSess *amqp.Session
 	sendLink *amqp.Sender
 
 	// TODO: figure out if it makes sense to cache feedback and file notification receivers
@@ -127,10 +128,14 @@ func (c *Client) newSession(ctx context.Context) (*amqp.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			_ = conn.Close()
+		}
+	}()
 
 	c.logger.Debugf("connected to %s", c.sak.HostName)
 	if err = c.putTokenContinuously(ctx, conn); err != nil {
-		_ = conn.Close()
 		return nil, err
 	}
 
@@ -157,13 +162,14 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 	if err != nil {
 		return err
 	}
-	defer sess.Close(context.Background())
 
 	if err := c.putToken(ctx, sess, tokenUpdateInterval); err != nil {
+		_ = sess.Close(context.Background())
 		return err
 	}
 
 	go func() {
+		defer sess.Close(context.Background())
 		ticker := time.NewTimer(tokenUpdateInterval - tokenUpdateSpan)
 		defer ticker.Stop()
 
@@ -434,15 +440,21 @@ func (c *Client) getSendLink(ctx context.Context) (*amqp.Sender, error) {
 	if err != nil {
 		return nil, err
 	}
-	// since the link is cached it's supposed to be closed along with the client itself
+	defer func() {
+		if err != nil {
+			_ = sess.Close(context.Background())
+		}
+	}()
 
-	c.sendLink, err = sess.NewSender(
+	link, err := sess.NewSender(
 		amqp.LinkTargetAddress("/messages/devicebound"),
 	)
 	if err != nil {
-		_ = sess.Close(context.Background())
 		return nil, err
 	}
+
+	c.sendSess = sess
+	c.sendLink = link
 	return c.sendLink, nil
 }
 
