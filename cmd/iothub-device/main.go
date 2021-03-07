@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
 	"github.com/amenzhinsky/iothub/iotdevice"
@@ -29,14 +30,16 @@ var transports = map[string]func() (transport.Transport, error){
 }
 
 var (
-	wsFlag        bool
-	debugFlag     bool
-	formatFlag    string
-	quiteFlag     bool
-	transportFlag string
-	midFlag       string
-	cidFlag       string
-	qosFlag       int
+	wsFlag           bool
+	debugFlag        bool
+	formatFlag       string
+	quiteFlag        bool
+	transportFlag    string
+	midFlag          string
+	cidFlag          string
+	qosFlag          int
+	creationTimeFlag time.Time
+	expiryTimeFlag   time.Time
 
 	// x509 flags
 	tlsCertFlag  string
@@ -83,6 +86,8 @@ func run() error {
 				f.StringVar(&cidFlag, "cid", "", "message identifier in a request-reply")
 				f.IntVar(&qosFlag, "qos", mqtt.DefaultQoS, "QoS value, 0 or 1 (mqtt only)")
 				f.Var((*internal.StringsMapFlag)(&propsFlag), "prop", "custom property, key=value")
+				f.Var((*timeValue)(&expiryTimeFlag), "exp", "message expiration `time`")
+				f.Var((*timeValue)(&creationTimeFlag), "ctime", "message creation `time`")
 			},
 		},
 		{
@@ -164,6 +169,8 @@ func send(ctx context.Context, c *iotdevice.Client, args []string) error {
 		iotdevice.WithSendMessageID(midFlag),
 		iotdevice.WithSendCorrelationID(cidFlag),
 		iotdevice.WithSendQoS(qosFlag),
+		iotdevice.WithSendExpiryTime(expiryTimeFlag),
+		iotdevice.WithSendCreationTime(creationTimeFlag),
 	)
 }
 
@@ -262,4 +269,19 @@ func updateTwin(ctx context.Context, c *iotdevice.Client, args []string) error {
 	}
 	fmt.Printf("version: %d\n", ver)
 	return nil
+}
+
+type timeValue time.Time
+
+func (v *timeValue) Set(s string) error {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return err
+	}
+	*v = timeValue(t)
+	return nil
+}
+
+func (v *timeValue) String() string {
+	return (*time.Time)(v).Format(time.RFC3339)
 }

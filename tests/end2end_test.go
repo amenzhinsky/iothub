@@ -156,6 +156,7 @@ func testDeviceToCloud(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client
 				iotdevice.WithSendMessageID(genID()),
 				iotdevice.WithSendCorrelationID(genID()),
 				iotdevice.WithSendProperties(props),
+				iotdevice.WithSendCreationTime(time.Now().Add(-24*time.Hour)),
 			); err != nil {
 				errc <- err
 				break
@@ -192,6 +193,9 @@ func testDeviceToCloud(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client
 		}
 		if !bytes.Equal(msg.Payload, payload) {
 			t.Errorf("Payload = %v, want %v", msg.Payload, payload)
+		}
+		if msg.Properties["iothub-creation-time-utc"] == "" {
+			t.Error("iothub-creation-time-utc missing")
 		}
 		testProperties(t, msg.Properties, props)
 	case err := <-errc:

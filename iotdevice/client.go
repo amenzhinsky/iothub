@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
@@ -312,6 +313,20 @@ func WithSendProperties(m map[string]string) SendOption {
 		for k, v := range m {
 			msg.Properties[k] = v
 		}
+		return nil
+	}
+}
+
+func WithSendExpiryTime(t time.Time) SendOption {
+	return func(msg *common.Message) error {
+		msg.ExpiryTime = &t
+		return nil
+	}
+}
+
+func WithSendCreationTime(t time.Time) SendOption {
+	return func(msg *common.Message) error {
+		msg.EnqueuedTime = &t
 		return nil
 	}
 }

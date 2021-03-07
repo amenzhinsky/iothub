@@ -200,6 +200,7 @@ func (tr *Transport) subEvents(ctx context.Context, mux transport.MessageDispatc
 	return func() error {
 		return contextToken(ctx, tr.conn.Subscribe(
 			"devices/"+tr.did+"/messages/devicebound/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+				tr.logger.Debugf("%d %s", m.Qos(), m.Topic())
 				msg, err := parseEventMessage(m)
 				if err != nil {
 					tr.logger.Errorf("message parse error: %s", err)
@@ -473,28 +474,33 @@ func parseTwinPropsTopic(s string) (int, int, int, error) {
 	return rc, int(rid), ver, nil
 }
 
+const rfc3339Milli = "2006-01-02T15:04:05.999Z07:00"
+
 func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
 	// this is just copying functionality from the nodejs sdk, but
 	// seems like adding meta attributes does nothing or in some cases,
 	// e.g. when $.exp is set the cloud just disconnects.
 	u := make(url.Values, len(msg.Properties)+5)
 	if msg.MessageID != "" {
-		u["$.mid"] = []string{msg.MessageID}
+		u.Add("$.mid", msg.MessageID)
 	}
 	if msg.CorrelationID != "" {
-		u["$.cid"] = []string{msg.CorrelationID}
+		u.Add("$.cid", msg.CorrelationID)
 	}
 	if msg.UserID != "" {
-		u["$.uid"] = []string{msg.UserID}
+		u.Add("$.uid", msg.UserID)
 	}
 	if msg.To != "" {
-		u["$.to"] = []string{msg.To}
+		u.Add("$.to", msg.To)
 	}
 	if msg.ExpiryTime != nil && !msg.ExpiryTime.IsZero() {
-		u["$.exp"] = []string{msg.ExpiryTime.UTC().Format(time.RFC3339)}
+		u.Add("$.exp", msg.ExpiryTime.UTC().Format(rfc3339Milli))
+	}
+	if msg.EnqueuedTime != nil && !msg.EnqueuedTime.IsZero() {
+		u.Add("$.ctime", msg.EnqueuedTime.UTC().Format(rfc3339Milli))
 	}
 	for k, v := range msg.Properties {
-		u[k] = []string{v}
+		u.Add(k, v)
 	}
 
 	dst := "devices/" + tr.did + "/messages/events/" + u.Encode()
