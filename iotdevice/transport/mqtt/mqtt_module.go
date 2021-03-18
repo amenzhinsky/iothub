@@ -129,7 +129,7 @@ func (tr *ModuleTransport) SubscribeEvents(ctx context.Context, mux transport.Me
 func (tr *ModuleTransport) subEvents(ctx context.Context, mux transport.MessageDispatcher) subFunc {
 	return func() error {
 		return contextToken(ctx, tr.conn.Subscribe(
-			"devices/"+tr.did+"/modules/"+tr.mid+"/inputs/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+			"devices/"+tr.did+"/modules/"+tr.mid+"/messages/devicebound/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
 				msg, err := parseEventMessage(m)
 				if err != nil {
 					tr.logger.Errorf("message parse error: %s", err)
