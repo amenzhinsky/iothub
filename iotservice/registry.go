@@ -44,6 +44,7 @@ type Device struct {
 	CloudToDeviceMessageCount  uint                   `json:"cloudToDeviceMessageCount,omitempty"`
 	Authentication             *Authentication        `json:"authentication,omitempty"`
 	Capabilities               map[string]interface{} `json:"capabilities,omitempty"`
+	Tags                       map[string]interface{} `json:"tags,omitempty"`
 }
 
 type PurgeMessageQueueResult struct {
