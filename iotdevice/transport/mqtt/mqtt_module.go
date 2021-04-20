@@ -62,9 +62,9 @@ func (tr *ModuleTransport) Connect(ctx context.Context, creds transport.Credenti
 	o := mqtt.NewClientOptions()
 	o.SetTLSConfig(tlsCfg)
 	if tr.webSocket {
-		o.AddBroker("wss://" + creds.GetHostName() + ":443/$iothub/websocket") // https://github.com/MicrosoftDocs/azure-docs/issues/21306
+		o.AddBroker("wss://" + creds.GetBroker() + ":443/$iothub/websocket") // https://github.com/MicrosoftDocs/azure-docs/issues/21306
 	} else {
-		o.AddBroker("tls://" + creds.GetHostName() + ":8883")
+		o.AddBroker("tls://" + creds.GetBroker() + ":8883")
 	}
 	o.SetProtocolVersion(4) // 4 = MQTT 3.1.1
 	o.SetClientID(creds.GetDeviceID() + "/" + creds.GetModuleID())
