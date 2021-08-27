@@ -235,7 +235,7 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 	// validate payload properties
 	err := payload.Validate()
 	if err != nil {
-		return "", fmt.Errorf("sign: unable to sign request: %s", err.Error())
+		return "", fmt.Errorf("sign: unable to sign request: %w", err)
 	}
 
 	payloadJSON, _ := json.Marshal(payload)
@@ -251,18 +251,18 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 		setSharedUnixHTTPClient(addr.Name)
 		response, err := sharedUnixHTTPClient.Post("http://iotedge"+fmt.Sprintf("/modules/%s/genid/%s/sign?api-version=2018-06-28", name, genid), "text/plain", bytes.NewBuffer(payloadJSON))
 		if err != nil {
-			return "", fmt.Errorf("sign: unable to sign request (resp): %s", err.Error())
+			return "", fmt.Errorf("sign: unable to sign request (resp): %w", err)
 		}
 		defer response.Body.Close()
 
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
-			return "", fmt.Errorf("sign: unable to sign request (read): %s", err.Error())
+			return "", fmt.Errorf("sign: unable to sign request (read): %w", err)
 		}
 
 		err = json.Unmarshal(body, &esrr)
 		if err != nil {
-			return "", fmt.Errorf("sign: unable to sign request (unm): %s", err.Error())
+			return "", fmt.Errorf("sign: unable to sign request (unm): %w", err)
 		}
 	} else {
 		// format uri string for base uri
@@ -271,19 +271,19 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 		// get http response and handle error
 		resp, err := http.Post(uri, "text/plain", bytes.NewBuffer(payloadJSON))
 		if err != nil {
-			return "", fmt.Errorf("sign: unable to sign request (resp): %s", err.Error())
+			return "", fmt.Errorf("sign: unable to sign request (resp): %w", err)
 		}
 		defer resp.Body.Close()
 
 		// read response
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return "", fmt.Errorf("sign: unable to sign request (read): %s", err.Error())
+			return "", fmt.Errorf("sign: unable to sign request (read): %w", err)
 		}
 
 		err = json.Unmarshal(body, &esrr)
 		if err != nil {
-			return "", fmt.Errorf("sign: unable to sign request (unm): %s", err.Error())
+			return "", fmt.Errorf("sign: unable to sign request (unm): %w", err)
 		}
 	}
 

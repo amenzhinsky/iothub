@@ -268,18 +268,18 @@ func TrustBundle(workloadURI string) (*x509.CertPool, error) {
 		setSharedUnixHTTPClient(addr.Name)
 		response, err := sharedUnixHTTPClient.Get("http://iotedge" + "/trust-bundle?api-version=2019-11-05")
 		if err != nil {
-			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
+			return nil, fmt.Errorf("tls: unable to append certificates: %w", err)
 		}
 		defer response.Body.Close()
 
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
-			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
+			return nil, fmt.Errorf("tls: unable to append certificates: %w", err)
 		}
 
 		err = json.Unmarshal(body, &tbr)
 		if err != nil {
-			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
+			return nil, fmt.Errorf("tls: unable to append certificates: %w", err)
 		}
 	} else {
 		// format uri string
@@ -288,19 +288,19 @@ func TrustBundle(workloadURI string) (*x509.CertPool, error) {
 		// get http response and handle error
 		resp, err := http.Get(uri)
 		if err != nil {
-			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
+			return nil, fmt.Errorf("tls: unable to append certificates: %w", err)
 		}
 		defer resp.Body.Close()
 
 		// read response
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
+			return nil, fmt.Errorf("tls: unable to append certificates: %w", err)
 		}
 
 		err = json.Unmarshal(body, &tbr)
 		if err != nil {
-			return nil, fmt.Errorf("tls: unable to append certificates: %s", err.Error())
+			return nil, fmt.Errorf("tls: unable to append certificates: %w", err)
 		}
 	}
 
