@@ -461,7 +461,7 @@ func parseTwinPropsTopic(s string) (int, int, int, error) {
 	}
 	rid, err := strconv.ParseInt(q["$rid"][0], 16, 0)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("$rid parse error: %s", err)
+		return 0, 0, 0, fmt.Errorf("$rid parse error: %w", err)
 	}
 
 	var ver int // version is available only for update responses
