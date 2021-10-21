@@ -77,8 +77,8 @@ func TestETags(t *testing.T) {
 func TestBulkOperations(t *testing.T) {
 	client := newClient(t)
 	devices := []*Device{
-		{DeviceID: "test-bulk-0"},
-		{DeviceID: "test-bulk-1"},
+		{DeviceID: "test-bulk-0", Tags: map[string]interface{}{"tag-1": true}},
+		{DeviceID: "test-bulk-1", Tags: map[string]interface{}{"tag-2": true}},
 	}
 	for _, dev := range devices {
 		_ = client.DeleteDevice(context.Background(), dev)
@@ -93,6 +93,14 @@ func TestBulkOperations(t *testing.T) {
 	}
 
 	res, err = client.UpdateDevices(context.Background(), devices, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsSuccessful {
+		t.Fatal("update is not successful")
+	}
+
+	res, err = client.UpdateDeviceTwins(context.Background(), devices, false)
 	if err != nil {
 		t.Fatal(err)
 	}

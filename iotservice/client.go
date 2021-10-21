@@ -726,6 +726,17 @@ func (c *Client) UpdateDevices(
 	return c.bulkRequest(ctx, devices, op)
 }
 
+// UpdateDeviceTwins updates an array of device twins or tags in bulk mode.
+func (c *Client) UpdateDeviceTwins(
+	ctx context.Context, devices []*Device, force bool,
+) (*BulkResult, error) {
+	op := "UpdateTwinIfMatchETag"
+	if force {
+		op = "UpdateTwin"
+	}
+	return c.bulkRequest(ctx, devices, op)
+}
+
 // DeleteDevices deletes array of devices in bulk mode.
 func (c *Client) DeleteDevices(
 	ctx context.Context, devices []*Device, force bool,

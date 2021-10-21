@@ -45,6 +45,7 @@ type Device struct {
 	Authentication             *Authentication        `json:"authentication,omitempty"`
 	Capabilities               map[string]interface{} `json:"capabilities,omitempty"`
 	Tags                       map[string]interface{} `json:"tags,omitempty"`
+	Properties                 *Properties            `json:"properties,omitempty"`
 }
 
 type PurgeMessageQueueResult struct {
