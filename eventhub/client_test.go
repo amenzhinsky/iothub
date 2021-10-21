@@ -45,7 +45,7 @@ func TestClient_Subscribe(t *testing.T) {
 	defer cancel()
 
 	if err := c.Subscribe(ctx, func(msg *Event) error {
-		return msg.Accept(ctx)
+		return nil
 	},
 		WithSubscribeSince(time.Now()),
 	); err != nil && err != context.DeadlineExceeded {

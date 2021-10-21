@@ -137,12 +137,13 @@ type sub struct {
 // Event is an Event Hub event, simply wraps an AMQP message.
 type Event struct {
 	*amqp.Message
+	recv *amqp.Receiver
 }
 
 // Subscribe subscribes to all hub's partitions and registers the given
 // handler and blocks until it encounters an error or the context is cancelled.
 //
-// It's client's responsibility to accept/reject/release events.
+// Non-nil errors returned from fn reject AMQP messages.
 func (c *Client) Subscribe(
 	ctx context.Context,
 	fn func(event *Event) error,
@@ -172,7 +173,7 @@ func (c *Client) Subscribe(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	msgc := make(chan *amqp.Message)
+	evc := make(chan *Event)
 	errc := make(chan error)
 
 	for _, id := range ids {
@@ -196,7 +197,7 @@ func (c *Client) Subscribe(
 					return
 				}
 				select {
-				case msgc <- msg:
+				case evc <- &Event{Message: msg, recv: recv}:
 				case <-ctx.Done():
 				}
 			}
@@ -205,8 +206,17 @@ func (c *Client) Subscribe(
 
 	for {
 		select {
-		case msg := <-msgc:
-			if err := fn(&Event{msg}); err != nil {
+		case ev := <-evc:
+			if err := fn(ev); err != nil {
+				if rerr := ev.recv.RejectMessage(ctx, ev.Message, &amqp.Error{
+					Condition:   amqp.ErrorInternalError,
+					Description: err.Error(),
+				}); rerr != nil {
+					return rerr
+				}
+				return err
+			}
+			if err := ev.recv.AcceptMessage(ctx, ev.Message); err != nil {
 				return err
 			}
 		case err := <-errc:
@@ -263,7 +273,7 @@ func (c *Client) getPartitionIDs(ctx context.Context, sess *amqp.Session) ([]str
 	if msg.Properties.CorrelationID != mid {
 		return nil, errors.New("message-id mismatch")
 	}
-	if err := msg.Accept(ctx); err != nil {
+	if err := recv.AcceptMessage(ctx, msg); err != nil {
 		return nil, err
 	}
 

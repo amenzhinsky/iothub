@@ -232,7 +232,7 @@ func (c *Client) putToken(
 	if err != nil {
 		return err
 	}
-	if err = msg.Accept(ctx); err != nil {
+	if err = recv.AcceptMessage(ctx, msg); err != nil {
 		return err
 	}
 	return eventhub.CheckMessageResponse(msg)
@@ -305,10 +305,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, fn EventHandler) error {
 	defer eh.Close()
 
 	return eh.Subscribe(ctx, func(msg *eventhub.Event) error {
-		if err := fn(&Event{FromAMQPMessage(msg.Message)}); err != nil {
-			return err
-		}
-		return msg.Accept(ctx)
+		return fn(&Event{FromAMQPMessage(msg.Message)})
 	},
 		eventhub.WithSubscribeSince(time.Now()),
 	)
@@ -497,7 +494,7 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) erro
 				return err
 			}
 		}
-		if err = msg.Accept(ctx); err != nil {
+		if err = recv.AcceptMessage(ctx, msg); err != nil {
 			return err
 		}
 	}
@@ -556,7 +553,7 @@ func (c *Client) SubscribeFileNotifications(
 		if err := fn(&FileNotification{msg}); err != nil {
 			return err
 		}
-		if err = msg.Accept(ctx); err != nil {
+		if err = recv.AcceptMessage(ctx, msg); err != nil {
 			return err
 		}
 	}

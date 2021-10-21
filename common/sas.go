@@ -158,7 +158,7 @@ func (c *SharedAccessKey) TokenFromEdge(
 	)
 }
 
-// NewSharedAccessSignature initialized a new shared access signature
+// NewSharedAccessSignatureFromEdge initialized a new shared access signature
 // and generates signature fields based on the given input.
 func NewSharedAccessSignatureFromEdge(
 	workloadURI, module, genid, resource string, expiry time.Time,
