@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"net/url"
 	"reflect"
 	"testing"
 )
@@ -44,5 +45,28 @@ func TestParseTwinPropsTopic(t *testing.T) {
 		t.Errorf("ParseTwinPropsTopic(%q) = %d, %d, %d, _, want %d, %d, %d, _",
 			s, c, r, v, 200, 0x12, 4,
 		)
+	}
+}
+
+func TestEncodePropertiesHandleSpaces(t *testing.T) {
+	var cases = []struct {
+		key      string
+		value    string
+		expected string
+	}{
+		{" ", " ", "%20=%20"},
+		{"#", "#", "%23=%23"},
+		{"+", "+", "%2B=%2B"},
+	}
+
+	for _, c := range cases {
+		u := make(url.Values, 1)
+		u.Add(c.key, c.value)
+
+		enc := encodeProperties(u)
+
+		if enc != c.expected {
+			t.Errorf("encodeProperies(%v) = `%s`, want `%s`", u, enc, c.expected)
+		}
 	}
 }
