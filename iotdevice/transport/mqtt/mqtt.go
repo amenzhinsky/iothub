@@ -474,6 +474,12 @@ func parseTwinPropsTopic(s string) (int, int, int, error) {
 	return rc, int(rid), ver, nil
 }
 
+func encodeProperties(props url.Values) string {
+	enc := props.Encode()
+
+	return strings.ReplaceAll(enc, "+", "%20")
+}
+
 const rfc3339Milli = "2006-01-02T15:04:05.999Z07:00"
 
 func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
@@ -503,7 +509,7 @@ func (tr *Transport) Send(ctx context.Context, msg *common.Message) error {
 		u.Add(k, v)
 	}
 
-	dst := "devices/" + tr.did + "/messages/events/" + u.Encode()
+	dst := "devices/" + tr.did + "/messages/events/" + encodeProperties(u)
 	qos := DefaultQoS
 	if q, ok := msg.TransportOptions["qos"]; ok {
 		qos = q.(int) // panic if it's not an int
