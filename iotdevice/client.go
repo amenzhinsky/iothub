@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -363,4 +365,24 @@ func (c *Client) Close() error {
 		c.tsMux.close(ErrClosed)
 		return c.tr.Close()
 	}
+}
+
+func (c *Client) UploadFile(ctx context.Context, blobName string, file io.Reader) error {
+	if err := c.checkConnection(ctx); err != nil {
+		return err
+	}
+
+	correlationID, sas, err := c.tr.GetBlobSharedAccessSignature(ctx, blobName)
+	if err != nil {
+		return err
+	}
+
+	err = c.tr.UploadFile(ctx, sas, file)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(correlationID)
+
+	return nil
 }
