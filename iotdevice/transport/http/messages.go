@@ -1,6 +1,9 @@
 package http
 
-import "fmt"
+import (
+	"fmt"
+	"net/url"
+)
 
 type CreateFileUploadRequest struct {
 	BlobName string `json:"blobName"`
@@ -15,11 +18,10 @@ type CreateFileUploadResponse struct {
 }
 
 func (r *CreateFileUploadResponse) SASURI() string {
-	return fmt.Sprintf("https://%s/%s/%s%s", r.HostName, r.ContainerName, r.BlobName, r.SASToken)
+	return fmt.Sprintf("https://%s/%s/%s%s", r.HostName, url.PathEscape(r.ContainerName), url.PathEscape(r.BlobName), r.SASToken)
 }
 
 type NotifyFileUploadRequest struct {
-	CorrelationID     string `json:"correlationId`
 	IsSuccess         bool   `json:"isSuccess"`
 	StatusCode        int    `json:"statusCode"`
 	StatusDescription string `json:"statusDescription"`

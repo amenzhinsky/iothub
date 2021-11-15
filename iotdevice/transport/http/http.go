@@ -119,7 +119,7 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 	if err != nil {
 		return "", "", err
 	}
-	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Content-Type", "application/json; charset=utf-8")
 	req.Header.Add("Authorization", sas.String())
 
 	resp, err := tr.client.Do(req)
@@ -170,7 +170,6 @@ func (tr *Transport) UploadFile(ctx context.Context, sasURI string, file io.Read
 
 func (tr *Transport) NotifyFileUpload(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error {
 	payload := NotifyFileUploadRequest{
-		CorrelationID:     correlationID,
 		IsSuccess:         success,
 		StatusCode:        statusCode,
 		StatusDescription: statusDescription,
@@ -180,7 +179,7 @@ func (tr *Transport) NotifyFileUpload(ctx context.Context, correlationID string,
 		return err
 	}
 
-	target, err := url.Parse(fmt.Sprintf("https://%s/devices/%s/files/notifications?api-version=2020-03-13", tr.creds.GetHostName(), url.PathEscape(tr.creds.GetDeviceID())))
+	target, err := url.Parse(fmt.Sprintf("https://%s/devices/%s/files/notifications/%s?api-version=2020-03-13", tr.creds.GetHostName(), url.PathEscape(tr.creds.GetDeviceID()), url.PathEscape(correlationID)))
 	if err != nil {
 		return err
 	}
@@ -195,14 +194,23 @@ func (tr *Transport) NotifyFileUpload(ctx context.Context, correlationID string,
 	if err != nil {
 		return err
 	}
+	req.Header.Add("Content-Type", "application/json; charset=utf-8")
 	req.Header.Add("Authorization", sas.String())
 
-	_, err = tr.client.Do(req)
+	resp, err := tr.client.Do(req)
 	if err != nil {
 		return err
 	}
 
-	// TODO: check response body, http code
+	if resp.StatusCode != http.StatusNoContent {
+		var response ErrorResponse
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf("code = %d, message = %s, exception message = %s", resp.StatusCode, response.Message, response.ExceptionMessage)
+	}
 
 	return nil
 }
