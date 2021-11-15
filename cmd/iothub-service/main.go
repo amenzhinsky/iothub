@@ -104,7 +104,7 @@ func main() {
 	}
 }
 
-const help = `Helps with interacting and managing your iothub devices. 
+const help = `Helps with interacting and managing your iothub devices.
 The $IOTHUB_SERVICE_CONNECTION_STRING environment variable is required for authentication.`
 
 func run() error {
@@ -1086,6 +1086,7 @@ func watchFeedback(ctx context.Context, c *iotservice.Client, args []string) err
 
 func watchFileNotifications(ctx context.Context, c *iotservice.Client, args []string) error {
 	return c.SubscribeFileNotifications(ctx, func(f *iotservice.FileNotification) error {
+		fmt.Println(f)
 		return output(f, nil)
 	})
 }
