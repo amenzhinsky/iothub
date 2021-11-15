@@ -8,12 +8,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"sync"
 	"time"
 
 	"github.com/amenzhinsky/iothub/cmd/internal"
 	"github.com/amenzhinsky/iothub/iotdevice"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/iotdevice/transport/http"
 	"github.com/amenzhinsky/iothub/iotdevice/transport/mqtt"
 )
 
@@ -25,7 +27,7 @@ var transports = map[string]func() (transport.Transport, error){
 		return nil, errors.New("not implemented")
 	},
 	"http": func() (transport.Transport, error) {
-		return nil, errors.New("not implemented")
+		return http.New(), nil
 	},
 }
 
@@ -62,7 +64,7 @@ func main() {
 }
 
 const help = `iothub-device helps iothub devices to communicate with the cloud.
-$IOTHUB_DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
+ $IOTHUB_DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
 
 func run() error {
 	ctx := context.Background()
@@ -122,6 +124,12 @@ func run() error {
 			ParseFunc: func(f *flag.FlagSet) {
 				f.Var((*internal.JSONMapFlag)(&twinPropsFlag), "prop", "custom property, key=value")
 			},
+		},
+		{
+			Name:    "file-upload",
+			Args:    []string{"FILE"},
+			Desc:    "upload a file using IoT fiel upload",
+			Handler: wrap(ctx, uploadFile),
 		},
 	}).Run(os.Args)
 }
@@ -268,6 +276,29 @@ func updateTwin(ctx context.Context, c *iotdevice.Client, args []string) error {
 		return err
 	}
 	fmt.Printf("version: %d\n", ver)
+	return nil
+}
+
+func uploadFile(ctx context.Context, c *iotdevice.Client, args []string) error {
+	filePath := args[0]
+	blobName := path.Base(filePath)
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	stat, err := os.Stat(filePath)
+	if err != nil {
+		return err
+	}
+
+	err = c.UploadFile(ctx, blobName, file, stat.Size())
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

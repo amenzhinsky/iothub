@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strconv"
 	"strings"
@@ -565,4 +566,19 @@ func (tr *Transport) Close() error {
 		tr.logger.Debugf("disconnected")
 	}
 	return nil
+}
+
+// GetBlobSharedAccessSignature is not available in the MQTT transport.
+func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName string) (string, string, error) {
+	return "", "", fmt.Errorf("unavailable in the MQTT transport")
+}
+
+// UploadToBlob is not available in the MQTT transport.
+func (tr *Transport) UploadToBlob(ctx context.Context, sasURI string, file io.Reader, size int64) error {
+	return fmt.Errorf("unavailable in the MQTT transport")
+}
+
+// NotifyUploadComplete is not available in the MQTT transport.
+func (tr *Transport) NotifyUploadComplete(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error {
+	return fmt.Errorf("unavailable in the MQTT transport")
 }

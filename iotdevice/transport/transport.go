@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"crypto/tls"
+	"io"
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
@@ -19,6 +20,9 @@ type Transport interface {
 	SubscribeTwinUpdates(ctx context.Context, mux TwinStateDispatcher) error
 	RetrieveTwinProperties(ctx context.Context) (payload []byte, err error)
 	UpdateTwinProperties(ctx context.Context, payload []byte) (version int, err error)
+	GetBlobSharedAccessSignature(ctx context.Context, blobName string) (string, string, error)
+	UploadToBlob(ctx context.Context, sasURI string, file io.Reader, size int64) error
+	NotifyUploadComplete(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error
 	Close() error
 }
 

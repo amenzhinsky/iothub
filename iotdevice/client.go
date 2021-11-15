@@ -5,6 +5,9 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -363,4 +366,27 @@ func (c *Client) Close() error {
 		c.tsMux.close(ErrClosed)
 		return c.tr.Close()
 	}
+}
+
+func (c *Client) UploadFile(ctx context.Context, blobName string, file io.Reader, size int64) error {
+	if err := c.checkConnection(ctx); err != nil {
+		return err
+	}
+
+	correlationID, sas, err := c.tr.GetBlobSharedAccessSignature(ctx, blobName)
+	if err != nil {
+		return err
+	}
+
+	err = c.tr.UploadToBlob(ctx, sas, file, size)
+	if err == nil {
+		err = c.tr.NotifyUploadComplete(ctx, correlationID, true, http.StatusOK, "File uploaded successfully")
+	} else {
+		notifyErr := c.tr.NotifyUploadComplete(ctx, correlationID, false, http.StatusInternalServerError, "File upload failed")
+		if notifyErr != nil {
+			err = fmt.Errorf("failed to notify file upload: %v - %w", notifyErr, err)
+		}
+	}
+
+	return err
 }

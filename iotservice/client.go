@@ -213,6 +213,7 @@ func (c *Client) putToken(
 	if err != nil {
 		return err
 	}
+
 	if err = send.Send(ctx, &amqp.Message{
 		Value: sas.String(),
 		Properties: &amqp.MessageProperties{
@@ -511,10 +512,13 @@ type Feedback struct {
 }
 
 // FileNotification is emitted once a blob file is uploaded to the hub.
-//
-// TODO: structure is yet to define.
 type FileNotification struct {
-	*amqp.Message
+	DeviceID        string    `json:"deviceId"`
+	BlobURI         string    `json:"blobUri"`
+	BlobName        string    `json:"blobName"`
+	LastUpdatedTime time.Time `json:"lastUpdatedTime"`
+	BlobSizeInBytes int64     `json:"blobSizeInBytes"`
+	EnqueuedTime    time.Time `json:"enqueuedTimeUtc"`
 }
 
 // FileNotificationHandler handles file upload notifications.
@@ -550,7 +554,13 @@ func (c *Client) SubscribeFileNotifications(
 			c.logger.Warnf("zero length data received")
 			continue
 		}
-		if err := fn(&FileNotification{msg}); err != nil {
+
+		var f *FileNotification
+		c.logger.Debugf("file notification received: %s", msg.GetData())
+		if err = json.Unmarshal(msg.GetData(), &f); err != nil {
+			return err
+		}
+		if err := fn(f); err != nil {
 			return err
 		}
 		if err = recv.AcceptMessage(ctx, msg); err != nil {
