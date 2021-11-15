@@ -1086,7 +1086,6 @@ func watchFeedback(ctx context.Context, c *iotservice.Client, args []string) err
 
 func watchFileNotifications(ctx context.Context, c *iotservice.Client, args []string) error {
 	return c.SubscribeFileNotifications(ctx, func(f *iotservice.FileNotification) error {
-		fmt.Println(f)
 		return output(f, nil)
 	})
 }

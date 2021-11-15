@@ -64,7 +64,7 @@ func main() {
 }
 
 const help = `iothub-device helps iothub devices to communicate with the cloud.
-$IOTHUB_DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
+ $IOTHUB_DEVICE_CONNECTION_STRING environment variable is required unless you use x509 authentication.`
 
 func run() error {
 	ctx := context.Background()
@@ -298,14 +298,6 @@ func uploadFile(ctx context.Context, c *iotdevice.Client, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	// if err := c.UploadFile(ctx, uploadContext, file); err != nil {
-	// 	return err
-	// }
-
-	// if err := c.NotifyFileUpload(ctx, uploadContext); err != nil {
-	// 	return err
-	// }
 
 	return nil
 }
