@@ -96,10 +96,10 @@ func (tr *Transport) UpdateTwinProperties(ctx context.Context, payload []byte) (
 }
 
 func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName string) (string, string, error) {
-	payload := BlobSharedAccessSignatureRequest{
+	requestPayload := BlobSharedAccessSignatureRequest{
 		BlobName: blobName,
 	}
-	body, err := json.Marshal(&payload)
+	requestPayloadBytes, err := json.Marshal(&requestPayload)
 	if err != nil {
 		return "", "", err
 	}
@@ -115,64 +115,64 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 		return "", "", err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, target.String(), bytes.NewReader(body))
+	request, err := http.NewRequest(http.MethodPost, target.String(), bytes.NewReader(requestPayloadBytes))
 	if err != nil {
 		return "", "", err
 	}
-	req.Header.Add("Content-Type", "application/json; charset=utf-8")
-	req.Header.Add("Authorization", sas.String())
+	request.Header.Add("Content-Type", "application/json; charset=utf-8")
+	request.Header.Add("Authorization", sas.String())
 
-	resp, err := tr.client.Do(req)
+	response, err := tr.client.Do(request)
 	if err != nil {
 		return "", "", err
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		var response ErrorResponse
-		err = json.NewDecoder(resp.Body).Decode(&response)
+	if response.StatusCode != http.StatusOK {
+		var responsePayload ErrorResponse
+		err = json.NewDecoder(response.Body).Decode(&response)
 		if err != nil {
 			return "", "", err
 		}
 
-		return "", "", fmt.Errorf("code = %d, message = %s, exception message = %s", resp.StatusCode, response.Message, response.ExceptionMessage)
+		return "", "", fmt.Errorf("code = %d, message = %s, exception message = %s", response.StatusCode, responsePayload.Message, responsePayload.ExceptionMessage)
 	}
 
-	var response BlobSharedAccessSignatureResponse
-	err = json.NewDecoder(resp.Body).Decode(&response)
+	var responsePayload BlobSharedAccessSignatureResponse
+	err = json.NewDecoder(response.Body).Decode(&responsePayload)
 	if err != nil {
 		return "", "", err
 	}
 
-	return response.CorrelationID, response.SASURI(), nil
+	return responsePayload.CorrelationID, responsePayload.SASURI(), nil
 }
 
 func (tr *Transport) UploadToBlob(ctx context.Context, sasURI string, file io.Reader, size int64) error {
-	req, err := http.NewRequest(http.MethodPut, sasURI, file)
+	request, err := http.NewRequest(http.MethodPut, sasURI, file)
 	if err != nil {
 		return err
 	}
-	req.ContentLength = size
-	req.Header.Add("x-ms-blob-type", "BlockBlob")
+	request.ContentLength = size
+	request.Header.Add("x-ms-blob-type", "BlockBlob")
 
-	resp, err := tr.client.Do(req)
+	response, err := tr.client.Do(request)
 	if err != nil {
 		return err
 	}
 
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if response.StatusCode != http.StatusCreated {
+		return fmt.Errorf("unexpected status code: %d", response.StatusCode)
 	}
 
 	return nil
 }
 
 func (tr *Transport) NotifyUploadComplete(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error {
-	payload := NotifyUploadCompleteRequest{
+	requestPayload := NotifyUploadCompleteRequest{
 		IsSuccess:         success,
 		StatusCode:        statusCode,
 		StatusDescription: statusDescription,
 	}
-	body, err := json.Marshal(&payload)
+	requestPayloadBytes, err := json.Marshal(&requestPayload)
 	if err != nil {
 		return err
 	}
@@ -188,26 +188,26 @@ func (tr *Transport) NotifyUploadComplete(ctx context.Context, correlationID str
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, target.String(), bytes.NewReader(body))
+	request, err := http.NewRequest(http.MethodPost, target.String(), bytes.NewReader(requestPayloadBytes))
 	if err != nil {
 		return err
 	}
-	req.Header.Add("Content-Type", "application/json; charset=utf-8")
-	req.Header.Add("Authorization", sas.String())
+	request.Header.Add("Content-Type", "application/json; charset=utf-8")
+	request.Header.Add("Authorization", sas.String())
 
-	resp, err := tr.client.Do(req)
+	response, err := tr.client.Do(request)
 	if err != nil {
 		return err
 	}
 
-	if resp.StatusCode != http.StatusNoContent {
-		var response ErrorResponse
-		err = json.NewDecoder(resp.Body).Decode(&response)
+	if response.StatusCode != http.StatusNoContent {
+		var responsePayload ErrorResponse
+		err = json.NewDecoder(response.Body).Decode(&responsePayload)
 		if err != nil {
 			return err
 		}
 
-		return fmt.Errorf("code = %d, message = %s, exception message = %s", resp.StatusCode, response.Message, response.ExceptionMessage)
+		return fmt.Errorf("code = %d, message = %s, exception message = %s", response.StatusCode, responsePayload.Message, responsePayload.ExceptionMessage)
 	}
 
 	return nil
