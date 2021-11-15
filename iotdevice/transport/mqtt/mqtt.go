@@ -573,12 +573,12 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 	return "", "", fmt.Errorf("unavailable in the MQTT transport")
 }
 
-// UploadFile is not available in the MQTT transport.
-func (tr *Transport) UploadFile(ctx context.Context, sasURI string, file io.Reader, size int64) error {
+// UploadToBlob is not available in the MQTT transport.
+func (tr *Transport) UploadToBlob(ctx context.Context, sasURI string, file io.Reader, size int64) error {
 	return fmt.Errorf("unavailable in the MQTT transport")
 }
 
-// NotifyFileUpload is not available in the MQTT transport.
-func (tr *Transport) NotifyFileUpload(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error {
+// NotifyUploadComplete is not available in the MQTT transport.
+func (tr *Transport) NotifyUploadComplete(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error {
 	return fmt.Errorf("unavailable in the MQTT transport")
 }

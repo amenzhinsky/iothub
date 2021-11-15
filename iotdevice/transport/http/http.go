@@ -96,7 +96,7 @@ func (tr *Transport) UpdateTwinProperties(ctx context.Context, payload []byte) (
 }
 
 func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName string) (string, string, error) {
-	payload := CreateFileUploadRequest{
+	payload := BlobSharedAccessSignatureRequest{
 		BlobName: blobName,
 	}
 	body, err := json.Marshal(&payload)
@@ -137,18 +137,16 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 		return "", "", fmt.Errorf("code = %d, message = %s, exception message = %s", resp.StatusCode, response.Message, response.ExceptionMessage)
 	}
 
-	var response CreateFileUploadResponse
+	var response BlobSharedAccessSignatureResponse
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
 		return "", "", err
 	}
 
-	// TODO: check response body, http code
-
 	return response.CorrelationID, response.SASURI(), nil
 }
 
-func (tr *Transport) UploadFile(ctx context.Context, sasURI string, file io.Reader, size int64) error {
+func (tr *Transport) UploadToBlob(ctx context.Context, sasURI string, file io.Reader, size int64) error {
 	req, err := http.NewRequest(http.MethodPut, sasURI, file)
 	if err != nil {
 		return err
@@ -168,8 +166,8 @@ func (tr *Transport) UploadFile(ctx context.Context, sasURI string, file io.Read
 	return nil
 }
 
-func (tr *Transport) NotifyFileUpload(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error {
-	payload := NotifyFileUploadRequest{
+func (tr *Transport) NotifyUploadComplete(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error {
+	payload := NotifyUploadCompleteRequest{
 		IsSuccess:         success,
 		StatusCode:        statusCode,
 		StatusDescription: statusDescription,

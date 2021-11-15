@@ -378,11 +378,11 @@ func (c *Client) UploadFile(ctx context.Context, blobName string, file io.Reader
 		return err
 	}
 
-	err = c.tr.UploadFile(ctx, sas, file, size)
+	err = c.tr.UploadToBlob(ctx, sas, file, size)
 	if err == nil {
-		err = c.tr.NotifyFileUpload(ctx, correlationID, true, http.StatusOK, "File uploaded successfully")
+		err = c.tr.NotifyUploadComplete(ctx, correlationID, true, http.StatusOK, "File uploaded successfully")
 	} else {
-		notifyErr := c.tr.NotifyFileUpload(ctx, correlationID, false, http.StatusInternalServerError, "File upload failed")
+		notifyErr := c.tr.NotifyUploadComplete(ctx, correlationID, false, http.StatusInternalServerError, "File upload failed")
 		if notifyErr != nil {
 			err = fmt.Errorf("failed to notify file upload: %v - %w", notifyErr, err)
 		}

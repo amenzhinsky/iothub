@@ -5,11 +5,11 @@ import (
 	"net/url"
 )
 
-type CreateFileUploadRequest struct {
+type BlobSharedAccessSignatureRequest struct {
 	BlobName string `json:"blobName"`
 }
 
-type CreateFileUploadResponse struct {
+type BlobSharedAccessSignatureResponse struct {
 	CorrelationID string `json:"correlationId"`
 	HostName      string `json:"hostName"`
 	ContainerName string `json:"containerName"`
@@ -17,11 +17,11 @@ type CreateFileUploadResponse struct {
 	SASToken      string `json:"sasToken"`
 }
 
-func (r *CreateFileUploadResponse) SASURI() string {
+func (r *BlobSharedAccessSignatureResponse) SASURI() string {
 	return fmt.Sprintf("https://%s/%s/%s%s", r.HostName, url.PathEscape(r.ContainerName), url.PathEscape(r.BlobName), r.SASToken)
 }
 
-type NotifyFileUploadRequest struct {
+type NotifyUploadCompleteRequest struct {
 	IsSuccess         bool   `json:"isSuccess"`
 	StatusCode        int    `json:"statusCode"`
 	StatusDescription string `json:"statusDescription"`
