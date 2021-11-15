@@ -18,7 +18,7 @@ func (r *CreateFileUploadResponse) SASURI() string {
 	return fmt.Sprintf("https://%s/%s/%s%s", r.HostName, r.ContainerName, r.BlobName, r.SASToken)
 }
 
-type NotifyUploadRequest struct {
+type NotifyFileUploadRequest struct {
 	CorrelationID     string `json:"correlationId`
 	IsSuccess         bool   `json:"isSuccess"`
 	StatusCode        int    `json:"statusCode"`

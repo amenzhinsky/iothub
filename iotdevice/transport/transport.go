@@ -22,6 +22,7 @@ type Transport interface {
 	UpdateTwinProperties(ctx context.Context, payload []byte) (version int, err error)
 	GetBlobSharedAccessSignature(ctx context.Context, blobName string) (string, string, error)
 	UploadFile(ctx context.Context, sasURI string, file io.Reader) error
+	NotifyFileUpload(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error
 	Close() error
 }
 

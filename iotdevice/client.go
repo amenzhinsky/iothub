@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -378,11 +379,14 @@ func (c *Client) UploadFile(ctx context.Context, blobName string, file io.Reader
 	}
 
 	err = c.tr.UploadFile(ctx, sas, file)
-	if err != nil {
-		return err
+	if err == nil {
+		err = c.tr.NotifyFileUpload(ctx, correlationID, true, http.StatusOK, "File uploaded successfully")
+	} else {
+		notifyErr := c.tr.NotifyFileUpload(ctx, correlationID, false, http.StatusInternalServerError, "File upload failed")
+		if notifyErr != nil {
+			err = fmt.Errorf("failed to notify file upload: %v - %w", notifyErr, err)
+		}
 	}
 
-	fmt.Println(correlationID)
-
-	return nil
+	return err
 }

@@ -568,10 +568,17 @@ func (tr *Transport) Close() error {
 	return nil
 }
 
+// GetBlobSharedAccessSignature is not available in the MQTT transport.
 func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName string) (string, string, error) {
 	return "", "", fmt.Errorf("unavailable in the MQTT transport")
 }
 
+// UploadFile is not available in the MQTT transport.
 func (tr *Transport) UploadFile(ctx context.Context, sasURI string, file io.Reader) error {
+	return fmt.Errorf("unavailable in the MQTT transport")
+}
+
+// NotifyFileUpload is not available in the MQTT transport.
+func (tr *Transport) NotifyFileUpload(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error {
 	return fmt.Errorf("unavailable in the MQTT transport")
 }

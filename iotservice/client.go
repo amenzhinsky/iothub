@@ -164,6 +164,7 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 	}
 
 	if err := c.putToken(ctx, sess, tokenUpdateInterval); err != nil {
+		fmt.Printf("FAiled: %v\n", err)
 		_ = sess.Close(context.Background())
 		return err
 	}
@@ -213,6 +214,8 @@ func (c *Client) putToken(
 	if err != nil {
 		return err
 	}
+
+	fmt.Println("11111 sending")
 	if err = send.Send(ctx, &amqp.Message{
 		Value: sas.String(),
 		Properties: &amqp.MessageProperties{
@@ -227,14 +230,17 @@ func (c *Client) putToken(
 	}); err != nil {
 		return err
 	}
+	fmt.Println("2222 sent")
 
 	msg, err := recv.Receive(ctx)
 	if err != nil {
 		return err
 	}
+	fmt.Println("3333 received")
 	if err = recv.AcceptMessage(ctx, msg); err != nil {
 		return err
 	}
+	fmt.Println("4444 checking")
 	return eventhub.CheckMessageResponse(msg)
 }
 
@@ -511,8 +517,6 @@ type Feedback struct {
 }
 
 // FileNotification is emitted once a blob file is uploaded to the hub.
-//
-// TODO: structure is yet to define.
 type FileNotification struct {
 	*amqp.Message
 }
