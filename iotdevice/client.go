@@ -368,7 +368,7 @@ func (c *Client) Close() error {
 	}
 }
 
-func (c *Client) UploadFile(ctx context.Context, blobName string, file io.Reader) error {
+func (c *Client) UploadFile(ctx context.Context, blobName string, file io.Reader, size int64) error {
 	if err := c.checkConnection(ctx); err != nil {
 		return err
 	}
@@ -378,7 +378,7 @@ func (c *Client) UploadFile(ctx context.Context, blobName string, file io.Reader
 		return err
 	}
 
-	err = c.tr.UploadFile(ctx, sas, file)
+	err = c.tr.UploadFile(ctx, sas, file, size)
 	if err == nil {
 		err = c.tr.NotifyFileUpload(ctx, correlationID, true, http.StatusOK, "File uploaded successfully")
 	} else {

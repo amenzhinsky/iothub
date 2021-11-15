@@ -574,7 +574,7 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 }
 
 // UploadFile is not available in the MQTT transport.
-func (tr *Transport) UploadFile(ctx context.Context, sasURI string, file io.Reader) error {
+func (tr *Transport) UploadFile(ctx context.Context, sasURI string, file io.Reader, size int64) error {
 	return fmt.Errorf("unavailable in the MQTT transport")
 }
 

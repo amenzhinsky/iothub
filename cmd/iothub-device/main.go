@@ -289,7 +289,12 @@ func uploadFile(ctx context.Context, c *iotdevice.Client, args []string) error {
 	}
 	defer file.Close()
 
-	err = c.UploadFile(ctx, blobName, file)
+	stat, err := os.Stat(filePath)
+	if err != nil {
+		return err
+	}
+
+	err = c.UploadFile(ctx, blobName, file, stat.Size())
 	if err != nil {
 		return err
 	}

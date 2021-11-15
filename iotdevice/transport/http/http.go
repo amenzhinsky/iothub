@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
@@ -15,7 +17,8 @@ import (
 )
 
 var (
-	ErrNotImplemented = errors.New("not implemented")
+	ErrNotImplemented  = errors.New("not implemented")
+	DefaultSASLifetime = 30 * time.Second
 )
 
 // TransportOption is a transport configuration option.
@@ -101,16 +104,37 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 		return "", "", err
 	}
 
-	target := fmt.Sprintf("https://%s/devices/%s/files", tr.creds.GetHostName(), tr.creds.GetDeviceID())
-	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
+	target, err := url.Parse(fmt.Sprintf("https://%s/devices/%s/files?api-version=2020-03-13", tr.creds.GetHostName(), url.PathEscape(tr.creds.GetDeviceID())))
+	if err != nil {
+		return "", "", err
+	}
+
+	resourceURI := fmt.Sprintf("%s/%s", tr.creds.GetHostName(), tr.creds.GetDeviceID())
+	sas, err := tr.creds.Token(resourceURI, DefaultSASLifetime)
+	if err != nil {
+		return "", "", err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, target.String(), bytes.NewReader(body))
 	if err != nil {
 		return "", "", err
 	}
 	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", sas.String())
 
 	resp, err := tr.client.Do(req)
 	if err != nil {
 		return "", "", err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var response ErrorResponse
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		if err != nil {
+			return "", "", err
+		}
+
+		return "", "", fmt.Errorf("code = %d, message = %s, exception message = %s", resp.StatusCode, response.Message, response.ExceptionMessage)
 	}
 
 	var response CreateFileUploadResponse
@@ -124,11 +148,12 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 	return response.CorrelationID, response.SASURI(), nil
 }
 
-func (tr *Transport) UploadFile(ctx context.Context, sasURI string, file io.Reader) error {
+func (tr *Transport) UploadFile(ctx context.Context, sasURI string, file io.Reader, size int64) error {
 	req, err := http.NewRequest(http.MethodPut, sasURI, file)
 	if err != nil {
 		return err
 	}
+	req.ContentLength = size
 	req.Header.Add("x-ms-blob-type", "BlockBlob")
 
 	resp, err := tr.client.Do(req)
@@ -155,11 +180,22 @@ func (tr *Transport) NotifyFileUpload(ctx context.Context, correlationID string,
 		return err
 	}
 
-	target := fmt.Sprintf("https://%s/devices/%s/files/notifications", tr.creds.GetHostName(), tr.creds.GetDeviceID())
-	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
+	target, err := url.Parse(fmt.Sprintf("https://%s/devices/%s/files/notifications?api-version=2020-03-13", tr.creds.GetHostName(), url.PathEscape(tr.creds.GetDeviceID())))
 	if err != nil {
 		return err
 	}
+
+	resourceURI := fmt.Sprintf("%s/%s", tr.creds.GetHostName(), tr.creds.GetDeviceID())
+	sas, err := tr.creds.Token(resourceURI, DefaultSASLifetime)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, target.String(), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Authorization", sas.String())
 
 	_, err = tr.client.Do(req)
 	if err != nil {

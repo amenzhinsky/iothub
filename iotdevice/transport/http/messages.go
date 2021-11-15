@@ -24,3 +24,8 @@ type NotifyFileUploadRequest struct {
 	StatusCode        int    `json:"statusCode"`
 	StatusDescription string `json:"statusDescription"`
 }
+
+type ErrorResponse struct {
+	Message          string
+	ExceptionMessage string
+}
