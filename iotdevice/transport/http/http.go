@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	ErrNotImplemented  = errors.New("not implemented")
-	DefaultSASLifetime = 30 * time.Second
+	ErrNotImplemented = errors.New("not implemented")
+	DefaultSASTTL     = 30 * time.Second
 )
 
 // TransportOption is a transport configuration option.
@@ -39,16 +39,25 @@ func WithClient(c *http.Client) TransportOption {
 	}
 }
 
+// WithTTL configures the TTL used for SAS tokens.
+func WithTTL(ttl time.Duration) TransportOption {
+	return func(tr *Transport) {
+		tr.ttl = ttl
+	}
+}
+
 type Transport struct {
 	logger logger.Logger
 	client *http.Client
 	creds  transport.Credentials
+	ttl    time.Duration
 }
 
 // New returns new Transport transport.
 func New(opts ...TransportOption) *Transport {
 	tr := &Transport{
 		client: http.DefaultClient,
+		ttl:    DefaultSASTTL,
 	}
 	for _, opt := range opts {
 		opt(tr)
@@ -110,7 +119,7 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 	}
 
 	resourceURI := fmt.Sprintf("%s/%s", tr.creds.GetHostName(), tr.creds.GetDeviceID())
-	sas, err := tr.creds.Token(resourceURI, DefaultSASLifetime)
+	sas, err := tr.creds.Token(resourceURI, tr.ttl)
 	if err != nil {
 		return "", "", err
 	}
@@ -183,7 +192,7 @@ func (tr *Transport) NotifyUploadComplete(ctx context.Context, correlationID str
 	}
 
 	resourceURI := fmt.Sprintf("%s/%s", tr.creds.GetHostName(), tr.creds.GetDeviceID())
-	sas, err := tr.creds.Token(resourceURI, DefaultSASLifetime)
+	sas, err := tr.creds.Token(resourceURI, tr.ttl)
 	if err != nil {
 		return err
 	}
