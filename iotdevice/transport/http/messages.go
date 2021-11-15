@@ -18,7 +18,7 @@ type BlobSharedAccessSignatureResponse struct {
 }
 
 func (r *BlobSharedAccessSignatureResponse) SASURI() string {
-	return fmt.Sprintf("https://%s/%s/%s%s", r.HostName, url.PathEscape(r.ContainerName), url.PathEscape(r.BlobName), r.SASToken)
+	return fmt.Sprintf("https://%s/%s/%s%s", r.HostName, r.ContainerName, url.PathEscape(r.BlobName), r.SASToken)
 }
 
 type NotifyUploadCompleteRequest struct {
