@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,21 +47,40 @@ func WithTTL(ttl time.Duration) TransportOption {
 	}
 }
 
+// WithTLSConfig sets TLS config that's used by REST HTTP and AMQP clients.
+func WithTLSConfig(config *tls.Config) TransportOption {
+	return func(tr *Transport) {
+		tr.tls = config
+	}
+}
+
 type Transport struct {
 	logger logger.Logger
 	client *http.Client
 	creds  transport.Credentials
 	ttl    time.Duration
+	tls    *tls.Config
 }
 
 // New returns new Transport transport.
 func New(opts ...TransportOption) *Transport {
 	tr := &Transport{
-		client: http.DefaultClient,
-		ttl:    DefaultSASTTL,
+		ttl: DefaultSASTTL,
 	}
 	for _, opt := range opts {
 		opt(tr)
+	}
+	if tr.tls == nil {
+		tr.tls = &tls.Config{RootCAs: common.RootCAs()}
+	}
+	if tr.client == nil {
+		tr.client = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					RootCAs: common.RootCAs(),
+				},
+			},
+		}
 	}
 	return tr
 }
