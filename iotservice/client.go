@@ -214,11 +214,13 @@ func (c *Client) putToken(
 		return err
 	}
 
+	to := "$cbs"
+	replyTo := "cbs"
 	if err = send.Send(ctx, &amqp.Message{
 		Value: sas.String(),
 		Properties: &amqp.MessageProperties{
-			To:      "$cbs",
-			ReplyTo: "cbs",
+			To:      &to,
+			ReplyTo: &replyTo,
 		},
 		ApplicationProperties: map[string]interface{}{
 			"operation": "put-token",
