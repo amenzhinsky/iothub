@@ -252,7 +252,7 @@ func (c *Client) getPartitionIDs(ctx context.Context, sess *amqp.Session) ([]str
 	if err := send.Send(ctx, &amqp.Message{
 		Properties: &amqp.MessageProperties{
 			MessageID: mid,
-			ReplyTo:   replyTo,
+			ReplyTo:   &replyTo,
 		},
 		ApplicationProperties: map[string]interface{}{
 			"operation": "READ",
