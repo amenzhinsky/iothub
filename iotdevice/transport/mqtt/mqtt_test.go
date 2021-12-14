@@ -49,7 +49,7 @@ func TestParseTwinPropsTopic(t *testing.T) {
 }
 
 func TestEncodePropertiesHandleSpaces(t *testing.T) {
-	var cases = []struct {
+	cases := []struct {
 		key      string
 		value    string
 		expected string
