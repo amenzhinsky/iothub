@@ -125,6 +125,7 @@ func (tr *Transport) UpdateTwinProperties(ctx context.Context, payload []byte) (
 }
 
 //CreateOrUpdateModuleIdentity Creates or updates the module identity for a device in the IoT Hub.
+//Notice the method is PUT and overrides previous data.
 func (tr *Transport) CreateOrUpdateModuleIdentity(ctx context.Context, identity *common.ModuleIdentity) error {
 	target, err := url.Parse(fmt.Sprintf("https://%s/devices/%s/modules/$edgeAgent?api-version=2020-03-13", tr.creds.GetHostName(), url.PathEscape(tr.creds.GetDeviceID())))
 	requestPayloadBytes, err := json.Marshal(&identity)
@@ -132,7 +133,7 @@ func (tr *Transport) CreateOrUpdateModuleIdentity(ctx context.Context, identity 
 		return err
 	}
 
-	resp, err := tr.getTokenAndSendRequest(http.MethodPost, target, requestPayloadBytes)
+	resp, err := tr.getTokenAndSendRequest(http.MethodPut, target, requestPayloadBytes)
 	if err != nil {
 		return err
 	}

@@ -83,6 +83,7 @@ type ModuleIdentity struct {
 	} `json:"authentication"`
 
 	// ManagedBy - Identifies who manages this module. For instance, this value is "IotEdge" if the edge runtime owns this module.
+	// If not specified, will be null.
 	ManagedBy string `json:"managedBy"`
 
 	// LastActivityTime - The date and time the device last connected, received, or sent a message.
