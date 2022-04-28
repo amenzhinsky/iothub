@@ -61,7 +61,7 @@ type ConnectionAuthMethod struct {
 	Issuer string `json:"issuer"`
 }
 
-// ModuleIdentity create a new module identity device-to-cloud
+// ModuleIdentity - an entity to create or update a module identity device-to-cloud
 type ModuleIdentity struct {
 	// ModuleId - The unique identifier of the module.
 	ModuleId string `json:"moduleId"`
