@@ -61,10 +61,45 @@ type ConnectionAuthMethod struct {
 	Issuer string `json:"issuer"`
 }
 
+// ModuleIdentity create a new module identity device-to-cloud
 type ModuleIdentity struct {
-	ModuleId       string `json:"moduleId"`
-	DeviceId       string `json:"deviceId"`
+	// ModuleId - The unique identifier of the module.
+	ModuleId string `json:"moduleId"`
+
+	// DeviceId - The unique identifier of the device.
+	DeviceId string `json:"deviceId"`
+
+	// Authentication - The authentication mechanism used by the module when connecting to the service and edge hub.
 	Authentication struct {
-		Type string `json:"type"`
+		Type         string `json:"type"`
+		SymmetricKey struct {
+			PrimaryKey   string `json:"primaryKey"`
+			SecondaryKey string `json:"secondaryKey"`
+		} `json:"symmetricKey"`
+		X509Thumbprint struct {
+			PrimaryThumbprint   string `json:"primaryThumbprint"`
+			SecondaryThumbprint string `json:"secondaryThumbprint"`
+		} `json:"x509Thumbprint"`
 	} `json:"authentication"`
+
+	// ManagedBy - Identifies who manages this module. For instance, this value is "IotEdge" if the edge runtime owns this module.
+	ManagedBy string `json:"managedBy"`
+
+	// LastActivityTime - The date and time the device last connected, received, or sent a message.
+	LastActivityTime string `json:"lastActivityTime"`
+
+	// CloudToDeviceMessageCount - The number of cloud-to-module messages currently queued to be sent to the module.
+	CloudToDeviceMessageCount int `json:"cloudToDeviceMessageCount"`
+
+	// ConnectionState - The connection state of the device.
+	ConnectionState string `json:"connectionState"`
+
+	// ConnectionStateUpdatedTime - The date and time the connection state was last updated
+	ConnectionStateUpdatedTime string `json:"connectionStateUpdatedTime"`
+
+	// Etag - The string representing a weak ETag for the module identity, as per RFC7232.
+	Etag string `json:"etag"`
+
+	// GenerationId - The IoT Hub generated, case-sensitive string up to 128 characters long. This value is used to distinguish modules with the same moduleId, when they have been deleted and re-created.
+	GenerationId string `json:"generationId"`
 }
