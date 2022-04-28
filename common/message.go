@@ -60,3 +60,11 @@ type ConnectionAuthMethod struct {
 	Type   string `json:"type"`
 	Issuer string `json:"issuer"`
 }
+
+type ModuleIdentity struct {
+	ModuleId       string `json:"moduleId"`
+	DeviceId       string `json:"deviceId"`
+	Authentication struct {
+		Type string `json:"type"`
+	} `json:"authentication"`
+}
