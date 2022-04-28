@@ -131,10 +131,12 @@ func (tr *Transport) CreateOrUpdateModuleIdentity(ctx context.Context, identity 
 	if err != nil {
 		return err
 	}
+
 	resp, err := tr.getTokenAndSendRequest(http.MethodPost, target, requestPayloadBytes)
 	if err != nil {
 		return err
 	}
+
 	return tr.handleErrorResponse(resp)
 }
 
@@ -145,6 +147,7 @@ func (tr *Transport) handleErrorResponse(resp *http.Response) error {
 		if err != nil {
 			return err
 		}
+
 		return fmt.Errorf("code = %d, message = %s, exception message = %s", resp.StatusCode, responsePayload.Message, responsePayload.ExceptionMessage)
 	}
 	return nil
@@ -193,6 +196,7 @@ func (tr *Transport) getTokenAndSendRequest(method string, target *url.URL, requ
 	if err != nil {
 		return nil, err
 	}
+
 	request.Header.Add("Content-Type", "application/json; charset=utf-8")
 	request.Header.Add("Authorization", sas.String())
 
@@ -200,6 +204,7 @@ func (tr *Transport) getTokenAndSendRequest(method string, target *url.URL, requ
 	if err != nil {
 		return nil, err
 	}
+
 	return response, nil
 }
 
