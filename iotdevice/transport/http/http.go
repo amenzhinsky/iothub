@@ -133,7 +133,7 @@ func (tr *Transport) CreateOrUpdateModuleIdentity(ctx context.Context, identity 
 		return err
 	}
 
-	resp, err := tr.getTokenAndSendRequest(http.MethodPut, target, requestPayloadBytes)
+	resp, err := tr.getTokenAndSendRequest(http.MethodPut, target, requestPayloadBytes, map[string]string{"If-Match": "*"})
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 		return "", "", err
 	}
 
-	response, err := tr.getTokenAndSendRequest(http.MethodPost, target, requestPayloadBytes)
+	response, err := tr.getTokenAndSendRequest(http.MethodPost, target, requestPayloadBytes, map[string]string{})
 	if err != nil {
 		return "", "", err
 	}
@@ -186,7 +186,7 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 	return responsePayload.CorrelationID, responsePayload.SASURI(), nil
 }
 
-func (tr *Transport) getTokenAndSendRequest(method string, target *url.URL, requestPayloadBytes []byte) (*http.Response, error) {
+func (tr *Transport) getTokenAndSendRequest(method string, target *url.URL, requestPayloadBytes []byte, headers map[string]string) (*http.Response, error) {
 	resourceURI := fmt.Sprintf("%s/%s", tr.creds.GetHostName(), tr.creds.GetDeviceID())
 	sas, err := tr.creds.Token(resourceURI, tr.ttl)
 	if err != nil {
@@ -198,6 +198,9 @@ func (tr *Transport) getTokenAndSendRequest(method string, target *url.URL, requ
 		return nil, err
 	}
 
+	for key, val := range headers {
+		request.Header.Add(key, val)
+	}
 	request.Header.Add("Content-Type", "application/json; charset=utf-8")
 	request.Header.Add("Authorization", sas.String())
 
