@@ -124,6 +124,36 @@ func (tr *Transport) UpdateTwinProperties(ctx context.Context, payload []byte) (
 	return 0, ErrNotImplemented
 }
 
+//CreateOrUpdateModuleIdentity Creates or updates the module identity for a device in the IoT Hub.
+//Notice the method is PUT and overrides previous data.
+func (tr *Transport) CreateOrUpdateModuleIdentity(ctx context.Context, identity *common.ModuleIdentity) error {
+	target, err := url.Parse(fmt.Sprintf("https://%s/devices/%s/modules/$edgeAgent?api-version=2020-03-13", tr.creds.GetHostName(), url.PathEscape(tr.creds.GetDeviceID())))
+	requestPayloadBytes, err := json.Marshal(&identity)
+	if err != nil {
+		return err
+	}
+
+	resp, err := tr.getTokenAndSendRequest(http.MethodPut, target, requestPayloadBytes, map[string]string{"If-Match": "*"})
+	if err != nil {
+		return err
+	}
+
+	return tr.handleErrorResponse(resp)
+}
+
+func (tr *Transport) handleErrorResponse(resp *http.Response) error {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		var responsePayload ErrorResponse
+		err := json.NewDecoder(resp.Body).Decode(&resp)
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf("code = %d, message = %s, exception message = %s", resp.StatusCode, responsePayload.Message, responsePayload.ExceptionMessage)
+	}
+	return nil
+}
+
 func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName string) (string, string, error) {
 	requestPayload := BlobSharedAccessSignatureRequest{
 		BlobName: blobName,
@@ -138,34 +168,15 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 		return "", "", err
 	}
 
-	resourceURI := fmt.Sprintf("%s/%s", tr.creds.GetHostName(), tr.creds.GetDeviceID())
-	sas, err := tr.creds.Token(resourceURI, tr.ttl)
+	response, err := tr.getTokenAndSendRequest(http.MethodPost, target, requestPayloadBytes, map[string]string{})
 	if err != nil {
 		return "", "", err
 	}
 
-	request, err := http.NewRequest(http.MethodPost, target.String(), bytes.NewReader(requestPayloadBytes))
+	err = tr.handleErrorResponse(response)
 	if err != nil {
 		return "", "", err
 	}
-	request.Header.Add("Content-Type", "application/json; charset=utf-8")
-	request.Header.Add("Authorization", sas.String())
-
-	response, err := tr.client.Do(request)
-	if err != nil {
-		return "", "", err
-	}
-
-	if response.StatusCode != http.StatusOK {
-		var responsePayload ErrorResponse
-		err = json.NewDecoder(response.Body).Decode(&response)
-		if err != nil {
-			return "", "", err
-		}
-
-		return "", "", fmt.Errorf("code = %d, message = %s, exception message = %s", response.StatusCode, responsePayload.Message, responsePayload.ExceptionMessage)
-	}
-
 	var responsePayload BlobSharedAccessSignatureResponse
 	err = json.NewDecoder(response.Body).Decode(&responsePayload)
 	if err != nil {
@@ -173,6 +184,32 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 	}
 
 	return responsePayload.CorrelationID, responsePayload.SASURI(), nil
+}
+
+func (tr *Transport) getTokenAndSendRequest(method string, target *url.URL, requestPayloadBytes []byte, headers map[string]string) (*http.Response, error) {
+	resourceURI := fmt.Sprintf("%s/%s", tr.creds.GetHostName(), tr.creds.GetDeviceID())
+	sas, err := tr.creds.Token(resourceURI, tr.ttl)
+	if err != nil {
+		return nil, err
+	}
+
+	request, err := http.NewRequest(method, target.String(), bytes.NewReader(requestPayloadBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	for key, val := range headers {
+		request.Header.Add(key, val)
+	}
+	request.Header.Add("Content-Type", "application/json; charset=utf-8")
+	request.Header.Add("Authorization", sas.String())
+
+	response, err := tr.client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
 }
 
 func (tr *Transport) UploadToBlob(ctx context.Context, sasURI string, file io.Reader, size int64) error {
