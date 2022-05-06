@@ -14,6 +14,7 @@ import (
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/iotservice"
 	"github.com/amenzhinsky/iothub/logger"
 )
 
@@ -389,4 +390,49 @@ func (c *Client) UploadFile(ctx context.Context, blobName string, file io.Reader
 	}
 
 	return err
+}
+
+// ListModules list all the registered modules on the device.
+func (c *Client) ListModules(ctx context.Context) ([]*iotservice.Module, error) {
+	if err := c.checkConnection(ctx); err != nil {
+		return nil, err
+	}
+
+	return c.tr.ListModules(ctx)
+}
+
+// CreateModule Creates adds the given module to the registry.
+func (c *Client) CreateModule(ctx context.Context, m *iotservice.Module) (*iotservice.Module, error) {
+	if err := c.checkConnection(ctx); err != nil {
+		return nil, err
+	}
+
+	return c.tr.CreateModule(ctx, m)
+}
+
+// GetModule retrieves the named module.
+func (c *Client) GetModule(ctx context.Context, moduleID string) (*iotservice.Module, error) {
+	if err := c.checkConnection(ctx); err != nil {
+		return nil, err
+	}
+
+	return c.tr.GetModule(ctx, moduleID)
+}
+
+// UpdateModule updates the given module.
+func (c *Client) UpdateModule(ctx context.Context, m *iotservice.Module) (*iotservice.Module, error) {
+	if err := c.checkConnection(ctx); err != nil {
+		return nil, err
+	}
+
+	return c.tr.UpdateModule(ctx, m)
+}
+
+// DeleteModule removes the named device module.
+func (c *Client) DeleteModule(ctx context.Context, m *iotservice.Module) error {
+	if err := c.checkConnection(ctx); err != nil {
+		return err
+	}
+
+	return c.tr.DeleteModule(ctx, m)
 }

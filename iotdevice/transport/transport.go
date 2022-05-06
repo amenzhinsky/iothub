@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/amenzhinsky/iothub/common"
+	"github.com/amenzhinsky/iothub/iotservice"
 	"github.com/amenzhinsky/iothub/logger"
 )
 
@@ -23,6 +24,11 @@ type Transport interface {
 	GetBlobSharedAccessSignature(ctx context.Context, blobName string) (string, string, error)
 	UploadToBlob(ctx context.Context, sasURI string, file io.Reader, size int64) error
 	NotifyUploadComplete(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error
+	ListModules(ctx context.Context) ([]*iotservice.Module, error)
+	CreateModule(ctx context.Context, module *iotservice.Module) (*iotservice.Module, error)
+	GetModule(ctx context.Context, moduleID string) (*iotservice.Module, error)
+	UpdateModule(ctx context.Context, module *iotservice.Module) (*iotservice.Module, error)
+	DeleteModule(ctx context.Context, module *iotservice.Module) error
 	Close() error
 }
 

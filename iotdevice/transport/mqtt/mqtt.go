@@ -15,9 +15,12 @@ import (
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/iotservice"
 	"github.com/amenzhinsky/iothub/logger"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
+
+var ErrNotImplemented = errors.New("not implemented")
 
 // DefaultQoS is the default quality of service value.
 const DefaultQoS = 1
@@ -581,4 +584,29 @@ func (tr *Transport) UploadToBlob(ctx context.Context, sasURI string, file io.Re
 // NotifyUploadComplete is not available in the MQTT transport.
 func (tr *Transport) NotifyUploadComplete(ctx context.Context, correlationID string, success bool, statusCode int, statusDescription string) error {
 	return fmt.Errorf("unavailable in the MQTT transport")
+}
+
+// ListModules list all the registered modules on the device.
+func (tr *Transport) ListModules(ctx context.Context) ([]*iotservice.Module, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateModule Creates adds the given module to the registry.
+func (tr *Transport) CreateModule(ctx context.Context, m *iotservice.Module) (*iotservice.Module, error) {
+	return nil, ErrNotImplemented
+}
+
+// GetModule retrieves the named module.
+func (tr *Transport) GetModule(ctx context.Context, moduleID string) (*iotservice.Module, error) {
+	return nil, ErrNotImplemented
+}
+
+// UpdateModule updates the given module.
+func (tr *Transport) UpdateModule(ctx context.Context, m *iotservice.Module) (*iotservice.Module, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeleteModule removes the named device module.
+func (tr *Transport) DeleteModule(ctx context.Context, m *iotservice.Module) error {
+	return ErrNotImplemented
 }

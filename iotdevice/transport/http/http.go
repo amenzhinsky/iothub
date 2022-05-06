@@ -14,8 +14,11 @@ import (
 
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
+	"github.com/amenzhinsky/iothub/iotservice"
 	"github.com/amenzhinsky/iothub/logger"
 )
+
+const API_VERSION = "2020-09-30"
 
 var (
 	ErrNotImplemented = errors.New("not implemented")
@@ -124,21 +127,166 @@ func (tr *Transport) UpdateTwinProperties(ctx context.Context, payload []byte) (
 	return 0, ErrNotImplemented
 }
 
-//CreateOrUpdateModuleIdentity Creates or updates the module identity for a device in the IoT Hub.
-//Notice the method is PUT and overrides previous data.
-func (tr *Transport) CreateOrUpdateModuleIdentity(ctx context.Context, identity *common.ModuleIdentity) error {
-	target, err := url.Parse(fmt.Sprintf("https://%s/devices/%s/modules/$edgeAgent?api-version=2020-03-13", tr.creds.GetHostName(), url.PathEscape(tr.creds.GetDeviceID())))
-	requestPayloadBytes, err := json.Marshal(&identity)
+// ListModules list all the registered modules on the device.
+func (tr *Transport) ListModules(ctx context.Context) ([]*iotservice.Module, error) {
+	target, err := url.Parse(
+		fmt.Sprintf(
+			"https://%s/devices/%s/modules?api-version=%s",
+			tr.creds.GetHostName(),
+			url.PathEscape(tr.creds.GetDeviceID()),
+			API_VERSION,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := tr.getTokenAndSendRequest(http.MethodGet, target, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = tr.handleErrorResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	var res []*iotservice.Module
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+// CreateModule Creates adds the given module to the registry.
+func (tr *Transport) CreateModule(ctx context.Context, m *iotservice.Module) (*iotservice.Module, error) {
+	target, err := url.Parse(
+		fmt.Sprintf(
+			"https://%s/devices/%s/modules/%s?api-version=%s",
+			tr.creds.GetHostName(),
+			url.PathEscape(tr.creds.GetDeviceID()), url.PathEscape(m.ModuleID),
+			API_VERSION,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	requestPayloadBytes, err := json.Marshal(&m)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := tr.getTokenAndSendRequest(http.MethodPut, target, requestPayloadBytes, map[string]string{})
+	if err != nil {
+		return nil, err
+	}
+
+	err = tr.handleErrorResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	var res iotservice.Module
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+// GetModule retrieves the named module.
+func (tr *Transport) GetModule(ctx context.Context, moduleID string) (*iotservice.Module, error) {
+	target, err := url.Parse(
+		fmt.Sprintf(
+			"https://%s/devices/%s/modules/%s?api-version=%s",
+			tr.creds.GetHostName(),
+			url.PathEscape(tr.creds.GetDeviceID()), url.PathEscape(moduleID),
+			API_VERSION,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := tr.getTokenAndSendRequest(http.MethodGet, target, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = tr.handleErrorResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	var res iotservice.Module
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+// UpdateModule updates the given module.
+func (tr *Transport) UpdateModule(ctx context.Context, m *iotservice.Module) (*iotservice.Module, error) {
+	target, err := url.Parse(
+		fmt.Sprintf(
+			"https://%s/devices/%s/modules/%s?api-version=%s",
+			tr.creds.GetHostName(),
+			url.PathEscape(m.DeviceID), url.PathEscape(m.ModuleID),
+			API_VERSION,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	requestPayloadBytes, err := json.Marshal(&m)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := tr.getTokenAndSendRequest(http.MethodPut, target, requestPayloadBytes, ifMatchHeader(m.ETag))
+	if err != nil {
+		return nil, err
+	}
+
+	var res iotservice.Module
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+// DeleteModule removes the named device module.
+func (tr *Transport) DeleteModule(ctx context.Context, m *iotservice.Module) error {
+	target, err := url.Parse(
+		fmt.Sprintf(
+			"https://%s/devices/%s/modules/%s?api-version=%s",
+			tr.creds.GetHostName(),
+			url.PathEscape(m.DeviceID), url.PathEscape(m.ModuleID),
+			API_VERSION,
+		),
+	)
 	if err != nil {
 		return err
 	}
 
-	resp, err := tr.getTokenAndSendRequest(http.MethodPut, target, requestPayloadBytes, map[string]string{"If-Match": "*"})
-	if err != nil {
-		return err
-	}
+	_, err = tr.getTokenAndSendRequest(http.MethodDelete, target, nil, ifMatchHeader(m.ETag))
+	return err
+}
 
-	return tr.handleErrorResponse(resp)
+func ifMatchHeader(etag string) map[string]string {
+	if etag == "" {
+		etag = "*"
+	} else {
+		etag = `"` + etag + `"`
+	}
+	return map[string]string{"If-Match": etag}
 }
 
 func (tr *Transport) handleErrorResponse(resp *http.Response) error {
