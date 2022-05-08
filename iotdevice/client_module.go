@@ -1,6 +1,8 @@
 package iotdevice
 
 import (
+	"context"
+
 	"github.com/amenzhinsky/iothub/common"
 	"github.com/amenzhinsky/iothub/iotdevice/transport"
 	"github.com/amenzhinsky/iothub/logger"
@@ -134,4 +136,23 @@ func (c *ModuleClient) Gateway() string {
 // Broker returns broker property from client's credential property
 func (c *ModuleClient) Broker() string {
 	return c.creds.GetBroker()
+}
+
+// SubscribeTwinUpdates subscribes to module desired state changes.
+// It returns a channel to read the twin updates from.
+func (c *ModuleClient) SubscribeTwinUpdates(ctx context.Context) (*TwinStateSub, error) {
+	if err := c.checkConnection(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.tsMux.once(func() error {
+		return c.tr.SubscribeTwinUpdates(ctx, c.tsMux)
+	}); err != nil {
+		return nil, err
+	}
+	return c.tsMux.sub(), nil
+}
+
+// UnsubscribeTwinUpdates unsubscribes the given handler from twin state updates.
+func (c *ModuleClient) UnsubscribeTwinUpdates(sub *TwinStateSub) {
+	c.tsMux.unsub(sub)
 }

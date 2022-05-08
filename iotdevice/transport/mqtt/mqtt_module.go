@@ -141,6 +141,21 @@ func (tr *ModuleTransport) subEvents(ctx context.Context, mux transport.MessageD
 	}
 }
 
+// SubscribeTwinUpdates subscribes to module desired state changes.
+func (tr *ModuleTransport) SubscribeTwinUpdates(ctx context.Context, mux transport.TwinStateDispatcher) error {
+	return tr.sub(tr.subTwinUpdates(ctx, mux))
+}
+
+func (tr *ModuleTransport) subTwinUpdates(ctx context.Context, mux transport.TwinStateDispatcher) subFunc {
+	return func() error {
+		return contextToken(ctx, tr.conn.Subscribe(
+			"$iothub/twin/PATCH/properties/desired/#", DefaultQoS, func(_ mqtt.Client, m mqtt.Message) {
+				mux.Dispatch(m.Payload())
+			},
+		))
+	}
+}
+
 func (tr *ModuleTransport) Send(ctx context.Context, msg *common.Message) error {
 	u := make(url.Values, len(msg.Properties)+5)
 	if msg.MessageID != "" {
