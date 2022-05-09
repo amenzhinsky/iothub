@@ -2,53 +2,21 @@ package iotdevice
 
 import (
 	"context"
-	"os"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/amenzhinsky/iothub/iotdevice/iotdevicetest"
 	"github.com/amenzhinsky/iothub/iotdevice/transport/http"
 	"github.com/amenzhinsky/iothub/iotservice"
 )
 
 var testRunID = strconv.Itoa(int(time.Now().Unix()))
 
-func newServiceClient(t *testing.T) *iotservice.Client {
-	t.Helper()
-	cs := os.Getenv("TEST_IOTHUB_SERVICE_CONNECTION_STRING")
-	if cs == "" {
-		t.Fatal("$TEST_IOTHUB_SERVICE_CONNECTION_STRING is empty")
-	}
-	c, err := iotservice.NewFromConnectionString(cs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
-}
-
-func newDevice(t *testing.T, c *iotservice.Client) *iotservice.Device {
-	t.Helper()
-
-	device := &iotservice.Device{
-		DeviceID: "test-device-" + testRunID,
-	}
-	device, err := c.CreateDevice(context.Background(), device)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		device.ETag = ""
-		if err := c.DeleteDevice(context.Background(), device); err != nil {
-			t.Fatal(err)
-		}
-	})
-	return device
-}
-
 func newDeviceClient(t *testing.T) *Client {
 	t.Helper()
-	sc := newServiceClient(t)
-	device := newDevice(t, sc)
+	sc := iotdevicetest.NewServiceClient(t)
+	device := iotdevicetest.NewDevice(t, sc)
 
 	dcs, err := sc.DeviceConnectionString(device, false)
 	if err != nil {
@@ -67,6 +35,7 @@ func newDeviceClient(t *testing.T) *Client {
 	return dc
 }
 
+// newModule creates a module using the device client
 func newModule(t *testing.T, c *Client) *iotservice.Module {
 	module := &iotservice.Module{
 		DeviceID:  c.DeviceID(),
