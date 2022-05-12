@@ -18,7 +18,7 @@ import (
 	"github.com/amenzhinsky/iothub/logger"
 )
 
-const API_VERSION = "2020-09-30"
+const apiVersion = "2020-09-30"
 
 var (
 	ErrNotImplemented = errors.New("not implemented")
@@ -134,7 +134,7 @@ func (tr *Transport) ListModules(ctx context.Context) ([]*iotservice.Module, err
 			"https://%s/devices/%s/modules?api-version=%s",
 			tr.creds.GetHostName(),
 			url.PathEscape(tr.creds.GetDeviceID()),
-			API_VERSION,
+			apiVersion,
 		),
 	)
 	if err != nil {
@@ -167,7 +167,7 @@ func (tr *Transport) CreateModule(ctx context.Context, m *iotservice.Module) (*i
 			"https://%s/devices/%s/modules/%s?api-version=%s",
 			tr.creds.GetHostName(),
 			url.PathEscape(tr.creds.GetDeviceID()), url.PathEscape(m.ModuleID),
-			API_VERSION,
+			apiVersion,
 		),
 	)
 	if err != nil {
@@ -204,7 +204,7 @@ func (tr *Transport) GetModule(ctx context.Context, moduleID string) (*iotservic
 			"https://%s/devices/%s/modules/%s?api-version=%s",
 			tr.creds.GetHostName(),
 			url.PathEscape(tr.creds.GetDeviceID()), url.PathEscape(moduleID),
-			API_VERSION,
+			apiVersion,
 		),
 	)
 	if err != nil {
@@ -237,7 +237,7 @@ func (tr *Transport) UpdateModule(ctx context.Context, m *iotservice.Module) (*i
 			"https://%s/devices/%s/modules/%s?api-version=%s",
 			tr.creds.GetHostName(),
 			url.PathEscape(m.DeviceID), url.PathEscape(m.ModuleID),
-			API_VERSION,
+			apiVersion,
 		),
 	)
 	if err != nil {
@@ -269,7 +269,7 @@ func (tr *Transport) DeleteModule(ctx context.Context, m *iotservice.Module) err
 			"https://%s/devices/%s/modules/%s?api-version=%s",
 			tr.creds.GetHostName(),
 			url.PathEscape(m.DeviceID), url.PathEscape(m.ModuleID),
-			API_VERSION,
+			apiVersion,
 		),
 	)
 	if err != nil {
