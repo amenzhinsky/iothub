@@ -3,6 +3,7 @@ package iotdevicetest
 
 import (
 	"context"
+	"math/rand"
 	"os"
 	"strconv"
 	"testing"
@@ -11,7 +12,13 @@ import (
 	"github.com/amenzhinsky/iothub/iotservice"
 )
 
-var testRunID = strconv.Itoa(int(time.Now().Unix()))
+var testRunID = GenerateRandomID()
+
+func GenerateRandomID() string {
+	seed := rand.NewSource(time.Now().UnixNano())
+    r := rand.New(seed)
+	return strconv.FormatInt(r.Int63(), 10)
+}
 
 // NewServiceClient creates a service client based on the `TEST_IOTHUB_SERVICE_CONNECTION_STRING` connection string.
 func NewServiceClient(t *testing.T) *iotservice.Client {

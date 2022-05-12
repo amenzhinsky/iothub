@@ -2,16 +2,12 @@ package iotdevice
 
 import (
 	"context"
-	"strconv"
 	"testing"
-	"time"
 
 	"github.com/amenzhinsky/iothub/iotdevice/iotdevicetest"
 	"github.com/amenzhinsky/iothub/iotdevice/transport/http"
 	"github.com/amenzhinsky/iothub/iotservice"
 )
-
-var testRunID = strconv.Itoa(int(time.Now().Unix()))
 
 func newDeviceClient(t *testing.T) *Client {
 	t.Helper()
@@ -37,6 +33,7 @@ func newDeviceClient(t *testing.T) *Client {
 
 // newModule creates a module using the device client
 func newModule(t *testing.T, c *Client) *iotservice.Module {
+	testRunID := iotdevicetest.GenerateRandomID()
 	module := &iotservice.Module{
 		DeviceID:  c.DeviceID(),
 		ModuleID:  "test-module-" + testRunID,
