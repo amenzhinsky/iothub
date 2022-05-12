@@ -84,7 +84,6 @@ func TestUpdateModule(t *testing.T) {
 	module := newModule(t, c)
 	module.Authentication.Type = iotservice.AuthSAS
 	updatedModule, err := c.UpdateModule(context.Background(), module)
-
 	if err != nil {
 		t.Fatal(err)
 	}
