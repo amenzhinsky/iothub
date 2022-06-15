@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// DigiCert Baltimore Root (sha1 fingerprint=d4de20d05e66fc53fe1a50882c78db2852cae474) - remove post migration
+// DigiCert Baltimore Root (sha1 fingerprint=d4de20d05e66fc53fe1a50882c78db2852cae474) - remove post migration circa early 2023
 // Microsoft RSA TLS CA 01 (sha1 fingerprint=703d7a8f0ebf55aaa59f98eaf4a206004eb2516a)
 // Microsoft RSA TLS CA 02 (sha1 fingerprint=b0c2d2d13cdd56cdaa6ab6e2c04440be4a429c75)
 // Microsoft Azure TLS Issuing CA 01 (sha1 fingerprint=2f2877c5d778c31e0f29c7e371df5471bd673173)
