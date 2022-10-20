@@ -275,7 +275,11 @@ func parseCloudToDeviceTopic(s string) (map[string]string, error) {
 	if i == -1 {
 		return nil, errors.New("malformed cloud-to-device topic name")
 	}
-	q, err := url.ParseQuery(s[i:])
+
+	// any non-URL-encoded semicolon are considered invalid
+	prop := strings.ReplaceAll(s[i:], ";", "%3B")
+
+	q, err := url.ParseQuery(prop)
 	if err != nil {
 		return nil, err
 	}
