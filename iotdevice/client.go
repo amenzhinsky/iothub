@@ -131,9 +131,9 @@ func (c *Client) DeviceID() string {
 }
 
 // Connect connects to the iothub all subsequent calls
-// will block until this function finishes with no error so it's clien's
+// will block until this function finishes with no error so it's the client's
 // responsibility to connect in the background by running it in a goroutine
-// and control other method invocations or call in in a synchronous way.
+// and control other method invocations or calls in a synchronous way.
 func (c *Client) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	select {
@@ -185,7 +185,7 @@ func (c *Client) UnsubscribeEvents(sub *EventSub) {
 
 // RegisterMethod registers the given direct method handler,
 // returns an error when method is already registered.
-// If f returns an error and empty body its error string
+// If fn returns an error and empty body its error string
 // used as value of the error attribute in the result json.
 func (c *Client) RegisterMethod(ctx context.Context, name string, fn DirectMethodHandler) error {
 	if err := c.checkConnection(ctx); err != nil {

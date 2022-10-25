@@ -10,7 +10,7 @@ import (
 )
 
 // once wraps a function that can return an error and
-// executes it only once, all sequential calls return nils.
+// executes it only once, all sequential calls return nil.
 func once(on *sync.Once, fn func() error) error {
 	var err error
 	on.Do(func() {
