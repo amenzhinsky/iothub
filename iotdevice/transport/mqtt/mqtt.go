@@ -181,6 +181,17 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	return nil
 }
 
+// IsConnected returns a bool signifying whether there is a connection or not.
+func (tr *Transport) IsConnected() bool {
+	return tr.conn.IsConnected()
+}
+
+// IsConnectionOpen returns a bool signifying whether the client has an active
+// connection to the mqtt broker, i.e. not in disconnected or reconnect mode.
+func (tr *Transport) IsConnectionOpen() bool {
+	return tr.conn.IsConnectionOpen()
+}
+
 type subFunc func() error
 
 // sub invokes the given sub function and if it passes with no error,
