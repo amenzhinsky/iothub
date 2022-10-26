@@ -69,7 +69,7 @@ func ParseModuleEnvironmentVariables() (*ModuleSharedAccessKeyCredentials, error
 	}, nil
 }
 
-// ParseModuleConnectionString returns a ModuleSharedAccessKeyCredentials struct with some properties derrived from a supplied connection string
+// ParseModuleConnectionString returns a ModuleSharedAccessKeyCredentials struct with some properties derived from a supplied connection string
 func ParseModuleConnectionString(cs string) (*ModuleSharedAccessKeyCredentials, error) {
 	m, err := common.ParseConnectionString(cs, "DeviceId", "ModuleId")
 	if err != nil {
