@@ -125,6 +125,11 @@ type DirectMethodHandler func(payload map[string]interface{}) (
 	code int, response map[string]interface{}, err error,
 )
 
+// UpdateCredentials updates the credentials for the client.
+func (c *Client) UpdateCredentials(creds transport.Credentials) {
+	c.creds = creds
+}
+
 // DeviceID returns iothub device id.
 func (c *Client) DeviceID() string {
 	return c.creds.GetDeviceID()
