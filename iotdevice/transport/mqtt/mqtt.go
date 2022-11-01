@@ -70,7 +70,7 @@ func WithModelID(modelID string) TransportOption {
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 func New(opts ...TransportOption) *Transport {
 	tr := &Transport{
-		done: make(chan struct{}),
+		//done: make(chan struct{}),
 		onConn: make(chan int),
 		connLost: make(chan int),
 	}
@@ -128,9 +128,6 @@ func (tr *Transport) LostConnectionChan() <-chan int {
 func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if tr.conn != nil {
-		return errors.New("already connected")
-	}
 
 	tlsCfg := &tls.Config{
 		RootCAs:       common.RootCAs(),
@@ -144,6 +141,8 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	if tr.mid != "" {
 		username += "&model-id=" + url.QueryEscape(tr.mid)
 	}
+
+	tr.done = make(chan struct{})
 
 	o := mqtt.NewClientOptions()
 	o.SetTLSConfig(tlsCfg)
