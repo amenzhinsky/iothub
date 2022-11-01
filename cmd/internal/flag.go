@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amenzhinsky/iothub/logger"
+	"github.com/dangeroushobo/iothub/logger"
 )
 
 type JSONMapFlag map[string]interface{}

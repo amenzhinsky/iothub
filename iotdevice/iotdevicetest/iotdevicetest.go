@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amenzhinsky/iothub/iotservice"
+	"github.com/dangeroushobo/iothub/iotservice"
 )
 
 var testRunID = GenerateRandomID()

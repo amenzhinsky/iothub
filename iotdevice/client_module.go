@@ -3,9 +3,9 @@ package iotdevice
 import (
 	"context"
 
-	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/iotdevice/transport"
-	"github.com/amenzhinsky/iothub/logger"
+	"github.com/dangeroushobo/iothub/common"
+	"github.com/dangeroushobo/iothub/iotdevice/transport"
+	"github.com/dangeroushobo/iothub/logger"
 )
 
 // structs
