@@ -221,6 +221,12 @@ func (s TwinState) Version() int {
 	return int(v)
 }
 
+// String returns the string representation of the TwinState.
+func (s TwinState) String() string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
 // RetrieveTwinState returns desired and reported twin device states.
 func (c *Client) RetrieveTwinState(ctx context.Context) (desired, reported TwinState, err error) {
 	if err := c.checkConnection(ctx); err != nil {
