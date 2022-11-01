@@ -71,10 +71,13 @@ func WithModelID(modelID string) TransportOption {
 func New(opts ...TransportOption) *Transport {
 	tr := &Transport{
 		done: make(chan struct{}),
+		onConn: make(chan int),
+		connLost: make(chan int),
 	}
 	for _, opt := range opts {
 		opt(tr)
 	}
+
 	return tr
 }
 
@@ -96,6 +99,9 @@ type Transport struct {
 	cocfg  func(opts *mqtt.ClientOptions)
 
 	webSocket bool
+
+	onConn chan int // channel to listen on for OnConnection events
+	connLost chan int // channel to listen on for LostConnection events
 }
 
 type resp struct {
@@ -107,6 +113,16 @@ type resp struct {
 
 func (tr *Transport) SetLogger(logger logger.Logger) {
 	tr.logger = logger
+}
+
+// OnConnectionChan returns channel for listening for OnConnection events.
+func (tr *Transport) OnConnectionChan() <-chan int {
+	return tr.onConn
+}
+
+// LostConnectionChan retruns channel for listening for LostConnection events.
+func (tr *Transport) LostConnectionChan() <-chan int {
+	return tr.connLost
 }
 
 func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) error {
@@ -162,9 +178,11 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 			}
 		}
 		tr.subm.RUnlock()
+		tr.onConn <- 1
 	})
 	o.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
 		tr.logger.Debugf("connection lost: %v", err)
+		tr.connLost <- 1
 	})
 
 	if tr.cocfg != nil {
