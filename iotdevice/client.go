@@ -213,37 +213,35 @@ func (c *Client) UnregisterMethod(name string) {
 }
 
 // TwinState is both desired and reported twin device's state.
-type TwinState map[string]interface{}
+type TwinState []byte
 
 // Version is state version.
-func (s TwinState) Version() int {
-	v, _ := s["$version"].(float64)
-	return int(v)
+func (s TwinState) Version() (int, int) {
+	var v struct {
+		Desired  map[string]any `json:"desired"`
+		Reported map[string]any `json:"reported"`
+	}
+	json.Unmarshal(s, &v)
+	d, _ := v.Desired["$version"].(float64)
+	r, _ := v.Reported["$version"].(float64)
+	return int(d), int(r)
 }
 
 // String returns the string representation of the TwinState.
 func (s TwinState) String() string {
-	b, _ := json.Marshal(s)
-	return string(b)
+	return string(s)
 }
 
 // RetrieveTwinState returns desired and reported twin device states.
-func (c *Client) RetrieveTwinState(ctx context.Context) (desired, reported TwinState, err error) {
+func (c *Client) RetrieveTwinState(ctx context.Context) (tw TwinState, err error) {
 	if err := c.checkConnection(ctx); err != nil {
-		return nil, nil, err
+		return TwinState{}, err
 	}
 	b, err := c.tr.RetrieveTwinProperties(ctx)
 	if err != nil {
-		return nil, nil, err
+		return TwinState{}, err
 	}
-	var v struct {
-		Desired  TwinState `json:"desired"`
-		Reported TwinState `json:"reported"`
-	}
-	if err := json.Unmarshal(b, &v); err != nil {
-		return nil, nil, err
-	}
-	return v.Desired, v.Reported, nil
+	return TwinState(b), nil
 }
 
 // UpdateTwinState updates twin device's state and returns new version.
@@ -252,11 +250,7 @@ func (c *Client) UpdateTwinState(ctx context.Context, s TwinState) (int, error) 
 	if err := c.checkConnection(ctx); err != nil {
 		return 0, err
 	}
-	b, err := json.Marshal(s)
-	if err != nil {
-		return 0, err
-	}
-	return c.tr.UpdateTwinProperties(ctx, b)
+	return c.tr.UpdateTwinProperties(ctx, []byte(s))
 }
 
 // SubscribeTwinUpdates registers fn as a desired state changes handler.

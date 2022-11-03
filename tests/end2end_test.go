@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/dangeroushobo/iothub/iotdevice"
 	"github.com/dangeroushobo/iothub/iotdevice/transport"
 	"github.com/dangeroushobo/iothub/iotdevice/transport/mqtt"
@@ -307,22 +309,21 @@ func testCloudToDevice(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client
 func testUpdateTwin(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client) {
 	// update state and keep track of version
 	s := fmt.Sprintf("%d", time.Now().UnixNano())
-	v, err := dc.UpdateTwinState(context.Background(), map[string]interface{}{
-		"ts": s,
-	})
+	v, err := dc.UpdateTwinState(context.Background(), []byte(fmt.Sprintf(`{"ts":%s}`, s)))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, r, err := dc.RetrieveTwinState(context.Background())
+	r, err := dc.RetrieveTwinState(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != r.Version() {
-		t.Errorf("update-twin version = %d, want %d", r.Version(), v)
+	_, reported := r.Version()
+	if v != reported {
+		t.Errorf("update-twin version = %d, want %d", reported, v)
 	}
-	if r["ts"] != s {
-		t.Errorf("update-twin parameter = %q, want %q", r["ts"], s)
+	if gjson.GetBytes(r, "ts").String() != s {
+		t.Errorf("update-twin parameter = %q, want %q", gjson.GetBytes(r, "reported.ts").String(), s)
 	}
 }
 
@@ -354,11 +355,13 @@ func testSubscribeTwin(t *testing.T, sc *iotservice.Client, dc *iotdevice.Client
 
 	select {
 	case state := <-sub.C():
-		if state["$version"] != twin.Properties.Desired["$version"] {
-			t.Errorf("version = %d, want %d", state["$version"], twin.Properties.Desired["$version"])
+		desiredVersion, _ := state.Version()
+		if desiredVersion != twin.Properties.Desired["$version"] {
+			t.Errorf("version = %d, want %d", desiredVersion, twin.Properties.Desired["$version"])
 		}
-		if state["test-prop"] != twin.Properties.Desired["test-prop"] {
-			t.Errorf("test-prop = %q, want %q", state["test-prop"], twin.Properties.Desired["test-prop"])
+		prop := gjson.GetBytes(state, "desired.test-prop").String()
+		if prop != twin.Properties.Desired["test-prop"] {
+			t.Errorf("test-prop = %q, want %q", prop, twin.Properties.Desired["test-prop"])
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("SubscribeTwinUpdates timed out")
