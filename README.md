@@ -86,11 +86,15 @@ func main() {
 }
 ```
 
-[cmd/iothub-service](https://github.com/dangeroushobo/iothub/blob/master/cmd/iothub-service) and [cmd/iothub-device](https://github.com/dangeroushobo/iothub/blob/master/cmd/iothub-device) are reference implementations of almost all available features. 
+[cmd/iothub-service](https://github.com/dangeroushobo/iothub/blob/master/cmd/iothub-service) and [cmd/iothub-device](https://github.com/dangeroushobo/iothub/blob/master/cmd/iothub-device) are reference implementations of almost all available features.
+
+## Provision Device
+
+See `_examples/provision`.
 
 ## CLI
 
-The project provides two command line utilities: `iothub-device` and `iothub-sevice`. First is for using it on IoT devices and the second manages and interacts with them. 
+The project provides two command line utilities: `iothub-device` and `iothub-sevice`. First is for using it on IoT devices and the second manages and interacts with them.
 
 You can perform operations like publishing, subscribing to events and feedback, registering and invoking direct methods and so on straight from the command line.
 
