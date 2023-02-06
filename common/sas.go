@@ -249,7 +249,7 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 		}
 
 		setSharedUnixHTTPClient(addr.Name)
-		response, err := sharedUnixHTTPClient.Post("http://iotedge"+fmt.Sprintf("/modules/%s/genid/%s/sign?api-version=2018-06-28", name, genid), "text/plain", bytes.NewBuffer(payloadJSON))
+		response, err := sharedUnixHTTPClient.Post("http://iotedge"+fmt.Sprintf("/modules/%s/genid/%s/sign?api-version=2018-06-28", name, genid), "application/json", bytes.NewBuffer(payloadJSON))
 		if err != nil {
 			return "", fmt.Errorf("sign: unable to sign request (resp): %w", err)
 		}
@@ -269,7 +269,7 @@ func edgeSignRequest(workloadURI, name, genid string, payload *EdgeSignRequestPa
 		uri := fmt.Sprintf("%smodules/%s/genid/%s/sign?api-version=2018-06-28", workloadURI, name, genid)
 
 		// get http response and handle error
-		resp, err := http.Post(uri, "text/plain", bytes.NewBuffer(payloadJSON))
+		resp, err := http.Post(uri, "application/json", bytes.NewBuffer(payloadJSON))
 		if err != nil {
 			return "", fmt.Errorf("sign: unable to sign request (resp): %w", err)
 		}
