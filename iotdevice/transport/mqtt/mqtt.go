@@ -13,11 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"gitlab.com/michaeljohn/iothub/common"
 	"gitlab.com/michaeljohn/iothub/iotdevice/transport"
 	"gitlab.com/michaeljohn/iothub/iotservice"
 	"gitlab.com/michaeljohn/iothub/logger"
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 var ErrNotImplemented = errors.New("not implemented")
@@ -71,7 +71,7 @@ func WithModelID(modelID string) TransportOption {
 func New(opts ...TransportOption) *Transport {
 	tr := &Transport{
 		//done: make(chan struct{}),
-		onConn: make(chan int),
+		onConn:   make(chan int),
 		connLost: make(chan int),
 	}
 	for _, opt := range opts {
@@ -100,7 +100,7 @@ type Transport struct {
 
 	webSocket bool
 
-	onConn chan int // channel to listen on for OnConnection events
+	onConn   chan int // channel to listen on for OnConnection events
 	connLost chan int // channel to listen on for LostConnection events
 }
 
@@ -132,6 +132,7 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	tlsCfg := &tls.Config{
 		RootCAs:       common.RootCAs(),
 		Renegotiation: tls.RenegotiateOnceAsClient,
+		MinVersion:    tls.VersionTLS12,
 	}
 	if crt := creds.GetCertificate(); crt != nil {
 		tlsCfg.Certificates = append(tlsCfg.Certificates, *crt)

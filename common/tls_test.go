@@ -16,6 +16,7 @@ func TestRootCAs(t *testing.T) {
 		TLSClientConfig: &tls.Config{
 			ServerName: "portal.azure.com",
 			RootCAs:    RootCAs(),
+			MinVersion: tls.VersionTLS12,
 		},
 	}}
 	res, err := c.Do(r)
@@ -38,6 +39,7 @@ func TestNewRootCAs(t *testing.T) {
 		TLSClientConfig: &tls.Config{
 			ServerName: "g2cert.azure-devices.net",
 			RootCAs:    RootCAs(),
+			MinVersion: tls.VersionTLS12,
 		},
 	}}
 	res, err := c.Do(r)

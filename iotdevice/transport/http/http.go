@@ -74,13 +74,17 @@ func New(opts ...TransportOption) *Transport {
 		opt(tr)
 	}
 	if tr.tls == nil {
-		tr.tls = &tls.Config{RootCAs: common.RootCAs()}
+		tr.tls = &tls.Config{
+			RootCAs:    common.RootCAs(),
+			MinVersion: tls.VersionTLS12,
+		}
 	}
 	if tr.client == nil {
 		tr.client = &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					RootCAs: common.RootCAs(),
+					RootCAs:    common.RootCAs(),
+					MinVersion: tls.VersionTLS12,
 				},
 			},
 		}

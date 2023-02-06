@@ -16,7 +16,7 @@ var testRunID = GenerateRandomID()
 
 func GenerateRandomID() string {
 	seed := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(seed)
+	r := rand.New(seed) //nolint:gosec
 	return strconv.FormatInt(r.Int63(), 10)
 }
 

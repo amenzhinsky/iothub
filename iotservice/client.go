@@ -80,13 +80,17 @@ func New(sak *common.SharedAccessKey, opts ...ClientOption) (*Client, error) {
 		opt(c)
 	}
 	if c.tls == nil {
-		c.tls = &tls.Config{RootCAs: common.RootCAs()}
+		c.tls = &tls.Config{
+			RootCAs:    common.RootCAs(),
+			MinVersion: tls.VersionTLS12,
+		}
 	}
 	if c.http == nil {
 		c.http = &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					RootCAs: common.RootCAs(),
+					RootCAs:    common.RootCAs(),
+					MinVersion: tls.VersionTLS12,
 				},
 			},
 		}

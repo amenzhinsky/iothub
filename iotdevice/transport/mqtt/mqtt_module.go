@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"time"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"gitlab.com/michaeljohn/iothub/common"
 	"gitlab.com/michaeljohn/iothub/iotdevice/transport"
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 // New returns new Transport transport.
@@ -41,7 +41,9 @@ func (tr *ModuleTransport) Connect(ctx context.Context, creds transport.Credenti
 		return errors.New("already connected")
 	}
 
-	tlsCfg := &tls.Config{}
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
 
 	if creds.UseEdgeGateway() {
 		if tb, err := common.TrustBundle(creds.GetWorkloadURI()); err != nil {
