@@ -2,6 +2,7 @@ package iotdevice
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -38,6 +39,14 @@ func newModuleClient(t *testing.T, sc *iotservice.Client) *ModuleClient {
 	return c
 }
 
+func getDesiredState(twin []byte) map[string]any {
+	var v struct {
+		Desired map[string]any `json:"desired"`
+	}
+	json.Unmarshal(twin, &v)
+	return v.Desired
+}
+
 func TestSubscribeTwinUpdates(t *testing.T) {
 	sc := iotdevicetest.NewServiceClient(t)
 	mc := newModuleClient(t, sc)
@@ -63,11 +72,12 @@ func TestSubscribeTwinUpdates(t *testing.T) {
 	stateChan := twinStateSub.C()
 	select {
 	case ret := <-stateChan:
+		retDesire := getDesiredState(ret)
 		for k, v := range twin.Properties.Desired {
 			if k == "$metadata" {
 				continue
 			}
-			retVal, ok := ret[k]
+			retVal, ok := retDesire[k]
 			if !ok {
 				t.Errorf("twin desired property %s not received", k)
 			}
