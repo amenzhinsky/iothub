@@ -3,7 +3,6 @@ package iotdevice
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 
 	"gitlab.com/michaeljohn/iothub/common"
@@ -124,12 +123,6 @@ func (m *twinStateMux) once(fn func() error) error {
 }
 
 func (m *twinStateMux) Dispatch(b []byte) {
-	var v TwinState
-	if err := json.Unmarshal(b, &v); err != nil {
-		log.Printf("unmarshal error: %s", err) // TODO
-		return
-	}
-
 	m.mu.RLock()
 	select {
 	case <-m.done:
@@ -139,7 +132,7 @@ func (m *twinStateMux) Dispatch(b []byte) {
 	for _, sub := range m.subs {
 		go func(sub *TwinStateSub) {
 			select {
-			case sub.ch <- v:
+			case sub.ch <- b:
 			case <-m.done:
 			}
 		}(sub)
