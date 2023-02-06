@@ -2,6 +2,7 @@ package iotservice
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -42,7 +43,7 @@ func TestSendWithNegativeFeedback(t *testing.T) {
 
 	select {
 	case err := <-errc:
-		if err != context.Canceled {
+		if !errors.Is(err, context.Canceled) {
 			t.Fatal(err)
 		}
 	case <-time.After(30 * time.Second):
@@ -145,11 +146,11 @@ func TestBulkErrors(t *testing.T) {
 func TestRegistryError(t *testing.T) {
 	client := newClient(t)
 	_, err := client.CreateDevice(context.Background(), &Device{DeviceID: "!@#$%^&"})
-	re, ok := err.(*BadRequestError)
-	if !ok {
+	var bre *BadRequestError
+	if !errors.As(err, &bre) {
 		t.Fatalf("expected a registry error, got = %v", err)
 	}
-	if re.Message == "" || re.ExceptionMessage == "" {
+	if bre.Message == "" || bre.ExceptionMessage == "" {
 		t.Fatal("message is empty")
 	}
 }
@@ -466,7 +467,7 @@ func TestScheduleMethodCall(t *testing.T) {
 			return io.EOF
 		}
 		return nil
-	}); err != nil && err != io.EOF {
+	}); err != nil && !errors.Is(err, io.EOF) {
 		t.Fatal(err)
 	}
 	if !found {
@@ -529,8 +530,11 @@ func newDeviceAndModule(t *testing.T, c *Client) (*Device, *Module) {
 }
 
 func isNotFound(err error) bool {
-	e, ok := err.(*RequestError)
-	return ok && e.Code == http.StatusNotFound
+	var re *RequestError
+	if errors.As(err, &re) {
+		return re.Code == http.StatusNotFound
+	}
+	return false
 }
 
 func newConfiguration(t *testing.T, c *Client) *Configuration {

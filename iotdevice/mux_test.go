@@ -2,6 +2,7 @@ package iotdevice
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"gitlab.com/michaeljohn/iothub/common"
@@ -42,7 +43,7 @@ func TestEventsMuxClose(t *testing.T) {
 	mux := newEventsMux()
 	sub := mux.sub()
 	mux.close(ErrClosed)
-	if err := sub.Err(); err != ErrClosed {
+	if err := sub.Err(); !errors.Is(err, ErrClosed) {
 		t.Fatalf("closed mux sub err = %v, want %v", err, ErrClosed)
 	}
 }

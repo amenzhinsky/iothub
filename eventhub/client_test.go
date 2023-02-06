@@ -2,6 +2,7 @@ package eventhub
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ func TestClient_Subscribe(t *testing.T) {
 		return nil
 	},
 		WithSubscribeSince(time.Now()),
-	); err != nil && err != context.DeadlineExceeded {
+	); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -264,16 +265,18 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	if err == nil {
 		return nil, errorf("expected redirect error")
 	}
-	rerr, ok := err.(*amqp.Error)
-	if !ok || rerr.Condition != amqp.ErrorLinkRedirect {
-		return nil, err
+	var aerr *amqp.Error
+	if errors.As(err, &aerr) {
+		if aerr.Condition != amqp.ErrorLinkRedirect {
+			return nil, err
+		}
 	}
 
 	// "amqps://{host}:5671/{consumerGroup}/"
-	group := rerr.Info["address"].(string)
+	group := aerr.Info["address"].(string)
 	group = group[strings.Index(group, ":5671/")+6 : len(group)-1]
 
-	host := rerr.Info["hostname"].(string)
+	host := aerr.Info["hostname"].(string)
 	c.logger.Debugf("redirected to %s:%s eventhub", host, group)
 
 	tlsCfg := c.tls.Clone()
@@ -792,9 +795,12 @@ func (c *Client) bulkRequest(
 		&res,
 	)
 	if err != nil {
-		if re, ok := err.(*RequestError); ok && re.Code == http.StatusBadRequest {
-			if err = json.Unmarshal(re.Body, &res); err != nil {
-				return nil, err
+		var re *RequestError
+		if errors.As(err, &re) {
+			if re.Code == http.StatusBadRequest {
+				if err = json.Unmarshal(re.Body, &res); err != nil {
+					return nil, err
+				}
 			}
 			return &res, nil
 		}
