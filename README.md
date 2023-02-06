@@ -11,13 +11,13 @@ See [TODO](#todo) section to see what's missing in the library.
 To install the library as a dependency:
 
 ```bash
-go get -u github.com/dangeroushobo/iothub
+go get -u gitlab.com/michaeljohn/iothub
 ```
 
 To install CLI applications:
 
 ```bash
-GO111MODULE=on go get -u github.com/dangeroushobo/iothub/cmd/{iothub-service,iothub-device}
+GO111MODULE=on go get -u gitlab.com/michaeljohn/iothub/cmd/{iothub-service,iothub-device}
 ```
 
 ## Usage Example
@@ -33,7 +33,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/dangeroushobo/iothub/iotservice"
+	"gitlab.com/michaeljohn/iothub/iotservice"
 )
 
 func main() {
@@ -62,8 +62,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/dangeroushobo/iothub/iotdevice"
-	iotmqtt "github.com/dangeroushobo/iothub/iotdevice/transport/mqtt"
+	"gitlab.com/michaeljohn/iothub/iotdevice"
+	iotmqtt "gitlab.com/michaeljohn/iothub/iotdevice/transport/mqtt"
 )
 
 func main() {
@@ -86,7 +86,7 @@ func main() {
 }
 ```
 
-[cmd/iothub-service](https://github.com/dangeroushobo/iothub/blob/master/cmd/iothub-service) and [cmd/iothub-device](https://github.com/dangeroushobo/iothub/blob/master/cmd/iothub-device) are reference implementations of almost all available features.
+[cmd/iothub-service](https://gitlab.com/michaeljohn/iothub/blob/master/cmd/iothub-service) and [cmd/iothub-device](https://github.com/dangeroushobo/iothub/blob/master/cmd/iothub-device) are reference implementations of almost all available features.
 
 ## Provision Device
 
