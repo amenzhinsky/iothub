@@ -42,7 +42,7 @@ func isClosed(ch <-chan *common.Message) bool {
 func TestEventsMuxClose(t *testing.T) {
 	mux := newEventsMux()
 	sub := mux.sub()
-	mux.close(ErrClosed)
+	mux.close()
 	if err := sub.Err(); !errors.Is(err, ErrClosed) {
 		t.Fatalf("closed mux sub err = %v, want %v", err, ErrClosed)
 	}

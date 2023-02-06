@@ -368,8 +368,8 @@ func (c *Client) Close() error {
 		return nil
 	default:
 		close(c.done)
-		c.evMux.close(ErrClosed)
-		c.tsMux.close(ErrClosed)
+		c.evMux.close()
+		c.tsMux.close()
 		return c.tr.Close()
 	}
 }

@@ -65,7 +65,7 @@ func (m *eventsMux) unsub(s *EventSub) {
 	m.mu.Unlock()
 }
 
-func (m *eventsMux) close(err error) {
+func (m *eventsMux) close() {
 	m.mu.Lock()
 	select {
 	case <-m.done:
@@ -159,7 +159,7 @@ func (m *twinStateMux) unsub(s *TwinStateSub) {
 	m.mu.Unlock()
 }
 
-func (m *twinStateMux) close(err error) {
+func (m *twinStateMux) close() {
 	m.mu.Lock()
 	for _, s := range m.subs {
 		s.err = ErrClosed
