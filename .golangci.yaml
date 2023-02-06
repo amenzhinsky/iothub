@@ -1,0 +1,29 @@
+linters:
+  enable:
+    - bodyclose
+    - asasalint
+    - asciicheck
+    - containedctx
+    - contextcheck
+    - cyclop
+    - errchkjson
+    - errname
+    - errorlint
+    - gochecknoinits
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - godox
+    - gofmt
+    - gosec
+    - loggercheck
+    - maintidx
+    - misspell
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnil
+    - unconvert
+    - unparam
+    - whitespace
