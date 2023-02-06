@@ -149,6 +149,7 @@ func (tr *Transport) ListModules(ctx context.Context) ([]*iotservice.Module, err
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	err = tr.handleErrorResponse(resp)
 	if err != nil {
@@ -186,6 +187,7 @@ func (tr *Transport) CreateModule(ctx context.Context, m *iotservice.Module) (*i
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	err = tr.handleErrorResponse(resp)
 	if err != nil {
@@ -219,6 +221,7 @@ func (tr *Transport) GetModule(ctx context.Context, moduleID string) (*iotservic
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	err = tr.handleErrorResponse(resp)
 	if err != nil {
@@ -256,6 +259,7 @@ func (tr *Transport) UpdateModule(ctx context.Context, m *iotservice.Module) (*i
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	var res iotservice.Module
 	err = json.NewDecoder(resp.Body).Decode(&res)
@@ -280,7 +284,8 @@ func (tr *Transport) DeleteModule(ctx context.Context, m *iotservice.Module) err
 		return err
 	}
 
-	_, err = tr.getTokenAndSendRequest(http.MethodDelete, target, nil, ifMatchHeader(m.ETag))
+	resp, err := tr.getTokenAndSendRequest(http.MethodDelete, target, nil, ifMatchHeader(m.ETag))
+	resp.Body.Close()
 	return err
 }
 
@@ -324,6 +329,7 @@ func (tr *Transport) GetBlobSharedAccessSignature(ctx context.Context, blobName 
 	if err != nil {
 		return "", "", err
 	}
+	defer response.Body.Close()
 
 	err = tr.handleErrorResponse(response)
 	if err != nil {
@@ -376,6 +382,7 @@ func (tr *Transport) UploadToBlob(ctx context.Context, sasURI string, file io.Re
 	if err != nil {
 		return err
 	}
+	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusCreated {
 		return fmt.Errorf("unexpected status code: %d", response.StatusCode)
@@ -417,6 +424,7 @@ func (tr *Transport) NotifyUploadComplete(ctx context.Context, correlationID str
 	if err != nil {
 		return err
 	}
+	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusNoContent {
 		var responsePayload ErrorResponse
