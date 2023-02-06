@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/amenzhinsky/iothub/common"
+	"github.com/dangeroushobo/iothub/common"
 )
 
 func TestEventsMuxSub(t *testing.T) {

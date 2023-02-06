@@ -13,10 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/amenzhinsky/iothub/common"
-	"github.com/amenzhinsky/iothub/iotdevice/transport"
-	"github.com/amenzhinsky/iothub/iotservice"
-	"github.com/amenzhinsky/iothub/logger"
+	"github.com/dangeroushobo/iothub/common"
+	"github.com/dangeroushobo/iothub/iotdevice/transport"
+	"github.com/dangeroushobo/iothub/iotservice"
+	"github.com/dangeroushobo/iothub/logger"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -70,11 +70,14 @@ func WithModelID(modelID string) TransportOption {
 // See more: https://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-mqtt-support
 func New(opts ...TransportOption) *Transport {
 	tr := &Transport{
-		done: make(chan struct{}),
+		//done: make(chan struct{}),
+		onConn: make(chan int),
+		connLost: make(chan int),
 	}
 	for _, opt := range opts {
 		opt(tr)
 	}
+
 	return tr
 }
 
@@ -96,6 +99,9 @@ type Transport struct {
 	cocfg  func(opts *mqtt.ClientOptions)
 
 	webSocket bool
+
+	onConn chan int // channel to listen on for OnConnection events
+	connLost chan int // channel to listen on for LostConnection events
 }
 
 type resp struct {
@@ -109,12 +115,19 @@ func (tr *Transport) SetLogger(logger logger.Logger) {
 	tr.logger = logger
 }
 
+// OnConnectionChan returns channel for listening for OnConnection events.
+func (tr *Transport) OnConnectionChan() <-chan int {
+	return tr.onConn
+}
+
+// LostConnectionChan retruns channel for listening for LostConnection events.
+func (tr *Transport) LostConnectionChan() <-chan int {
+	return tr.connLost
+}
+
 func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) error {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if tr.conn != nil {
-		return errors.New("already connected")
-	}
 
 	tlsCfg := &tls.Config{
 		RootCAs:       common.RootCAs(),
@@ -128,6 +141,8 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	if tr.mid != "" {
 		username += "&model-id=" + url.QueryEscape(tr.mid)
 	}
+
+	tr.done = make(chan struct{})
 
 	o := mqtt.NewClientOptions()
 	o.SetTLSConfig(tlsCfg)
@@ -162,9 +177,11 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 			}
 		}
 		tr.subm.RUnlock()
+		tr.onConn <- 1
 	})
 	o.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
 		tr.logger.Debugf("connection lost: %v", err)
+		tr.connLost <- 1
 	})
 
 	if tr.cocfg != nil {
@@ -179,6 +196,17 @@ func (tr *Transport) Connect(ctx context.Context, creds transport.Credentials) e
 	tr.did = creds.GetDeviceID()
 	tr.conn = c
 	return nil
+}
+
+// IsConnected returns a bool signifying whether there is a connection or not.
+func (tr *Transport) IsConnected() bool {
+	return tr.conn.IsConnected()
+}
+
+// IsConnectionOpen returns a bool signifying whether the client has an active
+// connection to the mqtt broker, i.e. not in disconnected or reconnect mode.
+func (tr *Transport) IsConnectionOpen() bool {
+	return tr.conn.IsConnectionOpen()
 }
 
 type subFunc func() error
