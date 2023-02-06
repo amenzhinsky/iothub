@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dangeroushobo/iothub/iotdevice/iotdevicetest"
-	"github.com/dangeroushobo/iothub/iotdevice/transport/http"
-	"github.com/dangeroushobo/iothub/iotservice"
+	"gitlab.com/michaeljohn/iothub/iotdevice/iotdevicetest"
+	"gitlab.com/michaeljohn/iothub/iotdevice/transport/http"
+	"gitlab.com/michaeljohn/iothub/iotservice"
 )
 
 func newDeviceClient(t *testing.T) *Client {

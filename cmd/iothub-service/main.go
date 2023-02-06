@@ -12,10 +12,10 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/dangeroushobo/iothub/cmd/internal"
-	"github.com/dangeroushobo/iothub/eventhub"
-	"github.com/dangeroushobo/iothub/iotservice"
-	"github.com/dangeroushobo/iothub/logger"
+	"gitlab.com/michaeljohn/iothub/cmd/internal"
+	"gitlab.com/michaeljohn/iothub/eventhub"
+	"gitlab.com/michaeljohn/iothub/iotservice"
+	"gitlab.com/michaeljohn/iothub/logger"
 )
 
 // globally accessible by command handlers, is it a good idea?

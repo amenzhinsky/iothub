@@ -6,7 +6,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/dangeroushobo/iothub/common"
+	"gitlab.com/michaeljohn/iothub/common"
 )
 
 // once wraps a function that can return an error and

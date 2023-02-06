@@ -13,10 +13,10 @@ import (
 
 	"github.com/tidwall/gjson"
 
-	"github.com/dangeroushobo/iothub/iotdevice"
-	"github.com/dangeroushobo/iothub/iotdevice/transport"
-	"github.com/dangeroushobo/iothub/iotdevice/transport/mqtt"
-	"github.com/dangeroushobo/iothub/iotservice"
+	"gitlab.com/michaeljohn/iothub/iotdevice"
+	"gitlab.com/michaeljohn/iothub/iotdevice/transport"
+	"gitlab.com/michaeljohn/iothub/iotdevice/transport/mqtt"
+	"gitlab.com/michaeljohn/iothub/iotservice"
 )
 
 func TestEnd2End(t *testing.T) {

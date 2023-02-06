@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/dangeroushobo/iothub/iotdevice"
-	iotmqtt "github.com/dangeroushobo/iothub/iotdevice/transport/mqtt"
+	"gitlab.com/michaeljohn/iothub/iotdevice"
+	iotmqtt "gitlab.com/michaeljohn/iothub/iotdevice/transport/mqtt"
 )
 
 func main() {

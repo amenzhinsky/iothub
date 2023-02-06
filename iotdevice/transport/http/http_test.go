@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dangeroushobo/iothub/iotdevice"
-	"github.com/dangeroushobo/iothub/iotservice"
+	"gitlab.com/michaeljohn/iothub/iotdevice"
+	"gitlab.com/michaeljohn/iothub/iotservice"
 )
 
 var testRunID = strconv.Itoa(int(time.Now().Unix()))

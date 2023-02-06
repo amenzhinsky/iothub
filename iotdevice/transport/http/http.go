@@ -12,10 +12,10 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/dangeroushobo/iothub/common"
-	"github.com/dangeroushobo/iothub/iotdevice/transport"
-	"github.com/dangeroushobo/iothub/iotservice"
-	"github.com/dangeroushobo/iothub/logger"
+	"gitlab.com/michaeljohn/iothub/common"
+	"gitlab.com/michaeljohn/iothub/iotdevice/transport"
+	"gitlab.com/michaeljohn/iothub/iotservice"
+	"gitlab.com/michaeljohn/iothub/logger"
 )
 
 const apiVersion = "2020-09-30"

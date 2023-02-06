@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dangeroushobo/iothub/cmd/internal"
-	"github.com/dangeroushobo/iothub/iotdevice"
-	"github.com/dangeroushobo/iothub/iotdevice/transport"
-	"github.com/dangeroushobo/iothub/iotdevice/transport/http"
-	"github.com/dangeroushobo/iothub/iotdevice/transport/mqtt"
+	"gitlab.com/michaeljohn/iothub/cmd/internal"
+	"gitlab.com/michaeljohn/iothub/iotdevice"
+	"gitlab.com/michaeljohn/iothub/iotdevice/transport"
+	"gitlab.com/michaeljohn/iothub/iotdevice/transport/http"
+	"gitlab.com/michaeljohn/iothub/iotdevice/transport/mqtt"
 )
 
 var transports = map[string]func() (transport.Transport, error){
