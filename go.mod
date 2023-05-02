@@ -1,9 +1,9 @@
 module github.com/amenzhinsky/iothub
 
-go 1.17
+go 1.18
 
 require (
-	github.com/Azure/go-amqp v0.17.0
+	github.com/Azure/go-amqp v0.18.1
 	github.com/eclipse/paho.mqtt.golang v1.3.5
 )
 
