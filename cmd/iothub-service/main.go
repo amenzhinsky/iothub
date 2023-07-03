@@ -1066,7 +1066,7 @@ func watchEvents(ctx context.Context, c *iotservice.Client, args []string) error
 }
 
 func watchEventHubEvents(ctx context.Context, cs, group string) error {
-	c, err := eventhub.DialConnectionString(cs)
+	c, err := eventhub.DialConnectionStringContext(ctx, cs)
 	if err != nil {
 		return err
 	}

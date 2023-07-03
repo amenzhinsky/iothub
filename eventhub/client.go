@@ -78,30 +78,44 @@ func WithConnOption(key string, value any) Option {
 	}
 }
 
-// Dial connects to the named EventHub and returns a client instance.
-func Dial(host, name string, opts ...Option) (*Client, error) {
+// DialContext connects to the named EventHub and returns a client instance
+// using the provided context.
+func DialContext(ctx context.Context, host, name string, opts ...Option) (*Client, error) {
 	c := &Client{name: name}
 	for _, opt := range opts {
 		opt(c)
 	}
 
 	var err error
-	c.conn, err = amqp.Dial("amqps://"+host, &c.opts)
+	c.conn, err = amqp.Dial(ctx, "amqps://"+host, &c.opts)
 	if err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-// DialConnectionString dials an EventHub instance using the given connection string.
-func DialConnectionString(cs string, opts ...Option) (*Client, error) {
+// Dial connects to the named EventHub and returns a client instance.
+// DEPRECATED: Use DialContext.
+func Dial(host, name string, opts ...Option) (*Client, error) {
+	return DialContext(context.Background(), host, name, opts...)
+}
+
+// DialConnectionString dials an EventHub instance using the given connection string
+// and the provided context.
+func DialConnectionStringContext(ctx context.Context, cs string, opts ...Option) (*Client, error) {
 	creds, err := ParseConnectionString(cs)
 	if err != nil {
 		return nil, err
 	}
-	return Dial(creds.Endpoint, creds.EntityPath, append([]Option{
+	return DialContext(ctx, creds.Endpoint, creds.EntityPath, append([]Option{
 		WithSASLPlain(creds.SharedAccessKeyName, creds.SharedAccessKey),
 	}, opts...)...)
+}
+
+// DialConnectionString dials an EventHub instance using the given connection string.
+// DEPRECATED: Use DialConnectionStringContext.
+func DialConnectionString(cs string, opts ...Option) (*Client, error) {
+	return DialConnectionStringContext(context.Background(), cs, opts...)
 }
 
 // Client is an EventHub client.
@@ -190,7 +204,7 @@ func (c *Client) Subscribe(
 		go func(recv *amqp.Receiver) {
 			defer recv.Close(context.Background())
 			for {
-				msg, err := recv.Receive(ctx)
+				msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 				if err != nil {
 					select {
 					case errc <- err:
@@ -255,11 +269,11 @@ func (c *Client) getPartitionIDs(ctx context.Context, sess *amqp.Session) ([]str
 			"name":      c.name,
 			"type":      "com.microsoft:eventhub",
 		},
-	}); err != nil {
+	}, &amqp.SendOptions{}); err != nil {
 		return nil, err
 	}
 
-	msg, err := recv.Receive(ctx)
+	msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 	if err != nil {
 		return nil, err
 	}
