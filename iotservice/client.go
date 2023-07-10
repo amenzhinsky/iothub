@@ -121,7 +121,7 @@ func (c *Client) newSession(ctx context.Context) (*amqp.Session, error) {
 	if c.conn != nil {
 		return c.conn.NewSession(ctx, nil) // already connected
 	}
-	conn, err := amqp.Dial("amqps://"+c.sak.HostName, &amqp.ConnOptions{
+	conn, err := amqp.Dial(ctx, "amqps://"+c.sak.HostName, &amqp.ConnOptions{
 		TLSConfig:  c.tls,
 		Properties: map[string]any{"com.microsoft:client-version": userAgent},
 	})
@@ -223,11 +223,11 @@ func (c *Client) putToken(
 			"type":      "servicebus.windows.net:sastoken",
 			"name":      c.sak.HostName,
 		},
-	}); err != nil {
+	}, &amqp.SendOptions{}); err != nil {
 		return err
 	}
 
-	msg, err := recv.Receive(ctx)
+	msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 	if err != nil {
 		return err
 	}
@@ -269,7 +269,7 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	tlsCfg := c.tls.Clone()
 	tlsCfg.ServerName = host
 
-	eh, err := eventhub.Dial(host, group,
+	eh, err := eventhub.DialContext(ctx, host, group,
 		eventhub.WithTLSConfig(tlsCfg),
 		eventhub.WithSASLPlain(c.sak.SharedAccessKeyName, c.sak.SharedAccessKey),
 		eventhub.WithConnOption("com.microsoft:client-version", userAgent),
@@ -420,7 +420,7 @@ func (c *Client) SendEvent(
 	if err != nil {
 		return err
 	}
-	return send.Send(ctx, toAMQPMessage(msg))
+	return send.Send(ctx, toAMQPMessage(msg), &amqp.SendOptions{})
 }
 
 // getSendLink caches sender link between calls to speed up sending events.
@@ -468,7 +468,7 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) erro
 	defer recv.Close(context.Background())
 
 	for {
-		msg, err := recv.Receive(ctx)
+		msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 		if err != nil {
 			return err
 		}
@@ -536,7 +536,7 @@ func (c *Client) SubscribeFileNotifications(
 	defer recv.Close(context.Background())
 
 	for {
-		msg, err := recv.Receive(ctx)
+		msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 		if err != nil {
 			return err
 		}
