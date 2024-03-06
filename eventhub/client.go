@@ -56,52 +56,72 @@ type Option func(c *Client)
 
 // WithTLSConfig sets connection TLS configuration.
 func WithTLSConfig(tc *tls.Config) Option {
-	return WithConnOption(amqp.ConnTLSConfig(tc))
+	return func(c *Client) {
+		c.opts.TLSConfig = tc
+	}
 }
 
 // WithSASLPlain configures connection username and password.
 func WithSASLPlain(username, password string) Option {
-	return WithConnOption(amqp.ConnSASLPlain(username, password))
-}
-
-// WithConnOption sets a low-level connection option.
-func WithConnOption(opt amqp.ConnOption) Option {
 	return func(c *Client) {
-		c.opts = append(c.opts, opt)
+		c.opts.SASLType = amqp.SASLTypePlain(username, password)
 	}
 }
 
-// Dial connects to the named EventHub and returns a client instance.
-func Dial(host, name string, opts ...Option) (*Client, error) {
+// WithConnOption sets a low-level connection option.
+func WithConnOption(key string, value any) Option {
+	return func(c *Client) {
+		if c.opts.Properties == nil {
+			c.opts.Properties = make(map[string]any)
+		}
+		c.opts.Properties[key] = value
+	}
+}
+
+// DialContext connects to the named EventHub and returns a client instance
+// using the provided context.
+func DialContext(ctx context.Context, host, name string, opts ...Option) (*Client, error) {
 	c := &Client{name: name}
 	for _, opt := range opts {
 		opt(c)
 	}
 
 	var err error
-	c.conn, err = amqp.Dial("amqps://"+host, c.opts...)
+	c.conn, err = amqp.Dial(ctx, host, &c.opts)
 	if err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
+// Dail connects to the named EventHub.
+// DEPRECATED: use DialContext instead.
+func Dial(host, name string, opts ...Option) (*Client, error) {
+	return DialContext(context.Background(), host, name, opts...)
+}
+
 // DialConnectionString dials an EventHub instance using the given connection string.
-func DialConnectionString(cs string, opts ...Option) (*Client, error) {
+func DialConnectionStringContext(ctx context.Context, cs string, opts ...Option) (*Client, error) {
 	creds, err := ParseConnectionString(cs)
 	if err != nil {
 		return nil, err
 	}
-	return Dial(creds.Endpoint, creds.EntityPath, append([]Option{
+	return DialContext(ctx, creds.Endpoint, creds.EntityPath, append([]Option{
 		WithSASLPlain(creds.SharedAccessKeyName, creds.SharedAccessKey),
 	}, opts...)...)
+}
+
+// DialConnectionString dials an EventHub instance using the given connection string.
+// DEPRECATED: use DialConnectionStringContext instead.
+func DialConnectionString(cs string, opts ...Option) (*Client, error) {
+	return DialConnectionStringContext(context.Background(), cs, opts...)
 }
 
 // Client is an EventHub client.
 type Client struct {
 	name string
-	conn *amqp.Client
-	opts []amqp.ConnOption
+	conn *amqp.Conn
+	opts amqp.ConnOptions
 }
 
 // SubscribeOption is a Subscribe option.
@@ -116,22 +136,19 @@ func WithSubscribeConsumerGroup(name string) SubscribeOption {
 
 // WithSubscribeSince requests events that occurred after the given time.
 func WithSubscribeSince(t time.Time) SubscribeOption {
-	return WithSubscribeLinkOption(amqp.LinkSelectorFilter(
-		fmt.Sprintf("amqp.annotation.x-opt-enqueuedtimeutc > '%d'",
-			t.UnixNano()/int64(time.Millisecond)),
-	))
-}
-
-// WithSubscribeLinkOption is a low-level subscription configuration option.
-func WithSubscribeLinkOption(opt amqp.LinkOption) SubscribeOption {
 	return func(s *sub) {
-		s.opts = append(s.opts, opt)
+		if s.receiverOpts.Filters == nil {
+			s.receiverOpts.Filters = make([]amqp.LinkFilter, 0)
+		}
+		s.receiverOpts.Filters = append(s.receiverOpts.Filters, amqp.NewSelectorFilter(fmt.Sprintf("amqp.annotation.x-opt-enqueuedtimeutc > '%d'",
+			t.UnixNano()/int64(time.Millisecond))))
 	}
 }
 
 type sub struct {
 	group string
-	opts  []amqp.LinkOption
+	sessionOpts amqp.SessionOptions
+	receiverOpts amqp.ReceiverOptions
 }
 
 // Event is an Event Hub event, simply wraps an AMQP message.
@@ -158,7 +175,7 @@ func (c *Client) Subscribe(
 	}
 
 	// initialize new session for each subscribe session
-	sess, err := c.conn.NewSession()
+	sess, err := c.conn.NewSession(ctx, &s.sessionOpts)
 	if err != nil {
 		return err
 	}
@@ -178,9 +195,7 @@ func (c *Client) Subscribe(
 
 	for _, id := range ids {
 		addr := fmt.Sprintf("/%s/ConsumerGroups/%s/Partitions/%s", c.name, s.group, id)
-		recv, err := sess.NewReceiver(
-			append([]amqp.LinkOption{amqp.LinkSourceAddress(addr)}, s.opts...)...,
-		)
+		recv, err := sess.NewReceiver(ctx, addr, &s.receiverOpts)
 		if err != nil {
 			return err
 		}
@@ -188,7 +203,7 @@ func (c *Client) Subscribe(
 		go func(recv *amqp.Receiver) {
 			defer recv.Close(context.Background())
 			for {
-				msg, err := recv.Receive(ctx)
+				msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 				if err != nil {
 					select {
 					case errc <- err:
@@ -209,7 +224,7 @@ func (c *Client) Subscribe(
 		case ev := <-evc:
 			if err := fn(ev); err != nil {
 				if rerr := ev.recv.RejectMessage(ctx, ev.Message, &amqp.Error{
-					Condition:   amqp.ErrorInternalError,
+					Condition:   amqp.ErrorCondInternalError,
 					Description: err.Error(),
 				}); rerr != nil {
 					return rerr
@@ -230,19 +245,13 @@ func (c *Client) Subscribe(
 // getPartitionIDs returns partition ids of the hub.
 func (c *Client) getPartitionIDs(ctx context.Context, sess *amqp.Session) ([]string, error) {
 	replyTo := genID()
-	recv, err := sess.NewReceiver(
-		amqp.LinkSourceAddress("$management"),
-		amqp.LinkTargetAddress(replyTo),
-	)
+	recv, err := sess.NewReceiver(ctx, "$management", &amqp.ReceiverOptions{TargetAddress: replyTo})
 	if err != nil {
 		return nil, err
 	}
 	defer recv.Close(context.Background())
 
-	send, err := sess.NewSender(
-		amqp.LinkTargetAddress("$management"),
-		amqp.LinkSourceAddress(replyTo),
-	)
+	send, err := sess.NewSender(ctx, "$management", &amqp.SenderOptions{SourceAddress: replyTo})
 	if err != nil {
 		return nil, err
 	}
@@ -259,11 +268,11 @@ func (c *Client) getPartitionIDs(ctx context.Context, sess *amqp.Session) ([]str
 			"name":      c.name,
 			"type":      "com.microsoft:eventhub",
 		},
-	}); err != nil {
+	}, &amqp.SendOptions{}); err != nil {
 		return nil, err
 	}
 
-	msg, err := recv.Receive(ctx)
+	msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 	if err != nil {
 		return nil, err
 	}
