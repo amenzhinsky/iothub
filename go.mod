@@ -3,7 +3,7 @@ module gitlab.com/michaeljohn/iothub
 go 1.18
 
 require (
-	github.com/Azure/go-amqp v0.17.0
+	github.com/Azure/go-amqp v1.0.1
 	github.com/eclipse/paho.mqtt.golang v1.4.2
 	github.com/tidwall/gjson v1.14.3
 )

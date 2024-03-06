@@ -103,7 +103,7 @@ func New(sak *common.SharedAccessKey, opts ...ClientOption) (*Client, error) {
 type Client struct {
 	mu     sync.Mutex
 	tls    *tls.Config
-	conn   *amqp.Client
+	conn   *amqp.Conn
 	done   chan struct{}
 	sak    *common.SharedAccessKey
 	logger logger.Logger
@@ -124,12 +124,12 @@ func (c *Client) newSession(ctx context.Context) (*amqp.Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn != nil {
-		return c.conn.NewSession() // already connected
+		return c.conn.NewSession(ctx, nil) // already connected
 	}
-	conn, err := amqp.Dial("amqps://"+c.sak.HostName,
-		amqp.ConnTLSConfig(c.tls),
-		amqp.ConnProperty("com.microsoft:client-version", userAgent),
-	)
+	conn, err := amqp.Dial(ctx, "amqps://"+c.sak.HostName, &amqp.ConnOptions{
+		TLSConfig: c.tls,
+		Properties: map[string]any{"com.microsoft:client-version": userAgent},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (c *Client) newSession(ctx context.Context) (*amqp.Session, error) {
 		return nil, err
 	}
 
-	sess, err := conn.NewSession()
+	sess, err := conn.NewSession(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (c *Client) newSession(ctx context.Context) (*amqp.Session, error) {
 
 // putTokenContinuously writes token first time in blocking mode and returns
 // maintaining token updates in the background until the client is closed.
-func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) error {
+func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Conn) error {
 	const (
 		tokenUpdateInterval = time.Hour
 
@@ -163,7 +163,7 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 		tokenUpdateSpan = 10 * time.Minute
 	)
 
-	sess, err := conn.NewSession()
+	sess, err := conn.NewSession(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -198,17 +198,13 @@ func (c *Client) putTokenContinuously(ctx context.Context, conn *amqp.Client) er
 func (c *Client) putToken(
 	ctx context.Context, sess *amqp.Session, lifetime time.Duration,
 ) error {
-	send, err := sess.NewSender(
-		amqp.LinkTargetAddress("$cbs"),
-	)
+	send, err := sess.NewSender(ctx, "$cbs", nil)
 	if err != nil {
 		return err
 	}
 	defer send.Close(context.Background())
 
-	recv, err := sess.NewReceiver(
-		amqp.LinkSourceAddress("$cbs"),
-	)
+	recv, err := sess.NewReceiver(ctx, "$cbs", nil)
 	if err != nil {
 		return err
 	}
@@ -232,11 +228,11 @@ func (c *Client) putToken(
 			"type":      "servicebus.windows.net:sastoken",
 			"name":      c.sak.HostName,
 		},
-	}); err != nil {
+	}, &amqp.SendOptions{}); err != nil {
 		return err
 	}
 
-	msg, err := recv.Receive(ctx)
+	msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 	if err != nil {
 		return err
 	}
@@ -259,15 +255,13 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	// straight after subscribing to events stream, for that we need to connect twice
 	defer sess.Close(context.Background())
 
-	_, err = sess.NewReceiver(
-		amqp.LinkSourceAddress("messages/events/"),
-	)
+	_, err = sess.NewReceiver(ctx, "messages/events/", nil)
 	if err == nil {
 		return nil, errorf("expected redirect error")
 	}
 	var aerr *amqp.Error
 	if errors.As(err, &aerr) {
-		if aerr.Condition != amqp.ErrorLinkRedirect {
+		if aerr.Condition != amqp.ErrCondLinkRedirect {
 			return nil, err
 		}
 	}
@@ -282,10 +276,10 @@ func (c *Client) connectToEventHub(ctx context.Context) (*eventhub.Client, error
 	tlsCfg := c.tls.Clone()
 	tlsCfg.ServerName = host
 
-	eh, err := eventhub.Dial(host, group,
+	eh, err := eventhub.DialContext(ctx, host, group,
 		eventhub.WithTLSConfig(tlsCfg),
 		eventhub.WithSASLPlain(c.sak.SharedAccessKeyName, c.sak.SharedAccessKey),
-		eventhub.WithConnOption(amqp.ConnProperty("com.microsoft:client-version", userAgent)),
+		eventhub.WithConnOption("com.microsoft:client-version", userAgent),
 	)
 	if err != nil {
 		return nil, err
@@ -433,7 +427,7 @@ func (c *Client) SendEvent(
 	if err != nil {
 		return err
 	}
-	return send.Send(ctx, toAMQPMessage(msg))
+	return send.Send(ctx, toAMQPMessage(msg), &amqp.SendOptions{})
 }
 
 // getSendLink caches sender link between calls to speed up sending events.
@@ -453,9 +447,7 @@ func (c *Client) getSendLink(ctx context.Context) (*amqp.Sender, error) {
 		}
 	}()
 
-	link, err := sess.NewSender(
-		amqp.LinkTargetAddress("/messages/devicebound"),
-	)
+	link, err := sess.NewSender(ctx, "/messages/devicebound", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -476,16 +468,14 @@ func (c *Client) SubscribeFeedback(ctx context.Context, fn FeedbackHandler) erro
 	}
 	defer sess.Close(context.Background())
 
-	recv, err := sess.NewReceiver(
-		amqp.LinkSourceAddress("/messages/serviceBound/feedback"),
-	)
+	recv, err := sess.NewReceiver(ctx, "/messages/serviceBound/feedback", nil)
 	if err != nil {
 		return err
 	}
 	defer recv.Close(context.Background())
 
 	for {
-		msg, err := recv.Receive(ctx)
+		msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 		if err != nil {
 			return err
 		}
@@ -546,16 +536,14 @@ func (c *Client) SubscribeFileNotifications(
 	}
 	defer sess.Close(context.Background())
 
-	recv, err := sess.NewReceiver(
-		amqp.LinkSourceAddress("/messages/serviceBound/filenotifications"),
-	)
+	recv, err := sess.NewReceiver(ctx, "/messages/serviceBound/filenotifications", nil)
 	if err != nil {
 		return err
 	}
 	defer recv.Close(context.Background())
 
 	for {
-		msg, err := recv.Receive(ctx)
+		msg, err := recv.Receive(ctx, &amqp.ReceiveOptions{})
 		if err != nil {
 			return err
 		}
