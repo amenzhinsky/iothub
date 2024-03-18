@@ -224,7 +224,7 @@ func (c *Client) Subscribe(
 		case ev := <-evc:
 			if err := fn(ev); err != nil {
 				if rerr := ev.recv.RejectMessage(ctx, ev.Message, &amqp.Error{
-					Condition:   amqp.ErrorCondInternalError,
+					Condition:   amqp.ErrCondInternalError,
 					Description: err.Error(),
 				}); rerr != nil {
 					return rerr
