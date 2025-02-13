@@ -231,9 +231,10 @@ const (
 )
 
 type DeviceMethodParams struct {
-	MethodName       string      `json:"methodName"`
-	Payload          interface{} `json:"payload"`
-	TimeoutInSeconds uint        `json:"timeoutInSeconds"`
+	MethodName              string      `json:"methodName"`
+	Payload                 interface{} `json:"payload"`
+	TimeoutInSeconds        uint        `json:"responseTimeoutInSeconds"`
+	ConnectTimeoutInSeconds uint        `json:"connectTimeoutInSeconds"`
 }
 
 type BadRequestError struct {

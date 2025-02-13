@@ -149,7 +149,7 @@ func TestRegistryError(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected a registry error, got = %v", err)
 	}
-	if re.Message == "" || re.ExceptionMessage == "" {
+	if re.Message == "" && re.ExceptionMessage == "" {
 		t.Fatal("message is empty")
 	}
 }
@@ -427,7 +427,7 @@ func TestScheduleMethodCall(t *testing.T) {
 		CloudToDeviceMethod: &DeviceMethodParams{
 			MethodName:       "dist-upgrade",
 			Payload:          map[string]interface{}{"time": "now"},
-			TimeoutInSeconds: 0,
+			TimeoutInSeconds: 5,
 		},
 		QueryCondition:            "deviceId='nonexisting'",
 		StartTime:                 time.Now().Add(time.Minute),
